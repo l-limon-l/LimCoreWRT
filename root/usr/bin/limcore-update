@@ -1,0 +1,13 @@
+#!/bin/sh
+# LimCore Auto-Updater for OpenWrt
+# https://github.com/l-limon-l/LimCoreWRT
+
+G='\033[0;32m'; C='\033[0;36m'; N='\033[0m'
+echo -e "${C}=== LimCore Auto-Updater ===${N}"
+
+[ "$(id -u)" = 0 ] || { echo "Ошибка: Запустите от root."; exit 1; }
+
+echo -e "${C}Скачивание и автоматическое обновление LimCore...${N}"
+wget -qO- https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh | sh -s -- --auto
+
+echo -e "${G}=== Обновление LimCore завершено! ===${N}"
