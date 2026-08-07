@@ -1,0 +1,45 @@
+#!/bin/sh
+
+[ -f "/www/luci-static/resources/icons/loading.gif" ] && \
+	sed -i "s,/loading.svg,/loading.gif,g" "/www/luci-static/resources/view/homeproxy/status.js"
+
+uci -q batch <<-EOF >"/dev/null"
+	delete firewall.homeproxy_pre
+
+	delete firewall.homeproxy_forward
+	set firewall.homeproxy_forward=include
+	set firewall.homeproxy_forward.type=nftables
+	set firewall.homeproxy_forward.path="/var/run/homeproxy/fw4_forward.nft"
+	set firewall.homeproxy_forward.position="chain-pre"
+	set firewall.homeproxy_forward.chain="forward"
+
+	delete firewall.homeproxy_input
+	set firewall.homeproxy_input=include
+	set firewall.homeproxy_input.type=nftables
+	set firewall.homeproxy_input.path="/var/run/homeproxy/fw4_input.nft"
+	set firewall.homeproxy_input.position="chain-pre"
+	set firewall.homeproxy_input.chain="input"
+
+	delete firewall.homeproxy_post
+	set firewall.homeproxy_post=include
+	set firewall.homeproxy_post.type=nftables
+	set firewall.homeproxy_post.path="/var/run/homeproxy/fw4_post.nft"
+	set firewall.homeproxy_post.position="table-post"
+	commit firewall
+EOF
+
+if [ -z "$(uci -q get homeproxy.config.hwid)" ]; then
+	MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || cat /etc/machine-id 2>/dev/null)
+	[ -n "$MAC" ] || MAC="homeproxy-default-hwid-key"
+	HEX=$(echo -n "$MAC" | md5sum | cut -d' ' -f1)
+	H1=$(echo "$HEX" | cut -c1-8)
+	H2=$(echo "$HEX" | cut -c9-12)
+	H3=$(echo "$HEX" | cut -c14-16)
+	H4=$(echo "$HEX" | cut -c18-20)
+	H5=$(echo "$HEX" | cut -c21-32)
+	GEN_HWID="${H1}-${H2}-4${H3}-a${H4}-${H5}"
+	uci set homeproxy.config.hwid="$GEN_HWID"
+	uci commit homeproxy
+fi
+
+exit 0
