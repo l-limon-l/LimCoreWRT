@@ -796,72 +796,12 @@ function buildCoreCard(core, coreInfo) {
 
 function buildLimCoreAppCard() {
 	const statusEl = E('strong', { style: 'color:green' }, _('Installed'));
-	const msgEl = E('span', { style: 'margin-left:8px; font-size:0.9em' }, '');
-	const setMsg = (txt, color) => { msgEl.textContent = txt; msgEl.style.color = color || 'gray'; };
-
-	const callAppUpdate = rpc.declare({
-		object: 'luci.homeproxy',
-		method: 'app_update',
-		expect: { '': {} }
-	});
-
-	const callAppUpdateStatus = rpc.declare({
-		object: 'luci.homeproxy',
-		method: 'app_update_status',
-		expect: { '': {} }
-	});
-
-	const updateBtn = E('button', {
-		class: 'btn cbi-button cbi-button-action',
-		style: 'margin-left:4px',
-		click: async function() {
-			updateBtn.disabled = true;
-			statusEl.textContent = _('Updating...');
-			statusEl.style.color = 'orange';
-			setMsg(_('Starting LimCore update...'), 'gray');
-
-			const res = await L.resolveDefault(callAppUpdate(), {});
-			if (!res || res.result === false) {
-				updateBtn.disabled = false;
-				statusEl.textContent = _('Installed');
-				statusEl.style.color = 'green';
-				setMsg(_('Failed to launch update process'), 'red');
-				return;
-			}
-
-			let pollCount = 0;
-			const timer = setInterval(async () => {
-				pollCount++;
-				const st = await L.resolveDefault(callAppUpdateStatus(), {});
-				if (st && st.running) {
-					setMsg(_('Updating LimCore & dependencies in background...'), 'gray');
-				} else {
-					clearInterval(timer);
-					updateBtn.disabled = false;
-					statusEl.textContent = _('Updated');
-					statusEl.style.color = 'green';
-					setMsg(_('LimCore successfully updated! Reloading...'), 'green');
-					setTimeout(() => { window.location.reload(); }, 2000);
-				}
-				if (pollCount > 60) {
-					clearInterval(timer);
-					updateBtn.disabled = false;
-					setMsg(_('Update finished. Reload page to see changes.'), 'green');
-				}
-			}, 2000);
-		}
-	}, [ _('Update LimCore') ]);
 
 	return E('div', { style: 'margin-bottom:12px; padding:8px 10px; border:1px solid #ddd; border-radius:4px' }, [
 		E('div', { style: 'display:flex; align-items:center; flex-wrap:wrap; gap:6px' }, [
 			E('strong', {}, 'LimCore App'),
-
-			statusEl,
-			updateBtn,
-			msgEl
-		]),
-		E('div', { style: 'margin-top:4px; font-size:0.9em; color:#666' },
-			_('Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases.'))
+			statusEl
+		])
 	]);
 }
 

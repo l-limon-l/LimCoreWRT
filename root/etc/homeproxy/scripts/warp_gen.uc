@@ -19,8 +19,8 @@ function generate_keypair() {
 
 	if (fd_sb) {
 		const out = fd_sb.read('all'); fd_sb.close();
-		const m_priv = match(out, /Private key:\s*(\S+)/);
-		const m_pub  = match(out, /Public key:\s*(\S+)/);
+		const m_priv = match(out, /Private\s*key:\s*(\S+)/i);
+		const m_pub  = match(out, /Public\s*key:\s*(\S+)/i);
 		if (m_priv) priv = m_priv[1];
 		if (m_pub)  pub  = m_pub[1];
 	}
