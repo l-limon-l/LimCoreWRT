@@ -15,10 +15,10 @@ function generate_keypair() {
 	let priv = null, pub = null;
 
 	/* 1. Try sing-box / hiddify-core built-in wg-keypair generator first (ALWAYS present) */
-	const fd_sb = popen('/usr/bin/sing-box generate wg-keypair 2>/dev/null || /usr/bin/hiddify-core generate wg-keypair 2>/dev/null || sing-box generate wg-keypair 2>/dev/null');
+	const fd_sb = popen('/usr/bin/sing-box generate wg-keypair 2>&1 || /usr/bin/hiddify-core generate wg-keypair 2>&1 || sing-box generate wg-keypair 2>&1');
 
 	if (fd_sb) {
-		const out = fd_sb.read('all'); fd_sb.close();
+		const out = fd_sb.read('all') || ''; fd_sb.close();
 		const m_priv = match(out, /Private\s*key:\s*(\S+)/i);
 		const m_pub  = match(out, /Public\s*key:\s*(\S+)/i);
 		if (m_priv) priv = m_priv[1];
@@ -29,12 +29,12 @@ function generate_keypair() {
 	if (!priv || !pub) {
 		const fd_wg = popen('wg genkey 2>/dev/null');
 		if (fd_wg) {
-			priv = trim(fd_wg.read('all'));
+			priv = trim(fd_wg.read('all') || '');
 			fd_wg.close();
 			if (priv && length(priv)) {
 				const fd_pub = popen(`echo ${shellquote(priv)} | wg pubkey 2>/dev/null`);
 				if (fd_pub) {
-					pub = trim(fd_pub.read('all'));
+					pub = trim(fd_pub.read('all') || '');
 					fd_pub.close();
 				}
 			}
@@ -48,12 +48,12 @@ function generate_keypair() {
 		if (access(tmp_key)) {
 			const fd_priv = popen(`openssl pkey -in ${shellquote(tmp_key)} -rawout 2>/dev/null | openssl base64 2>/dev/null | tr -d '\\r\\n'`);
 			if (fd_priv) {
-				priv = trim(fd_priv.read('all'));
+				priv = trim(fd_priv.read('all') || '');
 				fd_priv.close();
 			}
 			const fd_pub = popen(`openssl pkey -in ${shellquote(tmp_key)} -pubout -rawout 2>/dev/null | openssl base64 2>/dev/null | tr -d '\\r\\n'`);
 			if (fd_pub) {
-				pub = trim(fd_pub.read('all'));
+				pub = trim(fd_pub.read('all') || '');
 				fd_pub.close();
 			}
 			unlink(tmp_key);
@@ -68,7 +68,7 @@ function generate_keypair() {
 		);
 		const fd_py = popen(py_cmd);
 		if (fd_py) {
-			pub = trim(fd_py.read('all'));
+			pub = trim(fd_py.read('all') || '');
 			fd_py.close();
 		}
 	}
