@@ -41,6 +41,12 @@ fi
 cp -fpR "$PKG_DIR/htdocs"/* "$TEMP_PKG_DIR/www/"
 cp -fpR "$PKG_DIR/root"/* "$TEMP_PKG_DIR/"
 
+chmod +x "$TEMP_PKG_DIR/etc/init.d/limcore"
+chmod +x "$TEMP_PKG_DIR/etc/uci-defaults/"* 2>/dev/null || true
+chmod +x "$TEMP_PKG_DIR/usr/bin/limcore-update" 2>/dev/null || true
+chmod +x "$TEMP_PKG_DIR/etc/limcore/scripts/"*.sh 2>/dev/null || true
+
+
 cat > "$TEMP_PKG_DIR/lib/upgrade/keep.d/$PKG_NAME" <<-EOF
 /etc/limcore/certs/
 /etc/limcore/ruleset/
