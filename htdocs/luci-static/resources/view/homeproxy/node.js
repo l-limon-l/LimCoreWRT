@@ -1834,6 +1834,30 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.onclick = L.bind(hp.uploadCertificate, this, _('ECH config'), 'client_ech_conf');
 	o.modalonly = true;
 
+	/* TLS Fragment config start */
+	o = s.option(form.Flag, 'tls_fragment', _('TLS Fragment'),
+		_('Split TLS ClientHello packets to bypass SNI/DPI filtering.'));
+	o.depends('tls', '1');
+	o.depends('type', 'vless');
+	o.depends('type', 'vmess');
+	o.depends('type', 'trojan');
+	o.depends('type', 'shadowsocks');
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'tls_fragment_size', _('Fragment size'),
+		_('Range or size of packets in bytes (e.g. 10-30).'));
+	o.placeholder = '10-30';
+	o.depends('tls_fragment', '1');
+	o.modalonly = true;
+
+	o = s.option(form.Value, 'tls_fragment_sleep', _('Fragment sleep delay'),
+		_('Sleep delay between fragmented packets in milliseconds (e.g. 5-10).'));
+	o.placeholder = '5-10';
+	o.depends('tls_fragment', '1');
+	o.modalonly = true;
+	/* TLS Fragment config end */
+
+
 	if (features.with_utls) {
 		o = s.option(form.ListValue, 'tls_utls', _('uTLS fingerprint'),
 			_('uTLS is a fork of "crypto/tls", which provides ClientHello fingerprinting resistance.'));

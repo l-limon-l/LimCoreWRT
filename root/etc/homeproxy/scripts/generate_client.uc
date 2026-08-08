@@ -115,7 +115,15 @@ const zapret_mark = uci.get(uciconfig, ucimain, 'zapret_mark') || '110';
  * Only honored when zapret_enabled === '1' (zapret-out exists). */
 const zapret_voice = uci.get(uciconfig, ucimain, 'zapret_voice') || '0';
 
+const warp_enabled = uci.get(uciconfig, ucimain, 'warp_enabled');
+const warp_endpoint = uci.get(uciconfig, ucimain, 'warp_endpoint') || 'engage.cloudflareclient.com:2408';
+const warp_private_key = uci.get(uciconfig, ucimain, 'warp_private_key');
+const warp_peer_public_key = uci.get(uciconfig, ucimain, 'warp_peer_public_key');
+const warp_addresses = uci.get(uciconfig, ucimain, 'warp_addresses');
+const warp_reserved = uci.get(uciconfig, ucimain, 'warp_reserved');
+
 let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outbound_dns,
+
     domain_strategy, sniff_override, dns_server, china_dns_server, iran_dns_server, russia_dns_server,
     secure_dns_server, proxy_calls, no_proxy_torrents, show_advanced_rules, dns_default_strategy, dns_default_server, dns_disable_cache,
     dns_disable_cache_expire, dns_independent_cache, dns_client_subnet, cache_file_store_rdrc,
@@ -1406,6 +1414,49 @@ if (!isEmpty(main_node)) {
 		}
 	});
 
+	/* WARP endpoint */
+	if (warp_enabled === '1' && !isEmpty(warp_private_key)) {
+		const warp_port_match = match(warp_endpoint, /:([0-9]+)$/);
+		const warp_host = match(warp_endpoint, /^([^:]+)/)?.[1] || 'engage.cloudflareclient.com';
+		const warp_port = warp_port_match ? strToInt(warp_port_match[1]) : 2408;
+
+		const addPrefix = (addr) => {
+			if (!addr || match(addr, /\//)) return addr;
+			return match(addr, /:/) ? addr + '/128' : addr + '/32';
+		};
+
+		const raw_addrs = type(warp_addresses) === 'array' ? warp_addresses : (warp_addresses ? split(warp_addresses, ',') : ['172.16.0.2/32']);
+
+		let reserved_arr = null;
+		if (type(warp_reserved) === 'array') {
+			reserved_arr = map(warp_reserved, (v) => int(v));
+		} else if (type(warp_reserved) === 'string' && length(trim(warp_reserved))) {
+			reserved_arr = map(split(trim(warp_reserved), ','), (v) => int(trim(v)));
+		}
+
+		push(config.endpoints, {
+			type: 'wireguard',
+			tag: 'warp-out',
+			address: map(raw_addrs, addPrefix),
+			mtu: 1280,
+			private_key: warp_private_key,
+			peers: [
+				{
+					address: warp_host,
+					port: warp_port,
+					allowed_ips: [
+						'0.0.0.0/0',
+						'::/0'
+					],
+					public_key: warp_peer_public_key,
+					reserved: reserved_arr
+				}
+			],
+			system: false
+		});
+	}
+
+
 	for (let i in filter(urltest_nodes, (l) => !~index(routing_nodes, l))) {
 		const urltest_node = uci.get_all(uciconfig, i);
 		if (!urltest_node) continue;
@@ -1418,6 +1469,7 @@ if (!isEmpty(main_node)) {
 
 if (isEmpty(config.endpoints))
 	config.endpoints = null;
+
 /* Outbound end */
 
 /* Routing rules start */
@@ -1455,6 +1507,25 @@ if (!isEmpty(main_node)) {
 		strategy: (ipv6_support !== '1') ? 'prefer_ipv4' : null
 	} : default_resolver_server;
 
+	/* WARP AI routing rule (Gemini, Antigravity, ChatGPT, Claude) */
+	if (warp_enabled === '1' && !isEmpty(warp_private_key)) {
+		push(config.route.rules, {
+			domain_suffix: [
+				'gemini.google.com',
+				'generativelanguage.googleapis.com',
+				'alkalimakersuite-pa.googleapis.com',
+				'chatgpt.com',
+				'openai.com',
+				'claude.ai',
+				'anthropic.com',
+				'perplexity.ai',
+				'poe.com'
+			],
+			action: 'route',
+			outbound: 'warp-out'
+		});
+	}
+
 	/* Direct list (not needed in proxy_banned_ru — direct is the default) */
 	if (length(direct_domain_list) && routing_mode !== 'proxy_banned_ru')
 		push(config.route.rules, {
@@ -1462,6 +1533,7 @@ if (!isEmpty(main_node)) {
 			action: 'route',
 			outbound: 'direct-out'
 		});
+
 
 	/* Main UDP out — only in `global` here (everything proxied, no carve-outs, order moot).
 	 * In selective modes (RU/reverse) the UDP-node rule is emitted LAST, after the region

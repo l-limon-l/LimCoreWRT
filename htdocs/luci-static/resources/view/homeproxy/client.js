@@ -804,7 +804,88 @@ return view.extend({
 
 		/* Proxy Rules start (per-service overrides — RU forward + CN/IR reverse) */
 		s.tab('ru_rules', _('Proxy Rules'));
+
+		/* WARP tab start */
+		s.tab('warp', _('WARP'));
+
+		o = s.taboption('warp', form.Flag, 'warp_enabled', _('Enable WARP') + ' ⚡',
+			_('Route AI services (Google Gemini, Antigravity, ChatGPT, Claude) through Cloudflare WARP.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('warp', form.Button, '_warp_gen_btn', _('WARP config generator'),
+			_('Click to automatically register account keys and settings via Cloudflare WARP API.'));
+		o.inputtitle = _('Generate WARP');
+		o.inputstyle = 'apply';
+		o.onclick = function(ev) {
+			const btn = ev.target;
+			btn.disabled = true;
+			btn.value = _('Generating...');
+
+			return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'generate_warp'], 'json').then((res) => {
+				btn.disabled = false;
+				btn.value = _('Generate WARP');
+
+				if (res && res.success) {
+					ui.addNotification(null, E('p', _('WARP config generated successfully (Success!)')), 'info');
+					
+					uci.set('homeproxy', 'config', 'warp_endpoint', res.endpoint || 'engage.cloudflareclient.com:2408');
+					uci.set('homeproxy', 'config', 'warp_private_key', res.private_key || '');
+					uci.set('homeproxy', 'config', 'warp_peer_public_key', res.peer_public_key || '');
+					uci.set('homeproxy', 'config', 'warp_addresses', res.addresses || '');
+					uci.set('homeproxy', 'config', 'warp_reserved', res.reserved || '');
+
+					const setVal = (optName, val) => {
+						const input = document.querySelector(`input[name="cbid.homeproxy.config.${optName}"]`);
+						if (input) {
+							input.value = val;
+							input.dispatchEvent(new Event('change', { bubbles: true }));
+						}
+					};
+					setVal('warp_endpoint', res.endpoint || 'engage.cloudflareclient.com:2408');
+					setVal('warp_private_key', res.private_key || '');
+					setVal('warp_peer_public_key', res.peer_public_key || '');
+					setVal('warp_addresses', res.addresses || '');
+					setVal('warp_reserved', res.reserved || '');
+				} else {
+					ui.addNotification(null, E('p', (res && res.error) ? res.error : _('WARP generation failed')), 'error');
+				}
+			}).catch((err) => {
+				btn.disabled = false;
+				btn.value = _('Generate WARP');
+				ui.addNotification(null, E('p', _('Failed to execute WARP generator: ') + err), 'error');
+			});
+		};
+
+		o = s.taboption('warp', form.Value, 'warp_endpoint', _('Endpoint'),
+			_('Cloudflare WARP server address and port.'));
+		o.default = 'engage.cloudflareclient.com:2408';
+		o.placeholder = 'engage.cloudflareclient.com:2408';
+		o.depends('warp_enabled', '1');
+
+		o = s.taboption('warp', form.Value, 'warp_private_key', _('Private key'),
+			_('WireGuard private key (Base64).'));
+		o.password = true;
+		o.depends('warp_enabled', '1');
+
+		o = s.taboption('warp', form.Value, 'warp_peer_public_key', _('Peer public key'),
+			_('Cloudflare WARP peer public key.'));
+		o.depends('warp_enabled', '1');
+
+		o = s.taboption('warp', form.Value, 'warp_addresses', _('Interface addresses'),
+			_('Local IPv4 and IPv6 interface addresses separated by comma.'));
+		o.placeholder = '172.16.0.2/32,2606:4700:.../128';
+		o.depends('warp_enabled', '1');
+
+		o = s.taboption('warp', form.Value, 'warp_reserved', _('Reserved'),
+			_('Header noise: 3 bytes separated by comma (e.g. 234,116,104).'));
+		o.placeholder = '234,116,104';
+		o.depends('warp_enabled', '1');
+		/* WARP tab end */
+
+
 		o = s.taboption('ru_rules', form.SectionValue, '_ru_rules', form.TypedSection, 'proxy_ru_rule');
+
 		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
 
 		ss = o.subsection;

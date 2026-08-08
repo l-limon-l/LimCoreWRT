@@ -4427,3 +4427,79 @@ msgstr "Обновить LimCore"
 msgid "Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases."
 msgstr "Автоматическое обновление приложения LimCore LuCI, переводов и скриптов с GitHub."
 
+msgid "Enable WARP"
+msgstr "Включить Warp*"
+
+msgid "Route AI services (Google Gemini, Antigravity, ChatGPT, Claude) through Cloudflare WARP."
+msgstr "Маршрутизировать заблокированные в РФ нейросети (Gemini, Antigravity, ChatGPT, Claude) через Cloudflare WARP."
+
+msgid "WARP config generator"
+msgstr "Генерация конфига WARP"
+
+msgid "Click to automatically register account keys and settings via Cloudflare WARP API."
+msgstr "Нажмите кнопку для автоматической регистрации ключей и настроек в API Cloudflare WARP."
+
+msgid "Generate WARP"
+msgstr "Сгенерировать WARP"
+
+msgid "Generating..."
+msgstr "Генерация..."
+
+msgid "WARP config generated successfully (Success!)"
+msgstr "WARP конфиг успешно сгенерирован (Success!)"
+
+msgid "WARP generation failed"
+msgstr "Ошибка генерации WARP"
+
+msgid "Failed to execute WARP generator: "
+msgstr "Ошибка вызова генератора WARP: "
+
+msgid "Endpoint"
+msgstr "Конечная точка (Endpoint)"
+
+msgid "Cloudflare WARP server address and port."
+msgstr "Адрес и порт сервера Cloudflare WARP."
+
+msgid "Private key"
+msgstr "Приватный ключ"
+
+msgid "WireGuard private key (Base64)."
+msgstr "Приватный ключ WireGuard (Base64)."
+
+msgid "Peer public key"
+msgstr "Публичный ключ"
+
+msgid "Cloudflare WARP peer public key."
+msgstr "Публичный ключ пира Cloudflare WARP."
+
+msgid "Interface addresses"
+msgstr "Адреса интерфейса"
+
+msgid "Local IPv4 and IPv6 interface addresses separated by comma."
+msgstr "Локальные IPv4 и IPv6 адреса через запятую."
+
+msgid "Reserved"
+msgstr "Резервный (Reserved)"
+
+msgid "Header noise: 3 bytes separated by comma (e.g. 234,116,104)."
+msgstr "Зашумление заголовков: 3 байта через запятую (например, 234,116,104)."
+
+msgid "TLS Fragment"
+msgstr "TLS Фрагментирование"
+
+msgid "Split TLS ClientHello packets to bypass SNI/DPI filtering."
+msgstr "Разбивать пакеты TLS ClientHello для обхода фильтрации ТСПУ/DPI."
+
+msgid "Fragment size"
+msgstr "Размер фрагментов"
+
+msgid "Range or size of packets in bytes (e.g. 10-30)."
+msgstr "Диапазон или размер пакетов в байтах (например, 10-30)."
+
+msgid "Fragment sleep delay"
+msgstr "Задержка фрагментов"
+
+msgid "Sleep delay between fragmented packets in milliseconds (e.g. 5-10)."
+msgstr "Задержка между фрагментами в миллисекундах (например, 5-10)."
+
+

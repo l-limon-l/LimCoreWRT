@@ -346,8 +346,19 @@ if (action === 'info') {
 		}
 	}
 
+} else if (action === 'generate_warp') {
+	const fd = popen('/usr/bin/ucode /etc/homeproxy/scripts/warp_gen.uc 2>/dev/null');
+	if (fd) {
+		const out = fd.read('all'); fd.close();
+		try { result = json(trim(out)); } catch(e) { result = { success: false, error: 'invalid json output from warp_gen.uc' }; }
+	} else {
+		result = { success: false, error: 'failed to run warp_gen.uc' };
+	}
+
 } else {
 	result = { error: `unknown action: ${action}` };
 }
 
-printf('%s\n', result);
+printf('%J\n', result);
+
+
