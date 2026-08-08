@@ -1,24 +1,47 @@
 #!/usr/bin/ucode
 /*
  * Cloudflare WARP Key & Config Generator for HomeProxy
+ * Based on Throne & Cloudflare WARP API
  */
 
 'use strict';
 
 import { popen, access, readfile, writefile, unlink } from 'fs';
-import { rand } from 'math';
-import { clock, time } from 'time';
 
 function shellquote(s) {
 	return `'${replace(s, "'", "'\\''")}'`;
 }
 
+let seed = 12345;
+function rand_fallback() {
+	seed = (seed * 1103515245 + 12345) % 2147483647;
+	return seed;
+}
+
 function get_rand_id() {
-	let r1 = 0;
-	try { r1 = rand(); } catch (e) { r1 = time(); }
-	let r2 = 0;
-	try { r2 = clock(); } catch (e) { r2 = 12345; }
-	return sprintf('%x_%x', r1, r2);
+	if (access('/proc/sys/kernel/random/uuid')) {
+		const uuid = readfile('/proc/sys/kernel/random/uuid');
+		if (uuid && length(trim(uuid))) {
+			return replace(trim(uuid), /-/g, '');
+		}
+	}
+	const fd = popen('hexdump -n 8 -e \'4/4 "%08x"\' /dev/urandom 2>/dev/null || date +%s%N 2>/dev/null');
+	if (fd) {
+		const out = trim(fd.read('all') || '');
+		fd.close();
+		if (length(out)) return out;
+	}
+	return 'warp_' + sprintf('%d', rand_fallback());
+}
+
+function get_iso_date() {
+	const fd = popen('date -u +"%Y-%m-%dT%H:%M:%S.000+00:00" 2>/dev/null');
+	if (fd) {
+		const out = trim(fd.read('all') || '');
+		fd.close();
+		if (length(out)) return out;
+	}
+	return '2024-01-01T00:00:00.000+00:00';
 }
 
 function generate_keypair() {
@@ -92,19 +115,6 @@ function generate_keypair() {
 		}
 	}
 
-	/* 4. Fallback: python3 cryptography */
-	if (priv && !pub && (access('/usr/bin/python3') || access('/usr/bin/python'))) {
-		const py_cmd = sprintf(
-			'python3 -c "import base64, cryptography.hazmat.primitives.asymmetric.x25519 as x; k=x.X25519PrivateKey.from_private_bytes(base64.b64decode(\'%s\')); print(base64.b64encode(k.public_key().public_bytes_raw()).decode())" 2>/dev/null',
-			priv
-		);
-		const fd_py = popen(py_cmd);
-		if (fd_py) {
-			pub = trim(fd_py.read('all') || '');
-			fd_py.close();
-		}
-	}
-
 	return { private_key: priv, public_key: pub };
 }
 
@@ -114,8 +124,8 @@ function register_warp(pub_key) {
 	const payload = sprintf('%J', {
 		key: pub_key,
 		install_id: "",
-		fcm_token: "",
-		tos: "2019-11-25T00:00:00.000-07:00",
+		warp_enabled: true,
+		tos: get_iso_date(),
 		type: "Android",
 		locale: "en_US"
 	});
@@ -126,15 +136,28 @@ function register_warp(pub_key) {
 
 	writefile(tmp_json, payload);
 
-	const url = 'https://api.cloudflareclient.com/v0i1909051800/reg';
-	const cmd = `curl -s -X POST -H "Content-Type: application/json" -H "User-Agent: okhttp/3.12.1" -d @${shellquote(tmp_json)} -o ${shellquote(tmp_res)} --connect-timeout 15 ${shellquote(url)} >/dev/null 2>&1 || wget -qO ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: okhttp/3.12.1" --post-file=${shellquote(tmp_json)} --timeout=15 ${shellquote(url)} >/dev/null 2>&1 || uclient-fetch -q -O ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: okhttp/3.12.1" --post-file=${shellquote(tmp_json)} ${shellquote(url)} >/dev/null 2>&1`;
+	const urls = [
+		'https://api.cloudflareclient.com/v0a737/reg',
+		'https://api.cloudflareclient.com/v0a884/reg',
+		'https://api.cloudflareclient.com/v0i1909051800/reg'
+	];
 
-	system(cmd);
+	let raw_res = null;
+
+	for (let url in urls) {
+		const cmd = `curl -s -X POST -H "Content-Type: application/json" -H "User-Agent: WARP for Android" -d @${shellquote(tmp_json)} -o ${shellquote(tmp_res)} --connect-timeout 10 ${shellquote(url)} >/dev/null 2>&1 || wget -qO ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: WARP for Android" --post-file=${shellquote(tmp_json)} --timeout=10 ${shellquote(url)} >/dev/null 2>&1 || uclient-fetch -q -O ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: WARP for Android" --post-file=${shellquote(tmp_json)} ${shellquote(url)} >/dev/null 2>&1`;
+		system(cmd);
+
+		if (access(tmp_res)) {
+			raw_res = readfile(tmp_res);
+			unlink(tmp_res);
+			if (raw_res && length(trim(raw_res))) {
+				break;
+			}
+		}
+	}
 
 	unlink(tmp_json);
-
-	const raw_res = readfile(tmp_res);
-	unlink(tmp_res);
 
 	if (!raw_res || !length(raw_res)) return null;
 
@@ -154,14 +177,14 @@ const keys = generate_keypair();
 if (!keys.public_key || !keys.private_key) {
 	print(sprintf('%J\n', {
 		success: false,
-		error: "Failed to generate Curve25519 keypair."
+		error: "Failed to generate WireGuard keypair."
 	}));
 	exit(1);
 }
 
 const reg_data = register_warp(keys.public_key);
 
-if (!reg_data || !reg_data.result) {
+if (!reg_data || (!reg_data.result && !reg_data.config)) {
 	const err_msg = reg_data?.errors?.[0]?.message || reg_data?.message || "Failed to register with Cloudflare WARP API. Check internet connectivity.";
 	print(sprintf('%J\n', {
 		success: false,
@@ -170,19 +193,29 @@ if (!reg_data || !reg_data.result) {
 	exit(1);
 }
 
-const res = reg_data.result;
+const res = reg_data.result || reg_data;
 const peer = res.config?.peers?.[0];
 const iface = res.config?.interface;
 
 const peer_pub = peer?.public_key || "bmXOC+F1FxEMF9dyiK2H5/1SUTzH0JuVo51h2wPfgyo=";
-const endpoint = peer?.endpoint?.host?.v4 || peer?.endpoint?.host || "engage.cloudflareclient.com:2408";
+let endpoint = peer?.endpoint?.host || peer?.endpoint?.v4 || peer?.endpoint?.host?.v4 || "engage.cloudflareclient.com:2408";
+if (endpoint && !match(endpoint, /:/)) {
+	endpoint = endpoint + ":2408";
+}
 
-let addr_v4 = iface?.addresses?.v4 || "172.16.0.2/32";
-let addr_v6 = iface?.addresses?.v6 || "";
+let addr_v4 = iface?.addresses?.v4 || iface?.addresses?.all?.[0] || "172.16.0.2";
+let addr_v6 = iface?.addresses?.v6 || iface?.addresses?.all?.[1] || "";
 
-let addresses = addr_v4;
-if (addr_v6 && length(addr_v6)) {
-	addresses = addresses + "," + addr_v6;
+const format_cidr = (addr, is_v6) => {
+	if (!addr || !length(addr)) return null;
+	if (match(addr, /\//)) return addr;
+	return is_v6 ? addr + '/128' : addr + '/32';
+};
+
+let addresses = format_cidr(addr_v4, false);
+const formatted_v6 = format_cidr(addr_v6, true);
+if (formatted_v6 && length(formatted_v6)) {
+	addresses = (addresses ? addresses + "," : "") + formatted_v6;
 }
 
 let reserved_str = "0,0,0";
@@ -195,7 +228,8 @@ print(sprintf('%J\n', {
 	private_key: keys.private_key,
 	peer_public_key: peer_pub,
 	endpoint: endpoint,
-	addresses: addresses,
+	addresses: addresses || "172.16.0.2/32",
 	reserved: reserved_str
 }));
+
 
