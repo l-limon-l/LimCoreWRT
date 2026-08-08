@@ -46,50 +46,49 @@ function get_iso_date() {
 
 function generate_keypair() {
 	let priv = null, pub = null;
+	let debug_logs = [];
 
-	/* 1. Try sing-box / hiddify-core built-in keypair generator (sing-box generate wireguard-keypair) */
+	/* 1. Try sing-box / hiddify-core built-in keypair generator */
 	const sb_cmds = [
 		'/usr/bin/sing-box generate wireguard-keypair 2>&1',
 		'/usr/bin/sing-box generate wg-keypair 2>&1',
 		'/usr/bin/sing-box generate keypair 2>&1',
+		'/usr/bin/sing-box-extended generate wireguard-keypair 2>&1',
 		'/usr/bin/hiddify-core generate wireguard-keypair 2>&1',
 		'/usr/bin/hiddify-core generate wg-keypair 2>&1',
-		'/usr/bin/sing-box-extended generate wireguard-keypair 2>&1',
-		'/usr/bin/sing-box-extended generate wg-keypair 2>&1',
-		'/usr/bin/hiddify generate wireguard-keypair 2>&1',
-		'/usr/bin/hiddify generate wg-keypair 2>&1',
-		'/usr/sbin/sing-box generate wireguard-keypair 2>&1',
 		'sing-box generate wireguard-keypair 2>&1',
-		'sing-box generate wg-keypair 2>&1',
-		'hiddify-core generate wireguard-keypair 2>&1',
-		'hiddify-core generate wg-keypair 2>&1'
+		'sing-box generate wg-keypair 2>&1'
 	];
 
 	for (let cmd in sb_cmds) {
 		const fd_sb = popen(cmd);
 		if (fd_sb) {
-			const out = fd_sb.read('all') || ''; fd_sb.close();
+			const out = trim(fd_sb.read('all') || ''); fd_sb.close();
 			if (length(out)) {
+				push(debug_logs, cmd + " => " + substr(replace(out, /\n/g, ' '), 0, 80));
+
 				// Try JSON parsing
 				try {
 					const j = json(out);
-					const tmp_priv = j?.private_key || j?.PrivateKey || j?.['private-key'];
-					const tmp_pub  = j?.public_key  || j?.PublicKey  || j?.['public-key'];
+					const tmp_priv = j?.private_key || j?.PrivateKey || j?.['private-key'] || j?.privateKey;
+					const tmp_pub  = j?.public_key  || j?.PublicKey  || j?.['public-key']  || j?.publicKey;
 					if (tmp_priv && tmp_pub) {
-						priv = tmp_priv;
-						pub  = tmp_pub;
+						priv = trim(tmp_priv);
+						pub  = trim(tmp_pub);
 						break;
 					}
 				} catch(e) {}
 
-				// Try Regex matching
-				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
-				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
+				// Try Flexible Regex matching
+				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+/=]{40,48})/);
+				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+/=]{40,48})/);
 				if (m_priv && m_pub) {
-					priv = m_priv[1];
-					pub  = m_pub[1];
+					priv = trim(m_priv[1]);
+					pub  = trim(m_pub[1]);
 					break;
 				}
+			} else {
+				push(debug_logs, cmd + " => (empty)");
 			}
 		}
 	}
@@ -135,7 +134,7 @@ function generate_keypair() {
 		}
 	}
 
-	return { private_key: priv, public_key: pub };
+	return { private_key: priv, public_key: pub, debug: join(" ; ", debug_logs) };
 }
 
 function register_warp(pub_key) {
@@ -197,7 +196,7 @@ const keys = generate_keypair();
 if (!keys.public_key || !keys.private_key) {
 	print(sprintf('%J\n', {
 		success: false,
-		error: "Failed to generate WireGuard keypair."
+		error: "Failed to generate WireGuard keypair. Logs: " + (keys.debug || "none")
 	}));
 	exit(1);
 }
