@@ -815,6 +815,7 @@ return view.extend({
 
 		o = s.taboption('warp', form.Button, '_warp_gen_btn', _('WARP config generator'),
 			_('Click to automatically register account keys and settings via Cloudflare WARP API.'));
+		o.depends('warp_enabled', '1');
 		o.inputtitle = _('Generate WARP');
 		o.inputstyle = 'apply';
 		o.onclick = function(ev) {
@@ -836,9 +837,15 @@ return view.extend({
 					uci.set('homeproxy', 'config', 'warp_reserved', res.reserved || '');
 
 					const setVal = (optName, val) => {
-						const input = document.querySelector(`input[name="cbid.homeproxy.config.${optName}"]`);
+						let input = document.querySelector(`input[name="cbid.homeproxy.config.${optName}"]`);
+						if (!input) input = document.getElementById(`cbid.homeproxy.config.${optName}`);
+						if (!input) {
+							let widget = document.getElementById(`widget.cbid.homeproxy.config.${optName}`);
+							if (widget) input = widget.querySelector('input');
+						}
 						if (input) {
 							input.value = val;
+							input.dispatchEvent(new Event('input', { bubbles: true }));
 							input.dispatchEvent(new Event('change', { bubbles: true }));
 						}
 					};
