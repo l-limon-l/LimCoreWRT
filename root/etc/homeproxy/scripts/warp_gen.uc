@@ -79,14 +79,22 @@ function generate_keypair() {
 					}
 				} catch(e) {}
 
-				// 2. Try Flexible Regex matching with precise length to avoid garbage characters
-				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([A-Za-z0-9+\x2F=]{40,48})/);
-				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([A-Za-z0-9+\x2F=]{40,48})/);
-				if (m_priv && m_pub) {
-					priv = trim(m_priv[1]);
-					pub  = trim(m_pub[1]);
-					break;
+				// 2. Try Robust Token parsing (avoid complex regex character classes)
+				let tokens = split(out, /[\s]+/);
+				for (let i = 0; i < length(tokens); i++) {
+					let token = tokens[i];
+					if (match(token, /[Pp]rivate[A-Za-z_-]*[Kk]ey/)) {
+						let kv = split(token, ":");
+						if (length(kv) >= 2 && length(kv[1]) >= 40) priv = trim(kv[1]);
+						else if (i + 1 < length(tokens)) priv = trim(tokens[i+1]);
+					}
+					if (match(token, /[Pp]ublic[A-Za-z_-]*[Kk]ey/)) {
+						let kv = split(token, ":");
+						if (length(kv) >= 2 && length(kv[1]) >= 40) pub = trim(kv[1]);
+						else if (i + 1 < length(tokens)) pub = trim(tokens[i+1]);
+					}
 				}
+				if (priv && pub) break;
 			} else {
 				push(debug_logs, cmd + " => (empty)");
 			}
