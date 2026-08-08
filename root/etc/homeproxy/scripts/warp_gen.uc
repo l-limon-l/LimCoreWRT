@@ -50,18 +50,21 @@ function generate_keypair() {
 
 	/* 1. Try sing-box / hiddify-core built-in keypair generator */
 	const sb_cmds = [
-		'/usr/bin/sing-box generate wg-keypair 2>&1',
-		'/usr/bin/sing-box generate wireguard-keypair 2>&1',
-		'/usr/bin/sing-box-extended generate wg-keypair 2>&1',
-		'/usr/bin/hiddify-core generate wg-keypair 2>&1',
-		'sing-box generate wg-keypair 2>&1'
+		'NO_COLOR=1 /usr/bin/sing-box generate wg-keypair 2>&1',
+		'NO_COLOR=1 /usr/bin/sing-box generate wireguard-keypair 2>&1',
+		'NO_COLOR=1 /usr/bin/sing-box-extended generate wg-keypair 2>&1',
+		'NO_COLOR=1 /usr/bin/hiddify-core generate wg-keypair 2>&1',
+		'NO_COLOR=1 sing-box generate wg-keypair 2>&1'
 	];
 
 	for (let cmd in sb_cmds) {
 		const fd_sb = popen(cmd);
 		if (fd_sb) {
-			const out = trim(fd_sb.read('all') || ''); fd_sb.close();
+			let out = trim(fd_sb.read('all') || ''); fd_sb.close();
 			if (length(out)) {
+				// Strip any ANSI color codes just in case NO_COLOR=1 is ignored
+				out = replace(out, /\x1B\[[0-9;]*[a-zA-Z]/g, '');
+
 				push(debug_logs, cmd + " => " + substr(replace(out, /\n/g, ' '), 0, 200));
 
 				// 1. Try JSON parsing
@@ -76,9 +79,9 @@ function generate_keypair() {
 					}
 				} catch(e) {}
 
-				// 2. Try Flexible Regex matching without forward slash in character class
-				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([^\s"']+)/);
-				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([^\s"']+)/);
+				// 2. Try Flexible Regex matching with precise length to avoid garbage characters
+				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([A-Za-z0-9+\x2F=]{40,48})/);
+				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([A-Za-z0-9+\x2F=]{40,48})/);
 				if (m_priv && m_pub) {
 					priv = trim(m_priv[1]);
 					pub  = trim(m_pub[1]);
