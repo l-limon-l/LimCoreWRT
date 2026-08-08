@@ -883,8 +883,61 @@ return view.extend({
 		o.depends('warp_enabled', '1');
 		/* WARP tab end */
 
+		/* Tunnel Settings tab start */
+		s.tab('tunnel', _('Tunnel Settings'));
+
+		o = s.taboption('tunnel', form.Flag, 'global_tls_fragment', _('Enable global TLS Fragment') + ' 🛠️',
+			_('Automatically apply TLS ClientHello packet splitting to active nodes to bypass SNI/DPI filtering.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('tunnel', form.Value, 'global_tls_fragment_size', _('Fragment size'),
+			_('Range or size of packets in bytes (e.g. 10-30).'));
+		o.placeholder = '10-30';
+		o.default = '10-30';
+		o.depends('global_tls_fragment', '1');
+
+		o = s.taboption('tunnel', form.Value, 'global_tls_fragment_sleep', _('Fragment sleep delay'),
+			_('Sleep delay between fragmented packets in milliseconds (e.g. 5-10).'));
+		o.placeholder = '5-10';
+		o.default = '5-10';
+		o.depends('global_tls_fragment', '1');
+
+		o = s.taboption('tunnel', form.Flag, 'global_multiplex', _('Enable global Multiplexing (Mux)') + ' 🔀',
+			_('Automatically multiplex TCP streams on active nodes into persistent connections.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('tunnel', form.ListValue, 'global_multiplex_protocol', _('Mux protocol'),
+			_('Multiplexing protocol.'));
+		o.value('h2mux', 'h2mux');
+		o.value('smux', 'smux');
+		o.value('yamux', 'yamux');
+		o.default = 'h2mux';
+		o.depends('global_multiplex', '1');
+
+		o = s.taboption('tunnel', form.Value, 'global_multiplex_max_connections', _('Maximum connections'),
+			_('Maximum multiplexed connections (default 8).'));
+		o.datatype = 'uinteger';
+		o.placeholder = '8';
+		o.default = '8';
+		o.depends('global_multiplex', '1');
+
+		o = s.taboption('tunnel', form.Value, 'global_multiplex_min_streams', _('Minimum streams'),
+			_('Minimum streams before opening new connection (default 4).'));
+		o.datatype = 'uinteger';
+		o.placeholder = '4';
+		o.default = '4';
+		o.depends('global_multiplex', '1');
+
+		o = s.taboption('tunnel', form.Flag, 'global_multiplex_padding', _('Enable padding'),
+			_('Add padding bytes to multiplexed connections to resist traffic analysis.'));
+		o.default = o.enabled;
+		o.depends('global_multiplex', '1');
+		/* Tunnel Settings tab end */
 
 		o = s.taboption('ru_rules', form.SectionValue, '_ru_rules', form.TypedSection, 'proxy_ru_rule');
+
 
 		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
 

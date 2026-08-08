@@ -122,7 +122,18 @@ const warp_peer_public_key = uci.get(uciconfig, ucimain, 'warp_peer_public_key')
 const warp_addresses = uci.get(uciconfig, ucimain, 'warp_addresses');
 const warp_reserved = uci.get(uciconfig, ucimain, 'warp_reserved');
 
+const global_tls_fragment = uci.get(uciconfig, ucimain, 'global_tls_fragment');
+const global_tls_fragment_size = uci.get(uciconfig, ucimain, 'global_tls_fragment_size') || '10-30';
+const global_tls_fragment_sleep = uci.get(uciconfig, ucimain, 'global_tls_fragment_sleep') || '5-10';
+
+const global_multiplex = uci.get(uciconfig, ucimain, 'global_multiplex');
+const global_multiplex_protocol = uci.get(uciconfig, ucimain, 'global_multiplex_protocol') || 'h2mux';
+const global_multiplex_max_connections = uci.get(uciconfig, ucimain, 'global_multiplex_max_connections') || '8';
+const global_multiplex_min_streams = uci.get(uciconfig, ucimain, 'global_multiplex_min_streams') || '4';
+const global_multiplex_padding = uci.get(uciconfig, ucimain, 'global_multiplex_padding');
+
 let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outbound_dns,
+
 
     domain_strategy, sniff_override, dns_server, china_dns_server, iran_dns_server, russia_dns_server,
     secure_dns_server, proxy_calls, no_proxy_torrents, show_advanced_rules, dns_default_strategy, dns_default_server, dns_disable_cache,
@@ -475,23 +486,23 @@ function generate_outbound(node) {
 		authenticated_length: strToBool(node.vmess_authenticated_length),
 		packet_encoding: node.packet_encoding,
 
-		multiplex: (node.multiplex === '1') ? {
+		multiplex: (node.multiplex === '1' || (global_multiplex === '1' && (node.type in ['shadowsocks', 'trojan', 'vless', 'vmess']))) ? {
 			enabled: true,
-			protocol: node.multiplex_protocol,
-			max_connections: strToInt(node.multiplex_max_connections),
-			min_streams: strToInt(node.multiplex_min_streams),
+			protocol: node.multiplex_protocol || global_multiplex_protocol,
+			max_connections: strToInt(node.multiplex_max_connections || global_multiplex_max_connections),
+			min_streams: strToInt(node.multiplex_min_streams || global_multiplex_min_streams),
 			max_streams: strToInt(node.multiplex_max_streams),
-			padding: strToBool(node.multiplex_padding),
+			padding: (node.multiplex === '1') ? strToBool(node.multiplex_padding) : (global_multiplex_padding !== '0'),
 			brutal: (node.multiplex_brutal === '1') ? {
 				enabled: true,
 				up_mbps: strToInt(node.multiplex_brutal_up),
 				down_mbps: strToInt(node.multiplex_brutal_down)
 			} : null
 		} : null,
-		tls_fragment: (node.tls_fragment === '1') ? {
+		tls_fragment: (node.tls_fragment === '1' || (global_tls_fragment === '1' && node.tls === '1')) ? {
 			enabled: true,
-			size: node.tls_fragment_size,
-			sleep: node.tls_fragment_sleep
+			size: node.tls_fragment_size || global_tls_fragment_size,
+			sleep: node.tls_fragment_sleep || global_tls_fragment_sleep
 		} : null,
 		/* Shadowsocks has no top-level tls field in ANY sing-box-based core — for a
 		 * ShadowTLS-wrapped Shadowsocks the TLS lives on the separate shadowtls transport
@@ -508,6 +519,12 @@ function generate_outbound(node) {
 			max_version: node.tls_max_version,
 			cipher_suites: node.tls_cipher_suites,
 			certificate_path: node.tls_cert_path,
+			fragment: (node.tls_fragment === '1' || (global_tls_fragment === '1' && node.tls === '1')) ? {
+				enabled: true,
+				size: node.tls_fragment_size || global_tls_fragment_size,
+				sleep: node.tls_fragment_sleep || global_tls_fragment_sleep
+			} : null,
+
 			ech: (node.tls_ech === '1') ? {
 				enabled: true,
 				config: node.tls_ech_config,

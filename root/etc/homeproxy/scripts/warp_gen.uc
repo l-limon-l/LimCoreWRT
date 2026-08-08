@@ -14,21 +14,33 @@ function shellquote(s) {
 function generate_keypair() {
 	let priv = null, pub = null;
 
-	/* 1. Try wg CLI first (wireguard-tools) */
-	const fd_wg = popen('wg genkey 2>/dev/null');
-	if (fd_wg) {
-		priv = trim(fd_wg.read('all'));
-		fd_wg.close();
-		if (priv && length(priv)) {
-			const fd_pub = popen(`echo ${shellquote(priv)} | wg pubkey 2>/dev/null`);
-			if (fd_pub) {
-				pub = trim(fd_pub.read('all'));
-				fd_pub.close();
+	/* 1. Try sing-box / hiddify-core built-in wg-keypair generator first (ALWAYS present) */
+	const fd_sb = popen('sing-box generate wg-keypair 2>/dev/null || /usr/bin/hiddify-core generate wg-keypair 2>/dev/null');
+	if (fd_sb) {
+		const out = fd_sb.read('all'); fd_sb.close();
+		const m_priv = match(out, /Private key:\s*(\S+)/);
+		const m_pub  = match(out, /Public key:\s*(\S+)/);
+		if (m_priv) priv = m_priv[1];
+		if (m_pub)  pub  = m_pub[1];
+	}
+
+	/* 2. Fallback to wg CLI (wireguard-tools) */
+	if (!priv || !pub) {
+		const fd_wg = popen('wg genkey 2>/dev/null');
+		if (fd_wg) {
+			priv = trim(fd_wg.read('all'));
+			fd_wg.close();
+			if (priv && length(priv)) {
+				const fd_pub = popen(`echo ${shellquote(priv)} | wg pubkey 2>/dev/null`);
+				if (fd_pub) {
+					pub = trim(fd_pub.read('all'));
+					fd_pub.close();
+				}
 			}
 		}
 	}
 
-	/* 2. Fallback to openssl if wg is not present or failed */
+	/* 3. Fallback to openssl if wg is not present or failed */
 	if ((!priv || !pub) && (access('/usr/bin/openssl') || access('/bin/openssl'))) {
 		const tmp_key = '/tmp/warp_key_' + sprintf('%x', rand()) + '.key';
 		system(`openssl genpkey -algorithm X25519 -out ${shellquote(tmp_key)} 2>/dev/null`);
@@ -47,7 +59,7 @@ function generate_keypair() {
 		}
 	}
 
-	/* 3. Fallback: if we still lack public key from private key, try python3 cryptography */
+	/* 4. Fallback: python3 cryptography */
 	if (priv && !pub && (access('/usr/bin/python3') || access('/usr/bin/python'))) {
 		const py_cmd = sprintf(
 			'python3 -c "import base64, cryptography.hazmat.primitives.asymmetric.x25519 as x; k=x.X25519PrivateKey.from_private_bytes(base64.b64decode(\'%s\')); print(base64.b64encode(k.public_key().public_bytes_raw()).decode())" 2>/dev/null',
@@ -109,7 +121,7 @@ const keys = generate_keypair();
 if (!keys.public_key || !keys.private_key) {
 	print(sprintf('%J\n', {
 		success: false,
-		error: "Failed to generate Curve25519 keypair. Install wireguard-tools (wg) or openssl."
+		error: "Failed to generate Curve25519 keypair."
 	}));
 	exit(1);
 }

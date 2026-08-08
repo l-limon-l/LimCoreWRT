@@ -854,7 +854,8 @@ function buildLimCoreAppCard() {
 
 	return E('div', { style: 'margin-bottom:12px; padding:8px 10px; border:1px solid #ddd; border-radius:4px' }, [
 		E('div', { style: 'display:flex; align-items:center; flex-wrap:wrap; gap:6px' }, [
-			E('strong', {}, 'LimCore App (luci-app-re-homeproxy)'),
+			E('strong', {}, 'LimCore App'),
+
 			statusEl,
 			updateBtn,
 			msgEl

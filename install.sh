@@ -96,10 +96,11 @@ APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
 [ -n "$APPURL" ] || die "Не нашёл пакет luci-app-re-homeproxy${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
 dl "$APPURL" /tmp/app.$EXT || die "Не удалось скачать приложение (попробуйте GH_MIRROR=...)."
 if [ "$PM" = apk ]; then
-	apk add /tmp/app.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/app.$EXT || die "apk add завершился ошибкой."
+	apk add --allow-untrusted --force-overwrite /tmp/app.$EXT || die "apk add завершился ошибкой."
 else
-	opkg update >/dev/null 2>&1; opkg install /tmp/app.$EXT || die "opkg install завершился ошибкой."
+	opkg update >/dev/null 2>&1; opkg install --force-reinstall /tmp/app.$EXT || die "opkg install завершился ошибкой."
 fi
+
 rm -f /tmp/app.$EXT
 ok "  приложение установлено."
 

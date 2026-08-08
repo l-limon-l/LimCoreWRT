@@ -1,13 +1,62 @@
 #!/bin/sh
-# LimCore Auto-Updater for OpenWrt
-# https://github.com/l-limon-l/LimCoreWRT
+# Fast 1-Click Updater for LimCore App & Translations
+set -e
 
-G='\033[0;32m'; C='\033[0;36m'; N='\033[0m'
-echo -e "${C}=== LimCore Auto-Updater ===${N}"
+LOG=/tmp/limcore-update.log
+echo "Starting LimCore app update..." > "$LOG"
 
-[ "$(id -u)" = 0 ] || { echo "Ошибка: Запустите от root."; exit 1; }
+if command -v apk >/dev/null 2>&1; then PM=apk; EXT=apk
+elif command -v opkg >/dev/null 2>&1; then PM=opkg; EXT=ipk
+else echo "No supported package manager found." >> "$LOG"; exit 1; fi
 
-echo -e "${C}Скачивание и автоматическое обновление LimCore...${N}"
-wget -qO- https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh | sh -s -- --auto
+[ -r /etc/openwrt_release ] && . /etc/openwrt_release
+VER="${DISTRIB_RELEASE:-}"
+LEGACY=0
+case "$VER" in 23.05*) LEGACY=1 ;; esac
+SUFFIX="_all"
+[ "$LEGACY" = 1 ] && SUFFIX="_all-legacy"
 
-echo -e "${G}=== Обновление LimCore завершено! ===${N}"
+echo "Fetching latest release from GitHub..." >> "$LOG"
+REL_JSON=$(wget -qO- --timeout=15 https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest 2>/dev/null || wget -qO- --timeout=15 https://api.github.com/repos/l-limon-l/LimCoreWRT/releases 2>/dev/null)
+
+APP_URL=$(echo "$REL_JSON" | grep -o "https://github\.com/[^\"]*luci-app-re-homeproxy[^\"]*${SUFFIX}\.${EXT}" | head -1)
+if [ -z "$APP_URL" ]; then
+    APP_URL=$(echo "$REL_JSON" | grep -o "https://github\.com/[^\"]*luci-app-re-homeproxy[^\"]*\.${EXT}" | head -1)
+fi
+
+if [ -z "$APP_URL" ]; then
+    echo "Error: Could not find package URL in release." >> "$LOG"
+    exit 1
+fi
+
+echo "Downloading app package..." >> "$LOG"
+wget -qO /tmp/limcore_app.$EXT --timeout=30 "$APP_URL" || { echo "Download failed." >> "$LOG"; exit 1; }
+
+echo "Installing app package..." >> "$LOG"
+if [ "$PM" = "apk" ]; then
+    apk add --allow-untrusted --force-overwrite /tmp/limcore_app.$EXT >> "$LOG" 2>&1 || true
+else
+    opkg install --force-reinstall /tmp/limcore_app.$EXT >> "$LOG" 2>&1 || true
+fi
+rm -f /tmp/limcore_app.$EXT
+
+# Russian language translation package
+RU_URL=$(echo "$REL_JSON" | grep -o "https://github\.com/[^\"]*luci-i18n-homeproxy-ru[^\"]*\.${EXT}" | head -1)
+if [ -n "$RU_URL" ]; then
+    echo "Downloading Russian translation package..." >> "$LOG"
+    if wget -qO /tmp/limcore_ru.$EXT --timeout=20 "$RU_URL"; then
+        if [ "$PM" = "apk" ]; then
+            apk add --allow-untrusted --force-overwrite /tmp/limcore_ru.$EXT >> "$LOG" 2>&1 || true
+        else
+            opkg install --force-reinstall /tmp/limcore_ru.$EXT >> "$LOG" 2>&1 || true
+        fi
+        rm -f /tmp/limcore_ru.$EXT
+    fi
+fi
+
+echo "Restarting services..." >> "$LOG"
+/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+/etc/init.d/uhttpd restart >/dev/null 2>&1 || true
+/etc/init.d/nginx restart >/dev/null 2>&1 || true
+
+echo "LimCore app update finished successfully!" >> "$LOG"
