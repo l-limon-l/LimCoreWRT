@@ -50,13 +50,10 @@ function generate_keypair() {
 
 	/* 1. Try sing-box / hiddify-core built-in keypair generator */
 	const sb_cmds = [
-		'/usr/bin/sing-box generate wireguard-keypair 2>&1',
 		'/usr/bin/sing-box generate wg-keypair 2>&1',
-		'/usr/bin/sing-box generate keypair 2>&1',
-		'/usr/bin/sing-box-extended generate wireguard-keypair 2>&1',
-		'/usr/bin/hiddify-core generate wireguard-keypair 2>&1',
+		'/usr/bin/sing-box generate wireguard-keypair 2>&1',
+		'/usr/bin/sing-box-extended generate wg-keypair 2>&1',
 		'/usr/bin/hiddify-core generate wg-keypair 2>&1',
-		'sing-box generate wireguard-keypair 2>&1',
 		'sing-box generate wg-keypair 2>&1'
 	];
 
@@ -67,7 +64,7 @@ function generate_keypair() {
 			if (length(out)) {
 				push(debug_logs, cmd + " => " + substr(replace(out, /\n/g, ' '), 0, 80));
 
-				// Try JSON parsing
+				// 1. Try JSON parsing
 				try {
 					const j = json(out);
 					const tmp_priv = j?.private_key || j?.PrivateKey || j?.['private-key'] || j?.privateKey;
@@ -79,9 +76,9 @@ function generate_keypair() {
 					}
 				} catch(e) {}
 
-				// Try Flexible Regex matching
-				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+/=]{40,48})/);
-				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+/=]{40,48})/);
+				// 2. Try Flexible Regex matching with ESCAPED forward slash \/
+				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+\/=]{40,48})/);
+				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+\/=]{40,48})/);
 				if (m_priv && m_pub) {
 					priv = trim(m_priv[1]);
 					pub  = trim(m_pub[1]);
