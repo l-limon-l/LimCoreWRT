@@ -42,17 +42,17 @@ cp -fpR "$PKG_DIR/htdocs"/* "$TEMP_PKG_DIR/www/"
 cp -fpR "$PKG_DIR/root"/* "$TEMP_PKG_DIR/"
 
 cat > "$TEMP_PKG_DIR/lib/upgrade/keep.d/$PKG_NAME" <<-EOF
-/etc/homeproxy/certs/
-/etc/homeproxy/ruleset/
-/etc/homeproxy/resources/direct_list.txt
-/etc/homeproxy/resources/proxy_list.txt
+/etc/limcore/certs/
+/etc/limcore/ruleset/
+/etc/limcore/resources/direct_list.txt
+/etc/limcore/resources/proxy_list.txt
 EOF
 
-po2lmo "$PKG_DIR/po/zh_Hans/homeproxy.po" "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/homeproxy.zh-cn.lmo"
+po2lmo "$PKG_DIR/po/zh_Hans/limcore.po" "$TEMP_PKG_DIR/usr/lib/lua/luci/i18n/limcore.zh-cn.lmo"
 
 if [ "$PKG_MGR" == "apk" ]; then
 	find "$TEMP_PKG_DIR" -type f,l -printf '/%P\n' | sort > "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.list"
-	echo "/etc/config/homeproxy" >> "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles"
+	echo "/etc/config/limcore" >> "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles"
 	cat "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles" | while IFS= read -r file; do
 		[ -f "$TEMP_PKG_DIR/$file" ] || continue
 		sha256sum "$TEMP_PKG_DIR/$file" | sed "s,$TEMP_PKG_DIR/,," >> "$TEMP_PKG_DIR/lib/apk/packages/$PKG_NAME.conffiles_static"
@@ -98,7 +98,7 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 	apk mkpkg \
 		--info "name:$PKG_NAME" \
 		--info "version:$PKG_VERSION" \
-		--info "description:LimCore - modern multi-core proxy platform. Fork of ImmortalWrt HomeProxy" \
+		--info "description:LimCore - modern multi-core proxy platform. Fork of ImmortalWrt LimCore" \
 		--info "arch:noarch" \
 		--info "origin:$PKG_NAME" \
 		--info "url:https://github.com/l-limon-l/LimCoreWRT" \
@@ -107,10 +107,10 @@ default_prerm' > "$TEMP_DIR/pre-deinstall"
 		--script "post-upgrade:$TEMP_DIR/post-upgrade" \
 		--script "pre-deinstall:$TEMP_DIR/pre-deinstall" \
 		--info "depends:libc firewall4 ucode-mod-digest" \
-		--info "provides:luci-app-homeproxy" \
-		--info "provides:luci-app-homeproxy-hiddify" \
-		--info "replaces:luci-app-homeproxy" \
-		--info "replaces:luci-app-homeproxy-hiddify" \
+		--info "provides:luci-app-limcore" \
+		--info "provides:luci-app-limcore-hiddify" \
+		--info "replaces:luci-app-limcore" \
+		--info "replaces:luci-app-limcore-hiddify" \
 		${APK_SIGN_KEY:+--sign-key "$APK_SIGN_KEY"} \
 		--files "$TEMP_PKG_DIR" \
 		--output "$TEMP_DIR/${PKG_NAME}_${PKG_VERSION}.apk"
@@ -120,7 +120,7 @@ else
 	mkdir -p "$TEMP_PKG_DIR/CONTROL/"
 
 	if [ "$LEGACY" == "legacy" ]; then
-		SUBSC_UC="$TEMP_PKG_DIR/etc/homeproxy/scripts/update_subscriptions.uc"
+		SUBSC_UC="$TEMP_PKG_DIR/etc/limcore/scripts/update_subscriptions.uc"
 		cat > /tmp/hp_legacy_patch.py << 'PYEOF'
 import sys
 path = sys.argv[1]
@@ -164,8 +164,8 @@ PYEOF
 		Package: $PKG_NAME
 		Version: $PKG_VERSION
 		Depends: $IPK_DEPS
-		Conflicts: luci-app-homeproxy luci-app-homeproxy-hiddify
-		Replaces: luci-app-homeproxy luci-app-homeproxy-hiddify
+		Conflicts: luci-app-limcore luci-app-limcore-hiddify
+		Replaces: luci-app-limcore luci-app-limcore-hiddify
 		Source: https://github.com/l-limon-l/LimCoreWRT
 		SourceName: $PKG_NAME
 		Section: luci
@@ -173,11 +173,11 @@ PYEOF
 		Maintainer: l_limon_l
 		Architecture: all
 		Installed-Size: TO-BE-FILLED-BY-IPKG-BUILD
-		Description:  LimCore - modern multi-core proxy platform. Fork of ImmortalWrt HomeProxy
+		Description:  LimCore - modern multi-core proxy platform. Fork of ImmortalWrt LimCore
 	EOF
 	chmod 0644 "$TEMP_PKG_DIR/CONTROL/control"
 
-	echo -e "/etc/config/homeproxy" > "$TEMP_PKG_DIR/CONTROL/conffiles"
+	echo -e "/etc/config/limcore" > "$TEMP_PKG_DIR/CONTROL/conffiles"
 
 	echo -e '#!/bin/sh
 [ "${IPKG_NO_SCRIPT}" = "1" ] && exit 0
@@ -212,7 +212,7 @@ fi
 rm -rf "$TEMP_DIR"
 
 # Build i18n package for Russian
-I18N_PKG_NAME="luci-i18n-homeproxy-ru"
+I18N_PKG_NAME="luci-i18n-limcore-ru"
 I18N_TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 I18N_TEMP_PKG_DIR="$I18N_TEMP_DIR/$I18N_PKG_NAME"
 mkdir -p "$I18N_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/"
@@ -222,7 +222,7 @@ else
 	mkdir -p "$I18N_TEMP_PKG_DIR/CONTROL/"
 fi
 
-po2lmo "$PKG_DIR/po/ru/homeproxy.po" "$I18N_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/homeproxy.ru.lmo"
+po2lmo "$PKG_DIR/po/ru/limcore.po" "$I18N_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/limcore.ru.lmo"
 
 if [ "$PKG_MGR" == "apk" ]; then
 	find "$I18N_TEMP_PKG_DIR" -type f,l -printf '/%P\n' | sort > "$I18N_TEMP_PKG_DIR/lib/apk/packages/$I18N_PKG_NAME.list"
@@ -230,7 +230,7 @@ if [ "$PKG_MGR" == "apk" ]; then
 	apk mkpkg \
 		--info "name:$I18N_PKG_NAME" \
 		--info "version:$PKG_VERSION" \
-		--info "description:Russian translation for luci-app-re-homeproxy" \
+		--info "description:Russian translation for luci-app-limcore" \
 		--info "arch:noarch" \
 		--info "origin:$I18N_PKG_NAME" \
 		--info "url:https://github.com/l-limon-l/LimCoreWRT" \
@@ -253,7 +253,7 @@ else
 		Maintainer: l_limon_l
 		Architecture: all
 		Installed-Size: TO-BE-FILLED-BY-IPKG-BUILD
-		Description:  Russian translation for luci-app-re-homeproxy
+		Description:  Russian translation for luci-app-limcore
 	EOF
 	chmod 0644 "$I18N_TEMP_PKG_DIR/CONTROL/control"
 
@@ -269,7 +269,7 @@ fi
 rm -rf "$I18N_TEMP_DIR"
 
 # Build i18n package for Chinese Simplified
-I18N_ZH_PKG_NAME="luci-i18n-homeproxy-zh-cn"
+I18N_ZH_PKG_NAME="luci-i18n-limcore-zh-cn"
 I18N_ZH_TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 I18N_ZH_TEMP_PKG_DIR="$I18N_ZH_TEMP_DIR/$I18N_ZH_PKG_NAME"
 mkdir -p "$I18N_ZH_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/"
@@ -279,7 +279,7 @@ else
 	mkdir -p "$I18N_ZH_TEMP_PKG_DIR/CONTROL/"
 fi
 
-po2lmo "$PKG_DIR/po/zh_Hans/homeproxy.po" "$I18N_ZH_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/homeproxy.zh-cn.lmo"
+po2lmo "$PKG_DIR/po/zh_Hans/limcore.po" "$I18N_ZH_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/limcore.zh-cn.lmo"
 
 if [ "$PKG_MGR" == "apk" ]; then
 	find "$I18N_ZH_TEMP_PKG_DIR" -type f,l -printf '/%P\n' | sort > "$I18N_ZH_TEMP_PKG_DIR/lib/apk/packages/$I18N_ZH_PKG_NAME.list"
@@ -287,7 +287,7 @@ if [ "$PKG_MGR" == "apk" ]; then
 	apk mkpkg \
 		--info "name:$I18N_ZH_PKG_NAME" \
 		--info "version:$PKG_VERSION" \
-		--info "description:Chinese Simplified translation for luci-app-re-homeproxy" \
+		--info "description:Chinese Simplified translation for luci-app-limcore" \
 		--info "arch:noarch" \
 		--info "origin:$I18N_ZH_PKG_NAME" \
 		--info "url:https://github.com/l-limon-l/LimCoreWRT" \
@@ -310,7 +310,7 @@ else
 		Maintainer: l_limon_l
 		Architecture: all
 		Installed-Size: TO-BE-FILLED-BY-IPKG-BUILD
-		Description:  Chinese Simplified translation for luci-app-re-homeproxy
+		Description:  Chinese Simplified translation for luci-app-limcore
 	EOF
 	chmod 0644 "$I18N_ZH_TEMP_PKG_DIR/CONTROL/control"
 
@@ -326,7 +326,7 @@ fi
 rm -rf "$I18N_ZH_TEMP_DIR"
 
 # Build i18n package for Farsi (Persian)
-I18N_FA_PKG_NAME="luci-i18n-homeproxy-fa"
+I18N_FA_PKG_NAME="luci-i18n-limcore-fa"
 I18N_FA_TEMP_DIR="$(mktemp -d -p $BASE_DIR)"
 I18N_FA_TEMP_PKG_DIR="$I18N_FA_TEMP_DIR/$I18N_FA_PKG_NAME"
 mkdir -p "$I18N_FA_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/"
@@ -336,7 +336,7 @@ else
 	mkdir -p "$I18N_FA_TEMP_PKG_DIR/CONTROL/"
 fi
 
-po2lmo "$PKG_DIR/po/fa_IR/homeproxy.po" "$I18N_FA_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/homeproxy.fa.lmo"
+po2lmo "$PKG_DIR/po/fa_IR/limcore.po" "$I18N_FA_TEMP_PKG_DIR/usr/lib/lua/luci/i18n/limcore.fa.lmo"
 
 if [ "$PKG_MGR" == "apk" ]; then
 	find "$I18N_FA_TEMP_PKG_DIR" -type f,l -printf '/%P\n' | sort > "$I18N_FA_TEMP_PKG_DIR/lib/apk/packages/$I18N_FA_PKG_NAME.list"
@@ -344,7 +344,7 @@ if [ "$PKG_MGR" == "apk" ]; then
 	apk mkpkg \
 		--info "name:$I18N_FA_PKG_NAME" \
 		--info "version:$PKG_VERSION" \
-		--info "description:Farsi (Persian) translation for luci-app-re-homeproxy" \
+		--info "description:Farsi (Persian) translation for luci-app-limcore" \
 		--info "arch:noarch" \
 		--info "origin:$I18N_FA_PKG_NAME" \
 		--info "url:https://github.com/l-limon-l/LimCoreWRT" \
@@ -367,7 +367,7 @@ else
 		Maintainer: l_limon_l
 		Architecture: all
 		Installed-Size: TO-BE-FILLED-BY-IPKG-BUILD
-		Description:  Farsi (Persian) translation for luci-app-re-homeproxy
+		Description:  Farsi (Persian) translation for luci-app-limcore
 	EOF
 	chmod 0644 "$I18N_FA_TEMP_PKG_DIR/CONTROL/control"
 

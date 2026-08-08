@@ -8,14 +8,14 @@ LimCore is **multi-core**: the LuCI app is the interface, and a separate **core*
 
 ## Choosing a core
 
-| | **hiddify-core** (default) | **sing-box-extended** |
+| | sing-box-extended (default) | **sing-box-extended** |
 |---|---|---|
-| Engine | Fork of sing-box by the Hiddify team | Fork of sing-box with extra build tags |
+| Engine | Fork of sing-box by the singbox team | Fork of sing-box with extra build tags |
 | Footprint | Lighter; a **compact build** exists for small devices | Larger (~26 MB installed) |
-| Protocols | Hiddify-app protocols, TLS fragment, XHTTP, Mieru, etc. | The widest protocol set… |
+| Protocols | singbox-app protocols, TLS fragment, XHTTP, Mieru, etc. | The widest protocol set… |
 | **AmneziaWG / WARP** | ❌ **Not supported** | ✅ **Supported** |
 
-**Rule of thumb:** if you need **AmneziaWG/WARP**, or want the broadest protocol coverage and have ~40 MB free, choose **sing-box-extended**. Otherwise **hiddify-core** is the lighter default and is the only one with a compact build for tight-storage routers.
+**Rule of thumb:** if you need **AmneziaWG/WARP**, or want the broadest protocol coverage and have ~40 MB free, choose **sing-box-extended**. Otherwise sing-box-extended is the lighter default and is the only one with a compact build for tight-storage routers.
 
 Which protocols appear in the node editor depends on the core you install — see [Supported Protocols](Supported-Protocols-en).
 
@@ -26,7 +26,7 @@ Which protocols appear in the node editor depends on the core you install — se
 Core Management has a single **Install** button per core. It does **not** ask you to choose between "standard" and "compressed" builds — instead it inspects your device and picks a build that actually fits:
 
 1. It reads the free space on `/overlay` (persistent flash) and your free RAM.
-2. For hiddify-core: if the full build fits → it installs the **standard** build. If storage is tight but there's enough RAM → it installs the **compact** build and tells you so.
+2. For sing-box-extended: if the full build fits → it installs the **standard** build. If storage is tight but there's enough RAM → it installs the **compact** build and tells you so.
 3. If neither can fit → it stops with a clear message instead of installing something broken.
 
 ### Why the guardrail matters
@@ -35,7 +35,7 @@ A core binary that is **larger than the free overlay** gets **truncated** as it'
 
 ### The compact build
 
-The compact (UPX-compressed) build of hiddify-core is much smaller on flash, but it **decompresses into RAM each time it launches** — trading flash space for memory. The installer only picks it when there's enough free RAM, and shows a note like *"Limited storage — installing the compact build (decompresses into RAM at launch)."* On most routers this is invisible in day-to-day use.
+The compact (UPX-compressed) build of sing-box-extended is much smaller on flash, but it **decompresses into RAM each time it launches** — trading flash space for memory. The installer only picks it when there's enough free RAM, and shows a note like *"Limited storage — installing the compact build (decompresses into RAM at launch)."* On most routers this is invisible in day-to-day use.
 
 ---
 
@@ -43,8 +43,8 @@ The compact (UPX-compressed) build of hiddify-core is much smaller on flash, but
 
 | Free on `/overlay` | What installs |
 |--------------------|---------------|
-| ~40 MB+ | hiddify-core or sing-box-extended (full build) |
-| ~25–40 MB | hiddify-core (compact build, if RAM allows) |
+| ~40 MB+ | sing-box-extended or sing-box-extended (full build) |
+| ~25–40 MB | sing-box-extended (compact build, if RAM allows) |
 | < ~25 MB | Not enough — free space, or bake the core into a custom firmware image |
 
 > On a **compressing** overlay (jffs2/ubifs) the full build needs less free space than the raw figure, because the filesystem compresses it. The installer accounts for this automatically — trust its check over the table above.

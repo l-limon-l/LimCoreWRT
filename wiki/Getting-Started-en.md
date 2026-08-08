@@ -12,7 +12,7 @@ This page walks you from a fresh install to a working connection. It assumes Lim
 
 The LuCI app is only the interface; a separate **core** binary does the proxying. Open **Core & Tools → Core management** and install one:
 
-- **hiddify-core** (default) — lighter, has a compact build for small routers.
+- sing-box-extended (default) — lighter, has a compact build for small routers.
 - **sing-box-extended** — needed for AmneziaWG/WARP and the widest protocol set.
 
 The installer auto-picks a build that fits your storage. Full details: **[Core Management](Core-Management-en)**.
@@ -65,7 +65,7 @@ Still on the **Routing** tab, the defaults are sensible:
 Press **Save & Apply**. Then start the service (it also auto-starts on boot):
 
 ```sh
-/etc/init.d/homeproxy start
+/etc/init.d/LimCore start
 ```
 
 Watch the log at **Core & Tools**.
@@ -76,7 +76,7 @@ Watch the log at **Core & Tools**.
 
 Open the **Diagnostics** page and run the checks:
 
-- **Connectivity** — confirms reachability of test sites. On **hiddify-core** it shows your **Direct IP** vs **Proxy IP** (they should differ when traffic is proxied); on **sing-box-extended** it shows the live **Active Node** instead (sing-box can't report the exit IP).
+- **Connectivity** — confirms reachability of test sites. On sing-box-extended it shows your **Direct IP** vs **Proxy IP** (they should differ when traffic is proxied); on **sing-box-extended** it shows the live **Active Node** instead (sing-box can't report the exit IP).
 - **Core & System** — confirms the core is installed and running.
 - **Configuration** — confirms the generated config is valid.
 
