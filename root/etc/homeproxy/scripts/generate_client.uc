@@ -132,7 +132,11 @@ const global_multiplex_max_connections = uci.get(uciconfig, ucimain, 'global_mul
 const global_multiplex_min_streams = uci.get(uciconfig, ucimain, 'global_multiplex_min_streams') || '4';
 const global_multiplex_padding = uci.get(uciconfig, ucimain, 'global_multiplex_padding');
 
+const global_noise = uci.get(uciconfig, ucimain, 'global_noise');
+const global_noise_mode = uci.get(uciconfig, ucimain, 'global_noise_mode') || 'light';
+
 let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outbound_dns,
+
 
 
     domain_strategy, sniff_override, dns_server, china_dns_server, iran_dns_server, russia_dns_server,

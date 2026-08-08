@@ -934,7 +934,21 @@ return view.extend({
 			_('Add padding bytes to multiplexed connections to resist traffic analysis.'));
 		o.default = o.enabled;
 		o.depends('global_multiplex', '1');
+
+		o = s.taboption('tunnel', form.Flag, 'global_noise', _('Enable global Traffic Noise') + ' 🎲',
+			_('Inject random payload noise and packet padding to obfuscate proxy traffic patterns from DPI.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('tunnel', form.ListValue, 'global_noise_mode', _('Noise mode'),
+			_('Intensity level of packet noise.'));
+		o.value('light', _('Light (10-50 bytes)'));
+		o.value('medium', _('Medium (50-200 bytes)'));
+		o.value('aggressive', _('Aggressive (200-500 bytes)'));
+		o.default = 'light';
+		o.depends('global_noise', '1');
 		/* Tunnel Settings tab end */
+
 
 		o = s.taboption('ru_rules', form.SectionValue, '_ru_rules', form.TypedSection, 'proxy_ru_rule');
 

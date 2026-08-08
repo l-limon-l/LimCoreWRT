@@ -15,7 +15,8 @@ function generate_keypair() {
 	let priv = null, pub = null;
 
 	/* 1. Try sing-box / hiddify-core built-in wg-keypair generator first (ALWAYS present) */
-	const fd_sb = popen('sing-box generate wg-keypair 2>/dev/null || /usr/bin/hiddify-core generate wg-keypair 2>/dev/null');
+	const fd_sb = popen('/usr/bin/sing-box generate wg-keypair 2>/dev/null || /usr/bin/hiddify-core generate wg-keypair 2>/dev/null || sing-box generate wg-keypair 2>/dev/null');
+
 	if (fd_sb) {
 		const out = fd_sb.read('all'); fd_sb.close();
 		const m_priv = match(out, /Private key:\s*(\S+)/);

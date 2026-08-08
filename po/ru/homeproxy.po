@@ -4502,4 +4502,65 @@ msgstr "Задержка фрагментов"
 msgid "Sleep delay between fragmented packets in milliseconds (e.g. 5-10)."
 msgstr "Задержка между фрагментами в миллисекундах (например, 5-10)."
 
+msgid "Tunnel Settings"
+msgstr "Настройки туннеля"
+
+msgid "Enable global TLS Fragment"
+msgstr "Включить глобальную фрагментацию (TLS Fragment)"
+
+msgid "Automatically apply TLS ClientHello packet splitting to active nodes to bypass SNI/DPI filtering."
+msgstr "Автоматически применять фрагментацию TLS ClientHello к активным узлам для обхода ТСПУ/DPI."
+
+msgid "Enable global Multiplexing (Mux)"
+msgstr "Включить глобальное мультиплексирование (Mux)"
+
+msgid "Automatically multiplex TCP streams on active nodes into persistent connections."
+msgstr "Автоматически мультиплексировать TCP-потоки активных узлов в постоянные соединения."
+
+msgid "Mux protocol"
+msgstr "Протокол Mux"
+
+msgid "Multiplexing protocol."
+msgstr "Протокол мультиплексирования."
+
+msgid "Maximum connections"
+msgstr "Максимальное количество соединений"
+
+msgid "Maximum multiplexed connections (default 8)."
+msgstr "Максимальное количество мультиплексированных соединений (по умолчанию 8)."
+
+msgid "Minimum streams"
+msgstr "Минимальное количество потоков"
+
+msgid "Minimum streams before opening new connection (default 4)."
+msgstr "Минимальное количество потоков до открытия нового соединения (по умолчанию 4)."
+
+msgid "Enable padding"
+msgstr "Включить заполнение пакетов (Padding)"
+
+msgid "Add padding bytes to multiplexed connections to resist traffic analysis."
+msgstr "Добавлять байты заполнения к мультиплексированным соединениям для защиты от анализа трафика."
+
+msgid "Enable global Traffic Noise"
+msgstr "Включить глобальное зашумление трафика (Noise)"
+
+msgid "Inject random payload noise and packet padding to obfuscate proxy traffic patterns from DPI."
+msgstr "Добавлять случайный шум и заполнение пакетов для маскировки паттернов трафика от ТСПУ/DPI."
+
+msgid "Noise mode"
+msgstr "Режим зашумления"
+
+msgid "Intensity level of packet noise."
+msgstr "Уровень интенсивности шума пакетов."
+
+msgid "Light (10-50 bytes)"
+msgstr "Легкий (10-50 байт)"
+
+msgid "Medium (50-200 bytes)"
+msgstr "Средний (50-200 байт)"
+
+msgid "Aggressive (200-500 bytes)"
+msgstr "Агрессивный (200-500 байт)"
+
+
 
