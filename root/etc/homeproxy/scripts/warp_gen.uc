@@ -62,7 +62,7 @@ function generate_keypair() {
 		if (fd_sb) {
 			const out = trim(fd_sb.read('all') || ''); fd_sb.close();
 			if (length(out)) {
-				push(debug_logs, cmd + " => " + substr(replace(out, /\n/g, ' '), 0, 80));
+				push(debug_logs, cmd + " => " + substr(replace(out, /\n/g, ' '), 0, 200));
 
 				// 1. Try JSON parsing
 				try {
@@ -76,9 +76,9 @@ function generate_keypair() {
 					}
 				} catch(e) {}
 
-				// 2. Try Flexible Regex matching with ESCAPED forward slash \/
-				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+\/=]{40,48})/);
-				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([a-zA-Z0-9+\/=]{40,48})/);
+				// 2. Try Flexible Regex matching without forward slash in character class
+				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey["'\s:=]+([^\s"']+)/);
+				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey["'\s:=]+([^\s"']+)/);
 				if (m_priv && m_pub) {
 					priv = trim(m_priv[1]);
 					pub  = trim(m_pub[1]);
