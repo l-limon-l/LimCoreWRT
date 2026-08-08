@@ -835,25 +835,13 @@ return view.extend({
 					uci.set('homeproxy', 'config', 'warp_peer_public_key', res.peer_public_key || '');
 					uci.set('homeproxy', 'config', 'warp_addresses', res.addresses || '');
 					uci.set('homeproxy', 'config', 'warp_reserved', res.reserved || '');
-
-					const setVal = (optName, val) => {
-						let input = document.querySelector(`input[name="cbid.homeproxy.config.${optName}"]`);
-						if (!input) input = document.getElementById(`cbid.homeproxy.config.${optName}`);
-						if (!input) {
-							let widget = document.getElementById(`widget.cbid.homeproxy.config.${optName}`);
-							if (widget) input = widget.querySelector('input');
-						}
-						if (input) {
-							input.value = val;
-							input.dispatchEvent(new Event('input', { bubbles: true }));
-							input.dispatchEvent(new Event('change', { bubbles: true }));
-						}
-					};
-					setVal('warp_endpoint', res.endpoint || 'engage.cloudflareclient.com:2408');
-					setVal('warp_private_key', res.private_key || '');
-					setVal('warp_peer_public_key', res.peer_public_key || '');
-					setVal('warp_addresses', res.addresses || '');
-					setVal('warp_reserved', res.reserved || '');
+					
+					return uci.save().then(() => {
+						ui.addNotification(null, E('p', _('WARP config generated successfully (Success!). Reloading page...')), 'info');
+						setTimeout(() => {
+							window.location.reload();
+						}, 1500);
+					});
 				} else {
 					ui.addNotification(null, E('p', (res && res.error) ? res.error : _('WARP generation failed')), 'error');
 				}

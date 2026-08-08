@@ -79,17 +79,17 @@ function generate_keypair() {
 					}
 				} catch(e) {}
 
-				// 2. Try Robust Token parsing (avoid complex regex character classes)
+				// 2. Try Robust Token parsing without regex bugs
 				let tokens = split(out, /[\s]+/);
 				for (let i = 0; i < length(tokens); i++) {
-					let token = tokens[i];
-					if (match(token, /[Pp]rivate[A-Za-z_-]*[Kk]ey/)) {
-						let kv = split(token, ":");
+					let token = lc(tokens[i]);
+					if (index(token, "privatekey") >= 0 || index(token, "private-key") >= 0 || index(token, "private_key") >= 0) {
+						let kv = split(tokens[i], ":");
 						if (length(kv) >= 2 && length(kv[1]) >= 40) priv = trim(kv[1]);
 						else if (i + 1 < length(tokens)) priv = trim(tokens[i+1]);
 					}
-					if (match(token, /[Pp]ublic[A-Za-z_-]*[Kk]ey/)) {
-						let kv = split(token, ":");
+					if (index(token, "publickey") >= 0 || index(token, "public-key") >= 0 || index(token, "public_key") >= 0) {
+						let kv = split(tokens[i], ":");
 						if (length(kv) >= 2 && length(kv[1]) >= 40) pub = trim(kv[1]);
 						else if (i + 1 < length(tokens)) pub = trim(tokens[i+1]);
 					}
