@@ -45,6 +45,7 @@ chmod +x "$TEMP_PKG_DIR/etc/init.d/limcore"
 chmod +x "$TEMP_PKG_DIR/etc/uci-defaults/"* 2>/dev/null || true
 chmod +x "$TEMP_PKG_DIR/usr/bin/limcore-update" 2>/dev/null || true
 chmod +x "$TEMP_PKG_DIR/etc/limcore/scripts/"*.sh 2>/dev/null || true
+chmod +x "$TEMP_PKG_DIR/etc/limcore/scripts/"*.uc 2>/dev/null || true
 
 
 cat > "$TEMP_PKG_DIR/lib/upgrade/keep.d/$PKG_NAME" <<-EOF

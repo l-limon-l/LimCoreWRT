@@ -2156,8 +2156,9 @@ return view.extend({
 			_('Update subscriptions via proxy.'));
 		o.rmempty = false;
 
-		o = s.taboption('subscription', form.DynamicList, 'subscription_url', _('Subscription URL-s'),
-			_('Support Hysteria, Shadowsocks, Trojan, v2rayN (VMess), and XTLS (VLESS) online configuration delivery standard.'));
+		o = s.taboption('subscription', form.TextValue, 'subscription_url', _('Subscription URL-s'),
+			_('Support Hysteria, Shadowsocks, Trojan, v2rayN (VMess), and XTLS (VLESS) online configuration delivery standard. Enter one URL per line.'));
+		o.rows = 3;
 		o.validate = function(section_id, value) {
 			if (section_id && value) {
 				try {
@@ -2222,6 +2223,9 @@ return view.extend({
 		o.inputstyle = 'apply';
 		o.inputtitle = function(section_id) {
 			let sublist = uci.get(data[0], section_id, 'subscription_url') || [];
+			if (typeof sublist === 'string') {
+				sublist = sublist.split(/\r?\n/).filter(u => u.trim().length > 0);
+			}
 			if (sublist.length > 0) {
 				return _('Update %s subscriptions').format(sublist.length);
 			} else {
