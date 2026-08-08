@@ -91,12 +91,14 @@ if [ "$PM" = apk ]; then
 			|| warn "  не удалось скачать ключ подписи — поставлю без проверки подписи"
 	fi
 fi
-APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
+APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest' \
+	| grep -o "https://github\.com/[^\"]*luci-app-re-homeproxy[^\"]*${SUFFIX}\.${EXT}" | head -1)
+[ -n "$APPURL" ] || APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
 	| grep -o "https://github\.com/[^\"]*luci-app-re-homeproxy[^\"]*${SUFFIX}\.${EXT}" | head -1)
 [ -n "$APPURL" ] || die "Не нашёл пакет luci-app-re-homeproxy${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
 dl "$APPURL" /tmp/app.$EXT || die "Не удалось скачать приложение (попробуйте GH_MIRROR=...)."
 if [ "$PM" = apk ]; then
-	apk add --allow-untrusted --force-overwrite /tmp/app.$EXT || die "apk add завершился ошибкой."
+	apk add --upgrade --allow-untrusted --force-overwrite /tmp/app.$EXT || die "apk add завершился ошибкой."
 else
 	opkg update >/dev/null 2>&1; opkg install --force-reinstall /tmp/app.$EXT || die "opkg install завершился ошибкой."
 fi
@@ -113,11 +115,13 @@ case "$REPLY" in
 		# базовый перевод интерфейса LuCI (из фида, best-effort)
 		if [ "$PM" = apk ]; then apk add luci-i18n-base-ru >/dev/null 2>&1; else opkg install luci-i18n-base-ru >/dev/null 2>&1; fi
 		# перевод самого приложения (из релиза homeproxy)
-		LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
+		LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest' \
+			| grep -o "https://github\.com/[^\"]*luci-i18n-homeproxy-ru[^\"]*\.${EXT}" | head -1)
+		[ -n "$LURL" ] || LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
 			| grep -o "https://github\.com/[^\"]*luci-i18n-homeproxy-ru[^\"]*\.${EXT}" | head -1)
 		if [ -n "$LURL" ] && dl "$LURL" /tmp/i18n.$EXT; then
-			if [ "$PM" = apk ]; then apk add /tmp/i18n.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/i18n.$EXT; \
-			else opkg install /tmp/i18n.$EXT; fi
+			if [ "$PM" = apk ]; then apk add --upgrade --allow-untrusted --force-overwrite /tmp/i18n.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/i18n.$EXT; \
+			else opkg install --force-reinstall /tmp/i18n.$EXT; fi
 		else warn "  перевод приложения не найден — пропускаю"; fi
 		rm -f /tmp/i18n.$EXT
 		uci set luci.main.lang=ru; uci commit luci
