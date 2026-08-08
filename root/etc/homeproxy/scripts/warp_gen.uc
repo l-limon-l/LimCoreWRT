@@ -47,29 +47,49 @@ function get_iso_date() {
 function generate_keypair() {
 	let priv = null, pub = null;
 
-	/* 1. Try sing-box / hiddify-core / sing-box-extended / hiddify wg-keypair generator first */
+	/* 1. Try sing-box / hiddify-core built-in keypair generator (sing-box generate wireguard-keypair) */
 	const sb_cmds = [
+		'/usr/bin/sing-box generate wireguard-keypair 2>&1',
 		'/usr/bin/sing-box generate wg-keypair 2>&1',
+		'/usr/bin/sing-box generate keypair 2>&1',
+		'/usr/bin/hiddify-core generate wireguard-keypair 2>&1',
 		'/usr/bin/hiddify-core generate wg-keypair 2>&1',
+		'/usr/bin/sing-box-extended generate wireguard-keypair 2>&1',
 		'/usr/bin/sing-box-extended generate wg-keypair 2>&1',
+		'/usr/bin/hiddify generate wireguard-keypair 2>&1',
 		'/usr/bin/hiddify generate wg-keypair 2>&1',
-		'/usr/sbin/sing-box generate wg-keypair 2>&1',
+		'/usr/sbin/sing-box generate wireguard-keypair 2>&1',
+		'sing-box generate wireguard-keypair 2>&1',
 		'sing-box generate wg-keypair 2>&1',
-		'hiddify-core generate wg-keypair 2>&1',
-		'sing-box-extended generate wg-keypair 2>&1',
-		'hiddify generate wg-keypair 2>&1'
+		'hiddify-core generate wireguard-keypair 2>&1',
+		'hiddify-core generate wg-keypair 2>&1'
 	];
 
 	for (let cmd in sb_cmds) {
 		const fd_sb = popen(cmd);
 		if (fd_sb) {
 			const out = fd_sb.read('all') || ''; fd_sb.close();
-			const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
-			const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
-			if (m_priv && m_pub) {
-				priv = m_priv[1];
-				pub  = m_pub[1];
-				break;
+			if (length(out)) {
+				// Try JSON parsing
+				try {
+					const j = json(out);
+					const tmp_priv = j?.private_key || j?.PrivateKey || j?.['private-key'];
+					const tmp_pub  = j?.public_key  || j?.PublicKey  || j?.['public-key'];
+					if (tmp_priv && tmp_pub) {
+						priv = tmp_priv;
+						pub  = tmp_pub;
+						break;
+					}
+				} catch(e) {}
+
+				// Try Regex matching
+				const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
+				const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
+				if (m_priv && m_pub) {
+					priv = m_priv[1];
+					pub  = m_pub[1];
+					break;
+				}
 			}
 		}
 	}
@@ -99,7 +119,7 @@ function generate_keypair() {
 		const tmp_key = '/tmp/warp_key_' + get_rand_id() + '.key';
 		system(`openssl genpkey -algorithm X25519 -out ${shellquote(tmp_key)} >/dev/null 2>&1`);
 		if (access(tmp_key)) {
-			const fd_priv = popen(`openssl pkey -in ${shellquote(tmp_key)} -rawout 2>/dev/null | openssl base64 2>/dev/null | tr -d '\\r\\n'`);
+			const fd_priv = popen(`openssl pkey -in ${shellquote(tmp_key)} -rawout 2>/dev/null | openssl base64 2>/dev/null | tr -d '\\r\\n' || openssl genpkey -algorithm X25519 -outform DER 2>/dev/null | tail -c 32 | openssl base64 2>/dev/null | tr -d '\\r\\n'`);
 			if (fd_priv) {
 				const tmp_priv = trim(fd_priv.read('all') || '');
 				fd_priv.close();
