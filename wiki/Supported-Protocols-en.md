@@ -2,7 +2,7 @@
 
 # Supported Protocols
 
-LimCore runs on a choice of cores: [hiddify-core](https://github.com/hiddify/hiddify-core) (default) or [sing-box-extended](https://github.com/shtorm-7/sing-box-extended) — both forks of [sing-box](https://sing-box.sagernet.org) with additional protocols and features not available upstream. The protocols shown in the node editor depend on **which core you installed** and how it was compiled on your device. You choose and install the core on the **Core management** section (Services → LimCore → Core & Tools).
+LimCore runs on a choice of cores: [sing-box-extended](https://github.com/singbox/sing-box-extended) (default) or [sing-box-extended](https://github.com/shtorm-7/sing-box-extended) — both forks of [sing-box](https://sing-box.sagernet.org) with additional protocols and features not available upstream. The protocols shown in the node editor depend on **which core you installed** and how it was compiled on your device. You choose and install the core on the **Core management** section (Services → LimCore → Core & Tools).
 
 ---
 
@@ -21,9 +21,9 @@ Most users never fill these by hand — importing a share link or subscription s
 
 ## Extended-core features (not in upstream sing-box)
 
-Both cores are sing-box forks that add features missing from upstream. Some are **hiddify-core only**; others are in **both** hiddify-core and sing-box-extended (noted per item):
+sing-box-extended are sing-box forks that add features missing from upstream. Some are sing-box-extended only**; others are in **both** sing-box-extended (noted per item):
 
-### TLS Fragmentation (`tls_fragment`) *(hiddify-core only)*
+### TLS Fragmentation (`tls_fragment`) *(sing-box-extended only)*
 Splits the TLS ClientHello handshake across multiple TCP packets so that the SNI (Server Name Indication) field — which reveals the destination domain — arrives in separate fragments. DPI systems that inspect only whole packets to identify and block domains cannot reassemble the SNI in time, so the connection passes through undetected.
 
 **Fragment modes:**
@@ -40,12 +40,12 @@ Splits the TLS ClientHello handshake across multiple TCP packets so that the SNI
 
 Can be applied to any protocol that uses TLS (VLESS, VMess, Trojan, etc.).
 
-*Source: [How the TLS Trick works and its usage — hiddify.com](https://hiddify.com/manager/basic-concepts-and-troubleshooting/How-the-TLS-Trick-works-and-its-usage/#tls-fragment)*
+*Source: [How the TLS Trick works and its usage — singbox.com](https://singbox.com/manager/basic-concepts-and-troubleshooting/How-the-TLS-Trick-works-and-its-usage/#tls-fragment)*
 
-### XHTTP Transport *(both cores)*
-A modern HTTP-based transport for VLESS designed for CDN compatibility and multiplexing. Not in upstream sing-box, but available on **both** hiddify-core and sing-box-extended. See the VLESS section below.
+### XHTTP Transport *(sing-box-extended)*
+A modern HTTP-based transport for VLESS designed for CDN compatibility and multiplexing. Not in upstream sing-box, but available on **both** sing-box-extended. See the VLESS section below.
 
-### Additional Protocols *(both cores)*
+### Additional Protocols *(sing-box-extended)*
 MieruTCP / MieruUDP and extended NaïveProxy variants — available on **both** cores (see below).
 
 ---
@@ -56,7 +56,7 @@ MieruTCP / MieruUDP and extended NaïveProxy variants — available on **both** 
 Bypasses the proxy — traffic goes to the destination without any tunneling. Used in route rules for local or trusted destinations.
 
 ### AnyTLS
-A TLS-based multiplexing protocol developed by the hiddify team. Designed to be simple, efficient, and hard to fingerprint. Good choice when other TLS-based protocols are being blocked.
+A TLS-based multiplexing protocol developed by the singbox team. Designed to be simple, efficient, and hard to fingerprint. Good choice when other TLS-based protocols are being blocked.
 
 ### HTTP
 Plain HTTP proxy (RFC 7231 CONNECT method). Supports username/password authentication. Not encrypted — use only on trusted networks or wrapped in TLS via another layer.
@@ -99,9 +99,9 @@ A lightweight successor to VMess without the extra encryption layer (relies on t
 | gRPC | **Yes** | CDN-friendly |
 | HTTP/2 | No | Multiplexed connections |
 | HTTPUpgrade | **Yes** | Lightweight HTTP upgrade handshake |
-| **XHTTP** | **Yes** | Not in upstream sing-box; on both cores — see below |
+| **XHTTP** | **Yes** | Not in upstream sing-box; on sing-box-extended — see below |
 
-**XHTTP** is an extended transport for VLESS, available on **both** hiddify-core and sing-box-extended (but not upstream sing-box). It uses chunked HTTP transfers over a single or multiplexed connection, designed specifically for CDN compatibility and to avoid patterns detectable as non-browser traffic.
+**XHTTP** is an extended transport for VLESS, available on **both** sing-box-extended (but not upstream sing-box). It uses chunked HTTP transfers over a single or multiplexed connection, designed specifically for CDN compatibility and to avoid patterns detectable as non-browser traffic.
 
 ### VMess
 The original V2Ray protocol. Includes its own encryption on top of the transport layer. Slightly more overhead than VLESS but very widely deployed.
@@ -159,7 +159,7 @@ Modern VPN protocol with a minimal codebase and strong cryptography (Curve25519,
 
 ## Requires the sing-box-extended core
 
-These node types are available when you install **sing-box-extended** instead of hiddify-core (pick your core on the **Core Management** page). hiddify-core does **not** support them.
+These node types are available when you install **sing-box-extended** instead of sing-box-extended (pick your core on the **Core Management** page). sing-box-extended does **not** support them.
 
 ### AmneziaWG
 An obfuscated variant of WireGuard. It adds junk packets and randomised handshake headers (the `Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4`, `I1`–`I5` parameters) so that DPI systems which detect and block plain WireGuard no longer recognise the traffic. Set the obfuscation parameters to match your AmneziaWG server (or a Cloudflare WARP endpoint running AmneziaWG). Same fast Curve25519 / ChaCha20-Poly1305 cryptography as WireGuard, but the packets no longer look like WireGuard on the wire.
@@ -169,7 +169,7 @@ An obfuscated variant of WireGuard. It adds junk packets and randomised handshak
 ## Mieru — requires `with_quic`
 
 ### MieruTCP / MieruUDP
-Anti-censorship protocol developed independently of sing-box, added by the extended cores (hiddify-core **and** sing-box-extended). Uses fully randomized traffic patterns with no identifiable headers or handshakes, making it very difficult to detect or classify by DPI.
+Anti-censorship protocol developed independently of sing-box, added by the extended cores (sing-box-extended **and** sing-box-extended). Uses fully randomized traffic patterns with no identifiable headers or handshakes, making it very difficult to detect or classify by DPI.
 
 - **MieruTCP** — TCP transport variant
 - **MieruUDP** — UDP transport variant; higher throughput, requires UDP access
@@ -178,7 +178,7 @@ Requires a Mieru server. See the [Mieru project](https://github.com/enfein/mieru
 
 ---
 
-## Coming in Future hiddify-core Versions
+## Coming in Future sing-box-extended Versions
 
 ### DNSTT (planned)
 DNS tunneling protocol — tunnels proxy traffic inside DNS queries and responses. Extremely useful in heavily restricted environments where only DNS traffic is allowed (e.g., captive portals, some corporate networks). Significantly lower throughput than other protocols due to DNS packet size limits, but works where nothing else does.
@@ -190,7 +190,7 @@ DNS tunneling protocol — tunnels proxy traffic inside DNS queries and response
 Run the version command for **whichever core you installed**:
 
 ```sh
-hiddify-core version    # if you run hiddify-core
+sing-box-extended version    # if you run sing-box-extended
 sing-box version        # if you run sing-box-extended
 ```
 

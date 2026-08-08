@@ -61,7 +61,7 @@ The **Import .conf** button reads a **WireGuard** or **AmneziaWG** `.conf` file 
 On the **Subscriptions** tab, add one or more **Subscription URL-s**. The router fetches them and keeps the node list in sync. LimCore understands several response formats automatically:
 
 - **Base64 / plain share-link lists** — the classic subscription format (one encoded link per line).
-- **sing-box JSON / Hiddify** — when the subscription is served as a sing-box/Hiddify JSON config. The correct format is requested via the **User-Agent**, so the same URL can return different formats to different clients.
+- **sing-box JSON / singbox** — when the subscription is served as a sing-box/singbox JSON config. The correct format is requested via the **User-Agent**, so the same URL can return different formats to different clients.
 - **Xray / V2Ray JSON** — config-array JSON (e.g. *connliberty*-style) is parsed into nodes; this path is User-Agent gated as well.
 
 ### Update settings

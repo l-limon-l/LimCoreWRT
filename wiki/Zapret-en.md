@@ -16,7 +16,7 @@ Zapret runs the **`nfqws2`** packet processor. The selected traffic is tagged in
 |---|---|
 | ✅ **Un-throttles DPI-filtered sites** | The common case for YouTube, Discord and similar services slowed or blocked by DPI. |
 | ✅ **No subscription, no server** | A local packet trick — no VPN node, account or remote server. |
-| ✅ **Works on both cores** | Implemented as a marked direct outbound; works identically on hiddify-core and sing-box-extended. |
+| ✅ **Works on sing-box-extended** | Implemented as a marked direct outbound; works identically on sing-box-extended. |
 | ✅ **Handles TCP *and* UDP/QUIC** | Unlike ByeDPI, the NFQUEUE path also desyncs UDP flows (used for Discord voice). |
 | ❌ **Does not encrypt or hide traffic** | Your ISP still sees *which* sites you visit; Zapret only changes *how* the first packets look. It is **not a VPN**. |
 | ❌ **Cannot reach fully IP-blocked sites** | If a site is blocked by IP/DNS (not just throttled), only a real proxy/VPN node can reach it. |
@@ -29,7 +29,7 @@ Zapret is wired as a routing **target**, not a SOCKS node:
 
 1. The config generator adds a `direct` outbound called **`zapret-out`** stamped with a `routing_mark` (default mark `110`).
 2. When a routing rule selects `zapret-out`, the core egresses that flow **directly**, but tagged with the mark.
-3. An nft chain (`homeproxy_zapret_queue`) catches the marked packets and sends the first 1–12 packets of each TCP/UDP connection to an **NFQUEUE**.
+3. An nft chain (`LimCore_zapret_queue`) catches the marked packets and sends the first 1–12 packets of each TCP/UDP connection to an **NFQUEUE**.
 4. `nfqws2` reads the queue and desyncs the handshake, then lets the connection continue normally.
 
 Because it is a marked *direct* outbound (not a tunnel), `zapret-out` falls back to plain `direct-out` automatically when Zapret is disabled, so the generated config always stays valid. Loop-avoidance returns for the Zapret mark and `nfqws2`'s own reinjected (DESYNC_MARK) packets are added to the firewall automatically — you don't touch nft.
@@ -57,7 +57,7 @@ The **Strategy preset** picker fills the strategy field for you and is grouped i
 | **Recommended** | A small curated set, purpose-named (e.g. *Default (fake + multidisorder)*, *Multisplit*, *Fake only*). Start here. |
 | **Full-test pool** | The larger technique-named pool used by the full tester. |
 
-Presets are shipped read-only in `/etc/homeproxy/zapret_candidates.json` and are based on [bol-van/zapret2](https://github.com/bol-van/zapret2) (nfqws2/blockcheck2) with some adapted from [flowseal/zapret-discord-youtube](https://github.com/flowseal/zapret-discord-youtube) (MIT). You can also leave the preset on *custom* and type your own option string in the **Desync strategy** field.
+Presets are shipped read-only in `/etc/LimCore/zapret_candidates.json` and are based on [bol-van/zapret2](https://github.com/bol-van/zapret2) (nfqws2/blockcheck2) with some adapted from [flowseal/zapret-discord-youtube](https://github.com/flowseal/zapret-discord-youtube) (MIT). You can also leave the preset on *custom* and type your own option string in the **Desync strategy** field.
 
 ---
 

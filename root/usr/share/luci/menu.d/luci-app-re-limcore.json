@@ -1,0 +1,53 @@
+{
+	"admin/services/limcore": {
+		"title": "LimCore",
+		"order": 10,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-limcore" ],
+			"uci": { "limcore": true }
+		}
+	},
+	"admin/services/limcore/client": {
+		"title": "Client Settings",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "limcore/client"
+		}
+	},
+	"admin/services/limcore/node": {
+		"title": "Node Settings",
+		"order": 15,
+		"action": {
+			"type": "view",
+			"path": "limcore/node"
+		}
+	},
+	"admin/services/limcore/server": {
+		"title": "Server Settings",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "limcore/server"
+		}
+	},
+	"admin/services/limcore/status": {
+		"title": "Core & Tools",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "limcore/status"
+		}
+	},
+	"admin/services/limcore/diagnostics": {
+		"title": "Diagnostics",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "limcore/diagnostics"
+		}
+	}
+}
