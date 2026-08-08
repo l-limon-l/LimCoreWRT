@@ -5,37 +5,67 @@
 
 'use strict';
 
-import { popen, access, readfile, unlink } from 'fs';
+import { popen, access, readfile, writefile, unlink } from 'fs';
+import { rand } from 'math';
+import { clock, time } from 'time';
 
 function shellquote(s) {
 	return `'${replace(s, "'", "'\\''")}'`;
 }
 
+function get_rand_id() {
+	let r1 = 0;
+	try { r1 = rand(); } catch (e) { r1 = time(); }
+	let r2 = 0;
+	try { r2 = clock(); } catch (e) { r2 = 12345; }
+	return sprintf('%x_%x', r1, r2);
+}
+
 function generate_keypair() {
 	let priv = null, pub = null;
 
-	/* 1. Try sing-box / hiddify-core built-in wg-keypair generator first (ALWAYS present) */
-	const fd_sb = popen('/usr/bin/sing-box generate wg-keypair 2>&1 || /usr/bin/hiddify-core generate wg-keypair 2>&1 || sing-box generate wg-keypair 2>&1');
+	/* 1. Try sing-box / hiddify-core / sing-box-extended / hiddify wg-keypair generator first */
+	const sb_cmds = [
+		'/usr/bin/sing-box generate wg-keypair 2>&1',
+		'/usr/bin/hiddify-core generate wg-keypair 2>&1',
+		'/usr/bin/sing-box-extended generate wg-keypair 2>&1',
+		'/usr/bin/hiddify generate wg-keypair 2>&1',
+		'/usr/sbin/sing-box generate wg-keypair 2>&1',
+		'sing-box generate wg-keypair 2>&1',
+		'hiddify-core generate wg-keypair 2>&1',
+		'sing-box-extended generate wg-keypair 2>&1',
+		'hiddify generate wg-keypair 2>&1'
+	];
 
-	if (fd_sb) {
-		const out = fd_sb.read('all') || ''; fd_sb.close();
-		const m_priv = match(out, /[Pp]rivate[ \t]*[Kk]ey[ \t]*:[ \t]*([a-zA-Z0-9+/=]+)/);
-		const m_pub  = match(out, /[Pp]ublic[ \t]*[Kk]ey[ \t]*:[ \t]*([a-zA-Z0-9+/=]+)/);
-		if (m_priv) priv = m_priv[1];
-		if (m_pub)  pub  = m_pub[1];
+	for (let cmd in sb_cmds) {
+		const fd_sb = popen(cmd);
+		if (fd_sb) {
+			const out = fd_sb.read('all') || ''; fd_sb.close();
+			const m_priv = match(out, /[Pp]rivate[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
+			const m_pub  = match(out, /[Pp]ublic[_\s]*[Kk]ey[\s:=]+([a-zA-Z0-9+/=]{43,44})/);
+			if (m_priv && m_pub) {
+				priv = m_priv[1];
+				pub  = m_pub[1];
+				break;
+			}
+		}
 	}
 
 	/* 2. Fallback to wg CLI (wireguard-tools) */
 	if (!priv || !pub) {
 		const fd_wg = popen('wg genkey 2>/dev/null');
 		if (fd_wg) {
-			priv = trim(fd_wg.read('all') || '');
+			const tmp_priv = trim(fd_wg.read('all') || '');
 			fd_wg.close();
-			if (priv && length(priv)) {
-				const fd_pub = popen(`echo ${shellquote(priv)} | wg pubkey 2>/dev/null`);
+			if (tmp_priv && length(tmp_priv)) {
+				const fd_pub = popen(`echo ${shellquote(tmp_priv)} | wg pubkey 2>/dev/null`);
 				if (fd_pub) {
-					pub = trim(fd_pub.read('all') || '');
+					const tmp_pub = trim(fd_pub.read('all') || '');
 					fd_pub.close();
+					if (tmp_pub && length(tmp_pub)) {
+						priv = tmp_priv;
+						pub  = tmp_pub;
+					}
 				}
 			}
 		}
@@ -43,18 +73,20 @@ function generate_keypair() {
 
 	/* 3. Fallback to openssl if wg is not present or failed */
 	if ((!priv || !pub) && (access('/usr/bin/openssl') || access('/bin/openssl'))) {
-		const tmp_key = '/tmp/warp_key_' + sprintf('%x', rand()) + '.key';
-		system(`openssl genpkey -algorithm X25519 -out ${shellquote(tmp_key)} 2>/dev/null`);
+		const tmp_key = '/tmp/warp_key_' + get_rand_id() + '.key';
+		system(`openssl genpkey -algorithm X25519 -out ${shellquote(tmp_key)} >/dev/null 2>&1`);
 		if (access(tmp_key)) {
 			const fd_priv = popen(`openssl pkey -in ${shellquote(tmp_key)} -rawout 2>/dev/null | openssl base64 2>/dev/null | tr -d '\\r\\n'`);
 			if (fd_priv) {
-				priv = trim(fd_priv.read('all') || '');
+				const tmp_priv = trim(fd_priv.read('all') || '');
 				fd_priv.close();
+				if (tmp_priv && length(tmp_priv)) priv = tmp_priv;
 			}
 			const fd_pub = popen(`openssl pkey -in ${shellquote(tmp_key)} -pubout -rawout 2>/dev/null | openssl base64 2>/dev/null | tr -d '\\r\\n'`);
 			if (fd_pub) {
-				pub = trim(fd_pub.read('all') || '');
+				const tmp_pub = trim(fd_pub.read('all') || '');
 				fd_pub.close();
+				if (tmp_pub && length(tmp_pub)) pub = tmp_pub;
 			}
 			unlink(tmp_key);
 		}
@@ -88,14 +120,14 @@ function register_warp(pub_key) {
 		locale: "en_US"
 	});
 
-	const tmp_json = '/tmp/warp_reg_' + sprintf('%x', rand()) + '.json';
-	const tmp_res = '/tmp/warp_res_' + sprintf('%x', rand()) + '.json';
+	const rand_id = get_rand_id();
+	const tmp_json = '/tmp/warp_reg_' + rand_id + '.json';
+	const tmp_res = '/tmp/warp_res_' + rand_id + '.json';
 
-	const fd = popen(`cat << 'EOF' > ${shellquote(tmp_json)}\n${payload}\nEOF\n`);
-	if (fd) fd.close();
+	writefile(tmp_json, payload);
 
 	const url = 'https://api.cloudflareclient.com/v0i1909051800/reg';
-	const cmd = `curl -s -X POST -H "Content-Type: application/json" -H "User-Agent: okhttp/3.12.1" -d @${shellquote(tmp_json)} -o ${shellquote(tmp_res)} --connect-timeout 15 ${shellquote(url)} 2>/dev/null || wget -qO ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: okhttp/3.12.1" --post-data=${shellquote(payload)} --timeout=15 ${shellquote(url)} 2>/dev/null`;
+	const cmd = `curl -s -X POST -H "Content-Type: application/json" -H "User-Agent: okhttp/3.12.1" -d @${shellquote(tmp_json)} -o ${shellquote(tmp_res)} --connect-timeout 15 ${shellquote(url)} >/dev/null 2>&1 || wget -qO ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: okhttp/3.12.1" --post-file=${shellquote(tmp_json)} --timeout=15 ${shellquote(url)} >/dev/null 2>&1 || uclient-fetch -q -O ${shellquote(tmp_res)} --header="Content-Type: application/json" --header="User-Agent: okhttp/3.12.1" --post-file=${shellquote(tmp_json)} ${shellquote(url)} >/dev/null 2>&1`;
 
 	system(cmd);
 
@@ -130,9 +162,10 @@ if (!keys.public_key || !keys.private_key) {
 const reg_data = register_warp(keys.public_key);
 
 if (!reg_data || !reg_data.result) {
+	const err_msg = reg_data?.errors?.[0]?.message || reg_data?.message || "Failed to register with Cloudflare WARP API. Check internet connectivity.";
 	print(sprintf('%J\n', {
 		success: false,
-		error: "Failed to register with Cloudflare WARP API. Check internet connectivity."
+		error: err_msg
 	}));
 	exit(1);
 }
@@ -165,3 +198,4 @@ print(sprintf('%J\n', {
 	addresses: addresses,
 	reserved: reserved_str
 }));
+

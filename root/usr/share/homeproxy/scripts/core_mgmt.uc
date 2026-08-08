@@ -350,7 +350,13 @@ if (action === 'info') {
 	const fd = popen('/usr/bin/ucode /etc/homeproxy/scripts/warp_gen.uc 2>/dev/null');
 	if (fd) {
 		const out = fd.read('all'); fd.close();
-		try { result = json(trim(out)); } catch(e) { result = { success: false, error: 'invalid json output from warp_gen.uc' }; }
+		const trimmed = trim(out);
+		try {
+			result = json(trimmed);
+		} catch(e) {
+			const preview = length(trimmed) ? substr(trimmed, 0, 120) : 'empty output';
+			result = { success: false, error: `invalid json output from warp_gen.uc (${preview})` };
+		}
 	} else {
 		result = { success: false, error: 'failed to run warp_gen.uc' };
 	}
