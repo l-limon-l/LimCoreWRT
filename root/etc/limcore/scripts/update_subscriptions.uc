@@ -33,14 +33,9 @@ const ucimain = 'config',
 const allow_insecure = uci.get(uciconfig, ucisubscription, 'allow_insecure') || '0',
       filter_mode = uci.get(uciconfig, ucisubscription, 'filter_nodes') || 'disabled',
       filter_keywords = uci.get(uciconfig, ucisubscription, 'filter_keywords') || [],
-      packet_encoding = uci.get(uciconfig, ucisubscription, 'packet_encoding') || 'xudp';
-let subscription_urls = uci.get(uciconfig, ucisubscription, 'subscription_url');
-if (type(subscription_urls) === 'string') {
-	subscription_urls = filter(split(subscription_urls, /\r?\n/), (u) => length(trim(u)) > 0);
-} else if (type(subscription_urls) !== 'array') {
-	subscription_urls = [];
-}
-const user_agent = uci.get(uciconfig, ucisubscription, 'user_agent'),
+      packet_encoding = uci.get(uciconfig, ucisubscription, 'packet_encoding') || 'xudp',
+      subscription_urls = uci.get(uciconfig, ucisubscription, 'subscription_url') || [],
+      user_agent = uci.get(uciconfig, ucisubscription, 'user_agent'),
       hwid = uci.get(uciconfig, ucisubscription, 'hwid') || uci.get(uciconfig, ucimain, 'hwid'),
       via_proxy = uci.get(uciconfig, ucisubscription, 'update_via_proxy') || '0';
 
