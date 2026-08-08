@@ -864,6 +864,63 @@ const methods = {
 						add('Rules: '       + length((cfg.route || {}).rules || []));
 						add('Inbounds: '    + length(cfg.inbounds || []));
 						add('DNS servers: ' + length(((cfg.dns || {}).servers) || []));
+						
+						let warp_active = false;
+						let tls_frag_count = 0;
+						let udp_frag_count = 0;
+						let mux_count = 0;
+						let noise_count = 0;
+						for (let i = 0; i < length(cfg.outbounds || []); i++) {
+							let ob = cfg.outbounds[i];
+							if (ob.tag === 'WARP') warp_active = true;
+							if (ob.tls?.fragment || ob.tls_fragment) tls_frag_count++;
+							if (ob.udp_fragment) udp_frag_count++;
+							if (ob.multiplex || ob.mieru_multiplexing) mux_count++;
+							if (ob.noise) noise_count++;
+						}
+						
+						add('');
+						add('## WARP & Advanced Features (Active in sing-box)');
+						add('WARP Outbound: ' + (warp_active ? 'Present & Active' : 'Missing (or Disabled)'));
+						add('TLS Fragmentation: Active on ' + tls_frag_count + ' node(s)');
+						add('UDP Fragmentation: Active on ' + udp_frag_count + ' node(s)');
+						add('Multiplexing: Active on ' + mux_count + ' node(s)');
+						add('Noise: Active on ' + noise_count + ' node(s)');
+
+						add('');
+						add('## Active Connection Test (via local proxy)');
+						if (access('/usr/bin/curl')) {
+							let rport = '2080';
+							const fd_port = popen('uci -q get homeproxy.config.routing_port 2>/dev/null');
+							if (fd_port) {
+								const p = trim(fd_port.read('all'));
+								if (length(p)) rport = p;
+								fd_port.close();
+							}
+							
+							const fd_curl = popen(`curl -s -x socks5h://127.0.0.1:${rport} --connect-timeout 5 --max-time 10 https://cloudflare.com/cdn-cgi/trace 2>/dev/null`);
+							if (fd_curl) {
+								const trace = trim(fd_curl.read('all'));
+								fd_curl.close();
+								if (length(trace) > 0) {
+									add('Connection: SUCCESS (Evasion settings are working)');
+									let m_warp = match(trace, /warp=(on|plus)/);
+									if (m_warp) {
+										add('WARP Status: ACTIVE (Cloudflare confirmed: ' + m_warp[1] + ')');
+									} else {
+										add('WARP Status: Inactive or routed differently');
+									}
+									let m_ip = match(trace, /ip=([a-fA-F0-9.:]+)/);
+									if (m_ip) add('Exit IP: ' + m_ip[1]);
+								} else {
+									add('Connection: FAILED (Timeout or Error)');
+									add('-> The proxy is either not running, or your current evasion');
+									add('   settings (Noise, Fragmentation, etc.) broke the connection.');
+								}
+							}
+						} else {
+							add('curl is not installed, cannot run active test.');
+						}
 					} catch(e) { add('Parse error: ' + e); }
 				}
 			} else {
@@ -1438,6 +1495,79 @@ const methods = {
 				method: 'curl',
 				results: results
 			};
+		}
+	},
+
+	evasion_test: {
+		args: { type: 'type' },
+		call: function(req) {
+			const type = req.args?.type;
+			const config_path = RUN_DIR + '/hiddify-c.json';
+			const stat = lstat(config_path);
+			if (!stat) return { result: false, message: 'Config not found' };
+
+			const content = readfile(config_path);
+			if (!content) return { result: false, message: 'Could not read config' };
+
+			let cfg;
+			try { cfg = json(content); } catch(e) { return { result: false, message: 'Parse error' }; }
+
+			let warp_active = false;
+			let tls_frag_count = 0;
+			let udp_frag_count = 0;
+			let mux_count = 0;
+			let noise_count = 0;
+			for (let i = 0; i < length(cfg.outbounds || []); i++) {
+				let ob = cfg.outbounds[i];
+				if (ob.tag === 'WARP') warp_active = true;
+				if (ob.tls?.fragment || ob.tls_fragment) tls_frag_count++;
+				if (ob.udp_fragment) udp_frag_count++;
+				if (ob.multiplex || ob.mieru_multiplexing) mux_count++;
+				if (ob.noise) noise_count++;
+			}
+
+			if (type === 'fragment') {
+				if (tls_frag_count > 0 || udp_frag_count > 0)
+					return { result: true, message: `Active on ${tls_frag_count} TLS, ${udp_frag_count} UDP node(s)` };
+				return { result: false, message: 'Inactive on all nodes' };
+			}
+			if (type === 'multiplex') {
+				if (mux_count > 0)
+					return { result: true, message: `Active on ${mux_count} node(s)` };
+				return { result: false, message: 'Inactive on all nodes' };
+			}
+			if (type === 'noise') {
+				if (noise_count > 0)
+					return { result: true, message: `Active on ${noise_count} node(s)` };
+				return { result: false, message: 'Inactive on all nodes' };
+			}
+			if (type === 'warp') {
+				if (!access('/usr/bin/curl')) return { result: false, message: 'curl not installed' };
+				let rport = '2080';
+				const fd_port = popen('uci -q get homeproxy.config.routing_port 2>/dev/null');
+				if (fd_port) {
+					const p = trim(fd_port.read('all'));
+					if (length(p)) rport = p;
+					fd_port.close();
+				}
+				const fd_curl = popen(`curl -s -x socks5h://127.0.0.1:${rport} --connect-timeout 5 --max-time 10 https://cloudflare.com/cdn-cgi/trace 2>/dev/null`);
+				if (fd_curl) {
+					const trace = trim(fd_curl.read('all'));
+					fd_curl.close();
+					if (length(trace) > 0) {
+						let m_warp = match(trace, /warp=(on|plus)/);
+						let m_ip = match(trace, /ip=([a-fA-F0-9.:]+)/);
+						if (m_warp) {
+							return { result: true, message: `Active (${m_warp[1]}). IP: ${m_ip ? m_ip[1] : 'unknown'}` };
+						}
+						return { result: false, message: `Inactive (or routed differently). IP: ${m_ip ? m_ip[1] : 'unknown'}` };
+					}
+					return { result: false, message: 'Connection Timeout/Error' };
+				}
+				return { result: false, message: 'Curl execution failed' };
+			}
+
+			return { result: false, message: 'Unknown test type' };
 		}
 	},
 

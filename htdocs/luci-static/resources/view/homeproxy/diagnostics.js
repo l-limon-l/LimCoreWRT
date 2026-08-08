@@ -87,6 +87,13 @@ const callActiveNode = rpc.declare({
 	expect: { '': {} }
 });
 
+const callEvasionTest = rpc.declare({
+	object: 'luci.homeproxy',
+	method: 'evasion_test',
+	params: ['type'],
+	expect: { '': {} }
+});
+
 /* Resolve a sing-box outbound tag (cfg-<section>-out) to its UCI label. */
 function resolveTag(tag) {
 	const m = tag && tag.match(/^cfg-(.+)-out$/);
@@ -452,6 +459,42 @@ function buildNftSection(view) {
 }
 
 
+function buildAdvancedEvasionSection(view) {
+	const items = [];
+
+	function evasionRow(label, type) {
+		const resultEl = E('strong', { 'class': 'diag-gray' }, _('unchecked'));
+		function run() {
+			dom.content(resultEl, E('em', { 'class': 'diag-gray' }, _('Testing:')));
+			return L.resolveDefault(callEvasionTest(type), {}).then(function(ret) {
+				if (ret.error) { dom.content(resultEl, E('span', { 'class': 'diag-fail' }, ret.error)); return; }
+				if (ret.result) {
+					dom.content(resultEl, E('strong', { 'class': 'diag-ok' }, ret.message));
+				} else {
+					dom.content(resultEl, E('span', { 'class': 'diag-fail' }, ret.message || _('failed')));
+				}
+			});
+		}
+		items.push(run);
+		const btn = E('button', { 'class': 'btn cbi-button cbi-button-action diag-btn',
+			'click': ui.createHandlerFn(view, run) }, [ _('Check') ]);
+		return E('div', { 'class': 'diag-row' }, [ E('span', { 'class': 'diag-label' }, label), btn, resultEl ]);
+	}
+
+	const rows = [
+		evasionRow(_('WARP (Active Network Test)'), 'warp'),
+		evasionRow(_('TLS/UDP Fragmentation'), 'fragment'),
+		evasionRow(_('Multiplexing'), 'multiplex'),
+		evasionRow(_('Noise Generation'), 'noise')
+	];
+
+	return {
+		el: sectionCard(_('Advanced Evasion Features'), 'diag-evasion', rows),
+		run: function() { return Promise.all(items.map(function(fn) { return fn(); })); }
+	};
+}
+
+
 function buildReportSection(view) {
 	const textArea = E('textarea', {
 		'id': 'diag-report-area',
@@ -529,6 +572,7 @@ return view.extend({
 		const dns    = buildDnsSection(this);
 		const nft    = buildNftSection(this);
 		const conn   = buildConnectivitySection(this, features.core_type || null);
+		const evasion = buildAdvancedEvasionSection(this);
 		const report = buildReportSection(this);
 
 		dns.run();
@@ -538,7 +582,8 @@ return view.extend({
 				core.run(),
 				config.run(),
 				nft.run(),
-				conn.run()
+				conn.run(),
+				evasion.run()
 			]);
 		});
 
@@ -550,13 +595,14 @@ return view.extend({
 					'click': runAll
 				}, _('Run All Tests')),
 				E('em', { 'class': 'diag-gray', 'style': 'margin-left:.8em; font-size:.9em' },
-					_('Runs Core, Config, Network, and Connectivity checks simultaneously.'))
+					_('Runs Core, Config, Network, Connectivity and Evasion checks simultaneously.'))
 			]),
 			core.el,
 			config.el,
 			dns.el,
 			nft.el,
 			conn.el,
+			evasion.el,
 			report.el
 		]);
 	},
