@@ -132,10 +132,25 @@ start_service() {
 	config_get table_mark "infra" "table_mark" "100"
 	config_get tproxy_mark "infra" "tproxy_mark" "101"
 
+	# Drain any rules left over from previous runs before adding ours. `ip rule add` does
+	# NOT deduplicate: it appends an identical rule every time and only the route add
+	# complains ("RTNETLINK answers: File exists"), so restarts silently piled up copies —
+	# nine of them were found on a device after a day of testing. Each delete removes one
+	# match, hence the loop; it is bounded so a delete that never succeeds can't hang boot.
+	local i=0
+	while ip rule del fwmark "$tproxy_mark" table "$table_mark" 2>"/dev/null"; do
+		i=$((i+1)); [ "$i" -ge 32 ] && break
+	done
+	ip route del local 0.0.0.0/0 dev lo table "$table_mark" 2>"/dev/null"
 	ip rule add fwmark "$tproxy_mark" table "$table_mark"
 	ip route add local 0.0.0.0/0 dev lo table "$table_mark"
 
 	if [ "$ipv6_support" -eq "1" ]; then
+		local i6=0
+		while ip -6 rule del fwmark "$tproxy_mark" table "$table_mark" 2>"/dev/null"; do
+			i6=$((i6+1)); [ "$i6" -ge 32 ] && break
+		done
+		ip -6 route del local ::/0 dev lo table "$table_mark" 2>"/dev/null"
 		ip -6 rule add fwmark "$tproxy_mark" table "$table_mark"
 		ip -6 route add local ::/0 dev lo table "$table_mark"
 	fi
