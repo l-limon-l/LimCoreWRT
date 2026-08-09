@@ -75,7 +75,7 @@ default_postinst
 	# own session so it survives both the install teardown and rpcd stopping itself —
 	# a plain background subshell stays in the postinst process group and gets reaped.
 	if command -v setsid >/dev/null 2>&1; then
-		setsid sh -c 'sleep 3; /etc/init.d/rpcd restart' >/dev/null 2>&1 &
+		setsid sh -c "sleep 3; /etc/init.d/rpcd restart" >/dev/null 2>&1 &
 	else
 		( sleep 3; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
 	fi
@@ -101,7 +101,7 @@ default_postinst
 	# own session so it survives both the install teardown and rpcd stopping itself —
 	# a plain background subshell stays in the postinst process group and gets reaped.
 	if command -v setsid >/dev/null 2>&1; then
-		setsid sh -c 'sleep 3; /etc/init.d/rpcd restart' >/dev/null 2>&1 &
+		setsid sh -c "sleep 3; /etc/init.d/rpcd restart" >/dev/null 2>&1 &
 	else
 		( sleep 3; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
 	fi
@@ -208,19 +208,24 @@ PYEOF
 default_postinst $0 $@' > "$TEMP_PKG_DIR/CONTROL/postinst"
 	chmod 0755 "$TEMP_PKG_DIR/CONTROL/postinst"
 
-	echo -e "[ -n "\${IPKG_INSTROOT}" ] || {
-	(. /etc/uci-defaults/$PKG_NAME) && rm -f /etc/uci-defaults/$PKG_NAME
+	# Single-quoted body with $PKG_NAME spliced in, so the emitted script keeps its own
+	# quoting. The previous double-quoted form swallowed the quotes around
+	# ${IPKG_INSTROOT} and emitted `[ -n ${IPKG_INSTROOT} ]`; with the variable unset that
+	# is `[ -n ]`, which tests the literal string "-n" and is TRUE — so the `||` body was
+	# skipped and uci-defaults never ran from postinst-pkg.
+	echo -e '[ -n "${IPKG_INSTROOT}" ] || {
+	(. /etc/uci-defaults/'"$PKG_NAME"') && rm -f /etc/uci-defaults/'"$PKG_NAME"'
 	rm -f /tmp/luci-indexcache
 	rm -rf /tmp/luci-modulecache/
 	# Same reason as the apk post-install: rpcd must fully restart to pick up new/changed
 	# ucode methods, and setsid keeps the restarter alive past the install teardown.
 	if command -v setsid >/dev/null 2>&1; then
-		setsid sh -c 'sleep 3; /etc/init.d/rpcd restart' >/dev/null 2>&1 &
+		setsid sh -c "sleep 3; /etc/init.d/rpcd restart" >/dev/null 2>&1 &
 	else
 		( sleep 3; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
 	fi
 	exit 0
-}" > "$TEMP_PKG_DIR/CONTROL/postinst-pkg"
+}' > "$TEMP_PKG_DIR/CONTROL/postinst-pkg"
 	chmod 0755 "$TEMP_PKG_DIR/CONTROL/postinst-pkg"
 
 	echo -e '#!/bin/sh
