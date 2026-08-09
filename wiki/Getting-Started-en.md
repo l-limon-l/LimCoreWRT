@@ -65,7 +65,7 @@ Still on the **Routing** tab, the defaults are sensible:
 Press **Save & Apply**. Then start the service (it also auto-starts on boot):
 
 ```sh
-/etc/init.d/homeproxy start
+/etc/init.d/limcore start
 ```
 
 Watch the log at **Core & Tools**.

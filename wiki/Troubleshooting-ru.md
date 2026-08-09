@@ -8,10 +8,10 @@
 
 **Симптом:** При сохранении любой формы (настройки клиента, списки контроля доступа и др.) появляется:
 ```
-RPC call to luci.homeproxy/[method] failed with error -32000: Object not found
+RPC call to luci.limcore/[method] failed with error -32000: Object not found
 ```
 
-**Причина:** rpcd не загрузил модуль `luci.homeproxy`. Чаще всего это происходит сразу после установки или обновления пакета, если скрипт post-install отправил сигнал перезагрузки, когда rpcd ещё не был запущен.
+**Причина:** rpcd не загрузил модуль `luci.limcore`. Чаще всего это происходит сразу после установки или обновления пакета, если скрипт post-install отправил сигнал перезагрузки, когда rpcd ещё не был запущен.
 
 **Решение:**
 ```sh
@@ -25,7 +25,7 @@ RPC call to luci.homeproxy/[method] failed with error -32000: Object not found
 
 **Симптом:** Селектор режима прокси на странице «Клиент» показывает только «Redirect TCP». Опции TProxy и Tun отсутствуют, хотя необходимые модули ядра установлены.
 
-**Причина:** Та же, что выше — `luci.homeproxy` не загружен. Вызов определения возможностей (`singbox_get_features`) возвращает пустой объект, все флаги оказываются ложными и опции скрываются.
+**Причина:** Та же, что выше — `luci.limcore` не загружен. Вызов определения возможностей (`singbox_get_features`) возвращает пустой объект, все флаги оказываются ложными и опции скрываются.
 
 **Решение:** То же — перезапустить rpcd и войти заново.
 
@@ -33,7 +33,7 @@ RPC call to luci.homeproxy/[method] failed with error -32000: Object not found
 
 ## TypeError на странице «Клиент»
 
-**Симптом:** При открытии `/cgi-bin/luci/admin/services/homeproxy/client` появляется:
+**Симптом:** При открытии `/cgi-bin/luci/admin/services/limcore/client` появляется:
 ```
 TypeError: Cannot read properties of undefined (reading 'content')
 ```
@@ -86,17 +86,17 @@ opkg update && opkg install libustream-openssl ca-certificates
 
 ```sh
 uci add firewall include
-uci set firewall.@include[-1].path='/etc/firewall.d/homeproxy-mwan3'
+uci set firewall.@include[-1].path='/etc/firewall.d/limcore-mwan3'
 uci set firewall.@include[-1].type='script'
 uci set firewall.@include[-1].reload='1'
 uci commit firewall
 
 mkdir -p /etc/firewall.d
-cat > /etc/firewall.d/homeproxy-mwan3 << 'EOF'
+cat > /etc/firewall.d/limcore-mwan3 << 'EOF'
 #!/bin/sh
 iptables -t mangle -I OUTPUT 1 -m mark --mark 0x64/0x64 -j RETURN
 EOF
-chmod +x /etc/firewall.d/homeproxy-mwan3
+chmod +x /etc/firewall.d/limcore-mwan3
 
 /etc/init.d/firewall reload
 ```
@@ -119,6 +119,6 @@ iptables -t mangle -L OUTPUT -n --line-numbers | head -5
 
 Если вы уже используете последний релиз и проблема сохраняется — запустите вручную через SSH, чтобы увидеть возможные ошибки:
 ```sh
-ucode /etc/homeproxy/scripts/update_subscriptions.uc
+ucode /etc/limcore/scripts/update_subscriptions.uc
 ```
 

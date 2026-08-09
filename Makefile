@@ -11,22 +11,22 @@ LUCI_DEPENDS:= \
 	+firewall4 \
 	+ucode-mod-digest
 
-PKG_NAME:=luci-app-re-homeproxy
+PKG_NAME:=luci-app-limcore
 PKG_VERSION:=1
 PKG_RELEASE:=1
 PKG_MAINTAINER:=l_limon_l
 PKG_LICENSE:=GPL-2.0-only
 PKG_LICENSE_FILES:=LICENSE
 
-define Package/luci-app-re-homeproxy/conffiles
-/etc/config/homeproxy
-/etc/homeproxy/certs/
-/etc/homeproxy/ruleset/
-/etc/homeproxy/resources/direct_list.txt
-/etc/homeproxy/resources/proxy_list.txt
+define Package/luci-app-limcore/conffiles
+/etc/config/limcore
+/etc/limcore/certs/
+/etc/limcore/ruleset/
+/etc/limcore/resources/direct_list.txt
+/etc/limcore/resources/proxy_list.txt
 endef
 
-define Package/luci-app-re-homeproxy/postinst
+define Package/luci-app-limcore/postinst
 #!/bin/sh
 # Full restart, NOT kill -HUP: SIGHUP only reloads ACLs/session, so rpcd keeps the
 # OLD ucode method set from /usr/share/rpcd/ucode/ until restarted. On every update

@@ -16,5 +16,5 @@ root/usr/share/rpcd/ucode/*     text eol=lf
 root/etc/uci-defaults/*         text eol=lf
 root/usr/bin/*                  text eol=lf
 root/etc/config/*               text eol=lf
-root/usr/share/homeproxy/*      text eol=lf
+root/usr/share/limcore/*      text eol=lf
 install.sh                      text eol=lf

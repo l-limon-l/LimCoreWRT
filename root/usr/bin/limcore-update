@@ -26,7 +26,7 @@ if [ "$(id -u)" != 0 ]; then
 fi
 
 # Зеркало GitHub, если основной домен заблокирован (то же значение использует бэкенд).
-GH_MIRROR="${GH_MIRROR:-$(uci -q get homeproxy.config.github_mirror)}"
+GH_MIRROR="${GH_MIRROR:-$(uci -q get limcore.config.github_mirror)}"
 export GH_MIRROR
 
 SRC="https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh"
@@ -43,7 +43,7 @@ if ! fetch "$SRC"; then
 	[ -n "$GH_MIRROR" ] && MIRRORED=$(echo "$SRC" | sed "s#https://raw.githubusercontent.com#${GH_MIRROR%/}#")
 	if [ -z "$MIRRORED" ] || ! fetch "$MIRRORED"; then
 		echo -e "${R}Не удалось скачать install.sh (GitHub недоступен?).${N}"
-		echo "Подсказка: задайте зеркало — uci set homeproxy.config.github_mirror=https://...; uci commit homeproxy"
+		echo "Подсказка: задайте зеркало — uci set limcore.config.github_mirror=https://...; uci commit limcore"
 		rm -f "$TMP"
 		echo "LIMCORE_UPDATE_RC=1"
 		exit 1
