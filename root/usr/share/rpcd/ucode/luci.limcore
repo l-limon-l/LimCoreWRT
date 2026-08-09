@@ -1399,10 +1399,15 @@ const methods = {
 			 * background child of rpcd is reaped with it — the update would die halfway
 			 * through, every time, which is exactly the "Update LimCore does nothing"
 			 * symptom. setsid detaches into its own session, reparented to init, so it
-			 * outlives both the rpcd restart and the package upgrade that triggers it. */
+			 * outlives both the rpcd restart and the package upgrade that triggers it.
+			 *
+			 * Invoked through `sh` rather than executed directly: the updater shipped
+			 * without its execute bit once already, and setsid's only symptom was
+			 * "Permission denied" in the log. The interpreter is explicit here so
+			 * packaging can't disable self-update again. */
 			const cmd = access('/usr/bin/setsid')
-				? `setsid ${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`
-				: `${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`;
+				? `setsid sh ${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`
+				: `sh ${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`;
 
 			const rc = system(cmd);
 			return { result: rc === 0, detached: !!access('/usr/bin/setsid') };
