@@ -10,12 +10,9 @@ This page walks you from a fresh install to a working connection. It assumes Lim
 
 ## Step 1 — Install a core
 
-The LuCI app is only the interface; a separate **core** binary does the proxying. Open **Core & Tools → Core management** and install one:
+The LuCI app is only the interface; a separate **core** binary does the proxying. Open **Core & Tools → Core management** and press **Install**.
 
-- **hiddify-core** (default) — lighter, has a compact build for small routers.
-- **sing-box-extended** — needed for AmneziaWG/WARP and the widest protocol set.
-
-The installer auto-picks a build that fits your storage. Full details: **[Core Management](Core-Management-en)**.
+LimCore runs on **sing-box-extended**, which brings AmneziaWG/WARP and the widest protocol set. The installer checks free storage first and verifies the download before installing, so it refuses outright rather than leaving you with a half-installed core. Full details: **[Core Management](Core-Management-en)**.
 
 ---
 
@@ -76,7 +73,7 @@ Watch the log at **Core & Tools**.
 
 Open the **Diagnostics** page and run the checks:
 
-- **Connectivity** — confirms reachability of test sites. On **hiddify-core** it shows your **Direct IP** vs **Proxy IP** (they should differ when traffic is proxied); on **sing-box-extended** it shows the live **Active Node** instead (sing-box can't report the exit IP).
+- **Connectivity** — confirms reachability of test sites and shows the live **Active Node**: sing-box cannot report an exit IP, so the selected node stands in for an address comparison.
 - **Core & System** — confirms the core is installed and running.
 - **Configuration** — confirms the generated config is valid.
 
