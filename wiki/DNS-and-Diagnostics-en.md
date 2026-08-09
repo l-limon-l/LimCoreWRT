@@ -44,8 +44,8 @@ The **Diagnostics** page (Services → LimCore → Diagnostics) runs live checks
 
 | Card | What it shows |
 |------|---------------|
-| **Connectivity** | Reachability of test sites. On **hiddify-core** it also shows your **Direct IP** vs **Proxy IP** (the two should differ when traffic is actually proxied); on **sing-box-extended** it shows the live **Active Node** instead, because sing-box can't report the exit IP. |
-| **Core & System** | Whether the core (hiddify-core / sing-box-extended) and ByeDPI are installed, the active binary, version, whether they're running (with PID), and listening ports. Includes a **Restart Service** button. |
+| **Connectivity** | Reachability of test sites, plus the live **Active Node** row: sing-box cannot report an exit IP, so the currently selected node is shown instead. |
+| **Core & System** | Whether the core (sing-box-extended) and ByeDPI are installed, the active binary, version, whether they're running (with PID), and listening ports. Includes a **Restart Service** button. |
 | **Configuration** | Whether the generated core config is **valid**, its size, and counts of inbounds / outbounds / rules. |
 | **DNS Tests** | Checks that DNS resolution works through the configured resolvers. |
 | **Network Intercept** | The nft/firewall interception state — UCI firewall settings and, when Zapret is on, the **Zapret NFQUEUE counters** (mark 110 → queue) so you can confirm packets are reaching nfqws2. |
@@ -53,7 +53,7 @@ The **Diagnostics** page (Services → LimCore → Diagnostics) runs live checks
 
 ### Reading the results
 
-- **Direct IP == Proxy IP** (hiddify-core) → traffic isn't being proxied (check main node / routing mode / access control). On sing-box-extended, confirm the **Active Node** row shows your chosen node instead.
+- **Active Node** empty or not the node you picked → traffic isn't being proxied: check main node, routing mode and access control.
 - **Core not running** → use **Restart Service**; if status shows all `?`, the rpcd backend is stale (`/etc/init.d/rpcd restart`, wait ~2 s).
 - **Config invalid** → a node or rule is malformed; the report names the error.
 - **Zapret counters not incrementing** → the strategy/queue isn't catching traffic — see [Zapret](Zapret-en).

@@ -16,7 +16,7 @@ Zapret runs the **`nfqws2`** packet processor. The selected traffic is tagged in
 |---|---|
 | ✅ **Un-throttles DPI-filtered sites** | The common case for YouTube, Discord and similar services slowed or blocked by DPI. |
 | ✅ **No subscription, no server** | A local packet trick — no VPN node, account or remote server. |
-| ✅ **Works on both cores** | Implemented as a marked direct outbound; works identically on hiddify-core and sing-box-extended. |
+| ✅ **Independent of the node** | Implemented as a marked direct outbound, so it works regardless of which node is selected. |
 | ✅ **Handles TCP *and* UDP/QUIC** | Unlike ByeDPI, the NFQUEUE path also desyncs UDP flows (used for Discord voice). |
 | ❌ **Does not encrypt or hide traffic** | Your ISP still sees *which* sites you visit; Zapret only changes *how* the first packets look. It is **not a VPN**. |
 | ❌ **Cannot reach fully IP-blocked sites** | If a site is blocked by IP/DNS (not just throttled), only a real proxy/VPN node can reach it. |

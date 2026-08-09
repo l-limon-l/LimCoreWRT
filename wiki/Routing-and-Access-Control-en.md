@@ -18,7 +18,7 @@ Set on **Client → Routing → Routing mode**:
 | **Bypass mainland China** | Everything proxied except mainland-China destinations (direct). |
 | **Only proxy mainland China** | Only mainland-China destinations proxied. |
 | **Custom routing** | Manual routing nodes + rules (advanced). |
-| **Custom JSON** | Hand-written hiddify-core config — see [Custom JSON Config](Custom-JSON-Config-en). |
+| **Custom JSON** | Hand-written sing-box config — see [Custom JSON Config](Custom-JSON-Config-en). |
 
 **Routing ports** — restrict which destination ports are proxied (e.g. *Common ports only* to keep P2P traffic direct).
 
@@ -105,7 +105,7 @@ Free-form domain lists that are always proxied or always direct — useful for o
 
 - In Russia mode, start with **Russia Inside + Re:Filter** enabled; add per-service lists only if a specific site still misbehaves.
 - If a site is *throttled* (slow) rather than *blocked* (unreachable), route it through [ByeDPI](ByeDPI-en) or [Zapret](Zapret-en) instead of the VPN.
-- Use the [Diagnostics](DNS-and-Diagnostics-en) page to confirm traffic is actually being proxied — **Direct IP vs Proxy IP** on hiddify-core, or the **Active Node** row on sing-box-extended.
+- Use the [Diagnostics](DNS-and-Diagnostics-en) page to confirm traffic is actually being proxied — check the **Active Node** row.
 
 See also: [Getting Started](Getting-Started-en) · [Subscriptions & Node Import](Subscriptions-en) · [DNS & Diagnostics](DNS-and-Diagnostics-en) · [Troubleshooting](Troubleshooting-en)
 

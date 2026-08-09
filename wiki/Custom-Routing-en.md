@@ -57,7 +57,7 @@ Rules are evaluated top to bottom (the list is sortable) and the first match win
 
 | | **Custom routing** | **[Custom JSON](Custom-JSON-Config-en)** |
 |---|---|---|
-| How | UI: Routing Nodes + Routing Rules | Raw sing-box / hiddify-core JSON |
+| How | UI: Routing Nodes + Routing Rules | Raw sing-box JSON |
 | Good for | Per-app/site/IP rules without writing JSON | Full control, fields the UI doesn't expose |
 | Validation | UI-guided | You must validate the JSON yourself |
 

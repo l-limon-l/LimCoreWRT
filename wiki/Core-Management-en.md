@@ -1,63 +1,58 @@
-﻿🇬🇧 [English](Core-Management-en) | 🇷🇺 [Русский](Core-Management-ru)
+🇬🇧 [English](Core-Management-en) | 🇷🇺 [Русский](Core-Management-ru)
 
 # Core Management
 
-LimCore is **multi-core**: the LuCI app is the interface, and a separate **core** binary does the actual proxying. You install, update, and switch cores from **Services → LimCore → Core & Tools → Core management** — no SSH required.
+LimCore has two parts: the LuCI app is the interface, and a separate **core** binary does the actual proxying. You install and update the core from **Services → LimCore → Core & Tools → Core management** — no SSH required.
 
 ---
 
-## Choosing a core
+## The core
 
-| | **hiddify-core** (default) | **sing-box-extended** |
-|---|---|---|
-| Engine | Fork of sing-box by the Hiddify team | Fork of sing-box with extra build tags |
-| Footprint | Lighter; a **compact build** exists for small devices | Larger (~26 MB installed) |
-| Protocols | Hiddify-app protocols, TLS fragment, XHTTP, Mieru, etc. | The widest protocol set… |
-| **AmneziaWG / WARP** | ❌ **Not supported** | ✅ **Supported** |
+LimCore runs on **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)**, shtorm-7's build of sing-box with an extended set of build tags. On top of stock sing-box it adds **AmneziaWG**, **WARP**, TrustTunnel and several other protocols.
 
-**Rule of thumb:** if you need **AmneziaWG/WARP**, or want the broadest protocol coverage and have ~40 MB free, choose **sing-box-extended**. Otherwise **hiddify-core** is the lighter default and is the only one with a compact build for tight-storage routers.
+The installed binary is roughly 75 MB raw. On a **compressing** overlay (jffs2/ubifs) it occupies about 26 MB because the filesystem compresses it in place; on ext4/f2fs it needs the full size.
 
-Which protocols appear in the node editor depends on the core you install — see [Supported Protocols](Supported-Protocols-en).
+Which protocols appear in the node editor depends on the build tags of the core version you have — the **Core & Tools** section lists them. See [Supported Protocols](Supported-Protocols-en).
+
+> LimCore previously also supported hiddify-core as an alternative. That support was removed: it forced the config generator to emit two dialects in parallel, and sing-box-extended covers what hiddify-core did while adding AmneziaWG, which it never supported.
 
 ---
 
-## Installing — one smart button
+## Installing
 
-Core Management has a single **Install** button per core. It does **not** ask you to choose between "standard" and "compressed" builds — instead it inspects your device and picks a build that actually fits:
+Core Management has a single **Install** button. It inspects the device before downloading and refuses to install something that cannot fit.
 
-1. It reads the free space on `/overlay` (persistent flash) and your free RAM.
-2. For hiddify-core: if the full build fits → it installs the **standard** build. If storage is tight but there's enough RAM → it installs the **compact** build and tells you so.
-3. If neither can fit → it stops with a clear message instead of installing something broken.
+1. It reads the free space on `/overlay` (persistent flash), adjusted for whether the filesystem compresses.
+2. If there isn't enough room it stops with a clear message instead of installing something broken.
+3. The downloaded package is **verified against the byte count** GitHub reports before it is handed to the package manager.
+4. After installation it confirms that `/usr/bin/sing-box` actually landed on disk.
 
-### Why the guardrail matters
+### Why these checks matter
 
-A core binary that is **larger than the free overlay** gets **truncated** as it's written, and then crashes with a **"bus error" (SIGBUS)** the moment it's launched — a confusing failure that looks like a corrupt download. The installer's size check exists specifically to prevent this: it never offers a build the device can't hold.
+A truncated download is the most common way to end up with a broken install: `wget` can exit successfully on a short read, `apk` then registers the package, but the 75 MB binary never reaches the disk. The result is the contradictory state where the package is "installed" and diagnostics report the core "not found". Verifying the size before installing and the binary after it closes that path — and on failure the package registration is rolled back, so a retry isn't an "already installed" no-op.
 
-### The compact build
-
-The compact (UPX-compressed) build of hiddify-core is much smaller on flash, but it **decompresses into RAM each time it launches** — trading flash space for memory. The installer only picks it when there's enough free RAM, and shows a note like *"Limited storage — installing the compact build (decompresses into RAM at launch)."* On most routers this is invisible in day-to-day use.
+A related trap is a binary **larger than the free overlay**: it gets **truncated** as it's written and then crashes with a **"bus error" (SIGBUS)** the moment it launches. That's what the free-space check is for.
 
 ---
 
 ## Storage at a glance
 
-| Free on `/overlay` | What installs |
-|--------------------|---------------|
-| ~40 MB+ | hiddify-core or sing-box-extended (full build) |
-| ~25–40 MB | hiddify-core (compact build, if RAM allows) |
-| < ~25 MB | Not enough — free space, or bake the core into a custom firmware image |
+| Free on `/overlay` | Result |
+|--------------------|--------|
+| ~80 MB+ (non-compressing fs) | Installs |
+| ~32 MB+ (jffs2 / ubifs) | Installs — the filesystem compresses the binary |
+| Less | Not enough — free space, or bake the core into a custom firmware image |
 
-> On a **compressing** overlay (jffs2/ubifs) the full build needs less free space than the raw figure, because the filesystem compresses it. The installer accounts for this automatically — trust its check over the table above.
+> The installer detects the overlay type itself — trust its check over the table above.
 
-Tight on flash but building your own image? Large cores fit comfortably when **baked into the SquashFS** root at image-build time (the SquashFS root is compressed and read-only), rather than installed into the writable overlay.
+Tight on flash but building your own image? The core fits comfortably when **baked into the SquashFS** root at image-build time (the SquashFS root is compressed and read-only), rather than installed into the writable overlay.
 
 ---
 
-## Switching cores and updating
+## Updating and custom cores
 
-- **Update:** press **Install** again — it fetches the latest release and reinstalls.
-- **Switch cores:** install the other core; if both are present, LimCore uses your **Preferred core** setting (on **Client → Routing Settings**). The config generator and the service honour the same preference, so the generated config always matches the core that will run it.
-- **Custom / external core:** instead of the managed install you can point LimCore at a **self-provided core binary** (a build you compiled, or a version not in Releases) — it detects and uses it. Advanced setups only.
+- **Update:** press **Install** again — it fetches the latest release and reinstalls. **Check update** next to it reports the latest available version without installing it.
+- **Custom / external core:** instead of the managed install you can point LimCore at a **self-provided binary** (a build you compiled, or a version not in Releases) — it detects and uses it. The binary must be sing-box compatible; the service, the config generator and the UI all resolve the same path, so what's displayed can't drift from what's running. Advanced setups only.
 - **Version / status:** the **Core management** section shows the installed core and version. If it shows all `?`, the backend (rpcd) is stale — restart it (`/etc/init.d/rpcd restart`) and reload the page.
 
 ---
@@ -77,4 +72,3 @@ The **Core & Tools** tab also has a **Resources management** section for the dat
 The proxy needs `kmod-nft-tproxy` and `kmod-tun` for transparent routing. The installer pulls these in; if routing doesn't work after a fresh install, confirm they're present.
 
 See also: [ByeDPI](ByeDPI-en) · [Zapret](Zapret-en) · [Supported Protocols](Supported-Protocols-en) · [Troubleshooting](Troubleshooting-en)
-

@@ -2,7 +2,7 @@
 
 # Custom JSON Config
 
-**Custom JSON** is a routing mode that lets you bypass LimCore's UCI-based configuration entirely and supply a raw [sing-box](https://sing-box.sagernet.org) / hiddify-core JSON config directly. It is intended for advanced users who need fine-grained control that the web UI does not expose.
+**Custom JSON** is a routing mode that lets you bypass LimCore's UCI-based configuration entirely and supply a raw [sing-box](https://sing-box.sagernet.org) JSON config directly. It is intended for advanced users who need fine-grained control that the web UI does not expose.
 
 To enable it, go to **LimCore → Client → Routing Settings** and set **Routing Mode** to **Custom JSON**.
 
@@ -10,7 +10,7 @@ To enable it, go to **LimCore → Client → Routing Settings** and set **Routin
 
 ## Config Structure
 
-A hiddify-core config is a JSON object. The main top-level sections are:
+The config is a JSON object. The main top-level sections are:
 
 | Section | Purpose |
 |---------|---------|
@@ -33,17 +33,15 @@ Specific sections:
 
 ---
 
-## hiddify-core vs. sing-box
+## Relationship to upstream sing-box
 
-hiddify-core is a fork of sing-box and is largely config-compatible. The key differences:
+sing-box-extended is a fork of sing-box and is config-compatible with it. The
+difference is build tags: the extended build enables protocols and transports that
+upstream either lacks or gated off, such as AmneziaWG, XHTTP and AnyTLS. Check
+[Supported Protocols](Supported-Protocols-en) for what your installed build includes.
 
-- **Additional protocols** — hiddify-core may support protocols not yet upstream in sing-box, or support them earlier. This includes AnyTLS and extended options for some existing protocols. Check [Supported Protocols](Supported-Protocols-en) for what your installed build includes.
-- **Hiddify-specific extensions** — some extra fields and options exist for hiddify's own features. These are documented in the [HiddifyCli guide](https://hiddify.com/app/HiddifyCli-guide/#run-config-or-subscription-link-in-hiddifycli-with-hiddifyapp-settings).
-- **Version differences** — hiddify-core may be ahead of or behind a specific sing-box release. If a sing-box feature is missing, check the hiddify-core release notes.
-
-When writing configs, start from the sing-box documentation and refer to the hiddify-core guide for anything that does not behave as expected.
-
----
+Write configs against the sing-box documentation; anything the extended build adds
+is documented in its own release notes.
 
 ## Example Skeleton
 
@@ -98,7 +96,7 @@ This is illustrative only — adjust inbound type/port, outbound settings, and r
 ## Tips
 
 - **Validate before saving.** An invalid JSON config will silently fail to apply. Use a JSON validator before pasting — syntax errors will not be reported in the UI. After saving, check the log (see below) to confirm the config loaded correctly.
-- **Logs.** If the config applies but traffic does not work, check the core log in **LimCore → Core & Tools** or via SSH: `tail -f /var/run/limcore/hiddify-c.log`.
+- **Logs.** If the config applies but traffic does not work, check the core log in **LimCore → Core & Tools** or via SSH: `tail -f /var/run/limcore/core.log`.
 - **Inbound ports.** LimCore's firewall rules expect specific ports. If you change inbound ports in a custom config, the nftables redirect rules will not match and traffic will not reach your inbound. The default inbound configuration used by LimCore is:
 
   ```json
@@ -141,7 +139,7 @@ This is illustrative only — adjust inbound type/port, outbound settings, and r
   ```
 
   If you need to change these ports, update them both in your custom JSON and in `/etc/config/limcore` (the `proxy_port`, `redirect_port`, `tproxy_port`, and `dns_port` options) so the firewall rules stay in sync.
-- **`default_mark`.** This is **required** in the `route` section to prevent tproxy routing loops. Without it, hiddify-core's own outbound traffic gets intercepted by the nftables tproxy rules and sent back to the proxy, causing a loop. The value must match `self_mark` in `/etc/config/limcore` (default: `100`):
+- **`default_mark`.** This is **required** in the `route` section to prevent tproxy routing loops. Without it, the core's own outbound traffic gets intercepted by the nftables tproxy rules and sent back to the proxy, causing a loop. The value must match `self_mark` in `/etc/config/limcore` (default: `100`):
 
   ```json
   "route": {
