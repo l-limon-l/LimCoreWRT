@@ -48,8 +48,7 @@ jget()  { printf '%s\n' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^
 jtrue() { printf '%s'   "$1" | grep -qE "\"result\"[[:space:]]*:[[:space:]]*true"; }
 jerr()  { printf '%s\n' "$1" | grep -qE "\"error\""; }
 jfalse(){ printf '%s'   "$1" | grep -qE "\"$2\"[[:space:]]*:[[:space:]]*false"; }
-jnum()  { printf '%s
-' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\([0-9]\+\).*//p" | head -1; }
+jnum()  { printf '%s\n' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -1; }
 
 # --- Загрузка «сначала GitHub, при сбое — зеркало» для первого хопа (app + ключ),
 #     пока ещё нет собственного gh_fetch приложения. dl <url> <файл>
@@ -155,10 +154,17 @@ jerr "$PREP" && die "  подготовка ядра не удалась: $(jget
 DLURL=$(jget "$PREP" dl_url); TMP=$(jget "$PREP" tmp_path); PMG=$(jget "$PREP" pkg_manager)
 DLSIZE=$(jnum "$PREP" dl_size)
 [ -n "$DLURL" ] && [ -n "$TMP" ] && [ -n "$PMG" ] || die "  подготовка ядра не вернула данные для загрузки."
+# Пустой размер не должен ронять установщик на арифметике: 0 = проверку пропускаем,
+# загрузка всё равно состоится, просто без сверки длины.
+[ -n "$DLSIZE" ] || DLSIZE=0
 
 # Загрузка проверяется по размеру: оборванная закачка раньше проходила молча, apk
 # регистрировал пакет, но 75-мегабайтный бинарник на диск не попадал.
-info "  скачиваю ядро (~$((DLSIZE / 1048576)) МБ)..."
+if [ "$DLSIZE" -gt 0 ]; then
+	info "  скачиваю ядро (~$((DLSIZE / 1048576)) МБ)..."
+else
+	warn "  размер пакета неизвестен — скачиваю без сверки длины."
+fi
 DLRES=$(ucode "$CM" download_pkg "$DLURL" "$TMP" "$DLSIZE")
 jtrue "$DLRES" || die "  не удалось скачать ядро: $(jget "$DLRES" error)"
 
