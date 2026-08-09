@@ -596,15 +596,10 @@ function parseShareLink(uri, features) {
 			}
 
 			if (params.get('hiddify') === '1') {
-				if (params.get('fragment')) {
-					const fparts = params.get('fragment').split(',');
-					if (fparts.length >= 2) {
-						config.tls_fragment = '1';
-						config.tls_fragment_size = fparts[0];
-						config.tls_fragment_sleep = fparts[1];
-						config.tls_fragment_type = fparts[2] || null;
-					}
-				}
+				if (params.get('fragment'))
+					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+					   tuning, so only the intent survives the import. */
+					config.tls_fragment = '1';
 				if (params.get('allowInsecure') === 'true' || params.get('insecure') === 'true')
 					config.tls_insecure = '1';
 			}
@@ -705,15 +700,10 @@ function parseShareLink(uri, features) {
 			}
 
 			if (params.get('hiddify') === '1') {
-				if (params.get('fragment')) {
-					const fparts = params.get('fragment').split(',');
-					if (fparts.length >= 2) {
-						config.tls_fragment = '1';
-						config.tls_fragment_size = fparts[0];
-						config.tls_fragment_sleep = fparts[1];
-						config.tls_fragment_type = fparts[2] || null;
-					}
-				}
+				if (params.get('fragment'))
+					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+					   tuning, so only the intent survives the import. */
+					config.tls_fragment = '1';
 				if (params.get('allowInsecure') === 'true' || params.get('insecure') === 'true')
 					config.tls_insecure = '1';
 				if (params.get('extra')) {

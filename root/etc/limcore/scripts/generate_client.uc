@@ -445,11 +445,6 @@ function generate_outbound(node) {
 				down_mbps: strToInt(node.multiplex_brutal_down)
 			} : null
 		} : null,
-		tls_fragment: (node.tls_fragment === '1') ? {
-			enabled: true,
-			size: node.tls_fragment_size,
-			sleep: node.tls_fragment_sleep
-		} : null,
 		/* Shadowsocks has no top-level tls field — for a ShadowTLS-wrapped Shadowsocks the
 		 * TLS lives on the separate shadowtls transport outbound (detour). sing-box
 		 * strict-rejects a stray tls here ("unknown field tls" → FATAL), so suppress it for
@@ -458,6 +453,13 @@ function generate_outbound(node) {
 			enabled: true,
 			server_name: node.tls_sni,
 			insecure: strToBool(node.tls_insecure),
+			/* TLS fragmentation lives INSIDE tls and is a plain bool here. hiddify-core took
+			 * an outbound-level object with size/sleep; sing-box rejects that outright
+			 * ("unknown field tls_fragment" → FATAL, the whole service refuses to start).
+			 * The option has no UI toggle — it arrives only from a Hiddify share link
+			 * carrying &fragment=, so importing one used to kill the service. sing-box
+			 * exposes no size/sleep tuning, so those values are not carried over. */
+			fragment: (node.tls_fragment === '1') ? true : null,
 			alpn: node.tls_alpn ? (type(node.tls_alpn) === 'array' ? node.tls_alpn : [node.tls_alpn]) : null,
 			min_version: node.tls_min_version,
 			max_version: node.tls_max_version,
@@ -1761,10 +1763,11 @@ if (!isEmpty(main_node)) {
 			override_port: strToInt(cfg.override_port),
 			udp_disable_domain_unmapping: strToBool(cfg.udp_disable_domain_unmapping),
 			udp_connect: strToBool(cfg.udp_connect),
-			udp_timeout: strToTime(cfg.udp_timeout),
-			tls_fragment: strToBool(cfg.tls_fragment),
-			tls_fragment_fallback_delay: strToTime(cfg.tls_fragment_fallback_delay),
-			tls_record_fragment: strToBool(cfg.tls_record_fragment)
+			udp_timeout: strToTime(cfg.udp_timeout)
+			/* No tls_fragment / tls_fragment_fallback_delay / tls_record_fragment here:
+			 * sing-box rejects all three on an inbound ("unknown field" → FATAL). They were
+			 * hiddify-core spellings, nothing in the server UI ever wrote them, and a
+			 * hand-edited UCI config carrying one would have taken the service down. */
 		});
 	});
 
