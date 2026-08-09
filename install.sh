@@ -92,7 +92,15 @@ if [ "$PM" = apk ]; then
 			|| warn "  не удалось скачать ключ подписи — поставлю без проверки подписи"
 	fi
 fi
-APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
+# ВАЖНО: берём именно /releases/latest, а не первый попавшийся ассет из /releases.
+# Список релизов приходит НЕ в порядке версий (наблюдалось r8, r6, r10), поэтому
+# `... /releases | head -1` мог поставить пользователю версию СТАРШЕ установленной —
+# то есть «обновление» молча откатывало назад.
+RELJSON=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest')
+APPURL=$(printf '%s\n' "$RELJSON" \
+	| grep -o "https://github\.com/[^\"]*luci-app-limcore[^\"]*${SUFFIX}\.${EXT}" | head -1)
+# Резерв: если /latest недоступен (нет релизов с пометкой latest), падаем на общий список.
+[ -n "$APPURL" ] || APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
 	| grep -o "https://github\.com/[^\"]*luci-app-limcore[^\"]*${SUFFIX}\.${EXT}" | head -1)
 [ -n "$APPURL" ] || die "Не нашёл пакет luci-app-limcore${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
 dl "$APPURL" /tmp/app.$EXT || die "Не удалось скачать приложение (попробуйте GH_MIRROR=...)."
@@ -113,7 +121,10 @@ case "$REPLY" in
 		# базовый перевод интерфейса LuCI (из фида, best-effort)
 		if [ "$PM" = apk ]; then apk add luci-i18n-base-ru >/dev/null 2>&1; else opkg install luci-i18n-base-ru >/dev/null 2>&1; fi
 		# перевод самого приложения (из релиза limcore)
-		LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
+		# из того же релиза, что и приложение — иначе перевод разъедется с версией
+		LURL=$(printf '%s\n' "$RELJSON" \
+			| grep -o "https://github\.com/[^\"]*luci-i18n-limcore-ru[^\"]*\.${EXT}" | head -1)
+		[ -n "$LURL" ] || LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
 			| grep -o "https://github\.com/[^\"]*luci-i18n-limcore-ru[^\"]*\.${EXT}" | head -1)
 		if [ -n "$LURL" ] && dl "$LURL" /tmp/i18n.$EXT; then
 			if [ "$PM" = apk ]; then apk add /tmp/i18n.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/i18n.$EXT; \
