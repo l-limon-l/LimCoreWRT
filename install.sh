@@ -105,7 +105,17 @@ APPURL=$(printf '%s\n' "$RELJSON" \
 [ -n "$APPURL" ] || die "Не нашёл пакет luci-app-limcore${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
 dl "$APPURL" /tmp/app.$EXT || die "Не удалось скачать приложение (попробуйте GH_MIRROR=...)."
 if [ "$PM" = apk ]; then
-	apk add /tmp/app.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/app.$EXT || die "apk add завершился ошибкой."
+	# Сначала пробуем с проверкой подписи, и только потом без неё — но об этом СООБЩАЕМ.
+	# Молчаливый откат означал, что сломанная или неподходящая подпись выглядит ровно как
+	# успешная установка, и подписывание не даёт ничего, а никто этого не замечает.
+	if apk add /tmp/app.$EXT 2>/dev/null; then
+		:
+	elif apk add --allow-untrusted /tmp/app.$EXT; then
+		warn "  подпись не проверена — пакет установлен как недоверенный."
+		warn "  (нет /etc/apk/keys/LimCoreWRT.pub, либо пакет не подписан, либо ключ не тот)"
+	else
+		die "apk add завершился ошибкой."
+	fi
 else
 	opkg update >/dev/null 2>&1; opkg install /tmp/app.$EXT || die "opkg install завершился ошибкой."
 fi
