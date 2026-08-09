@@ -11,7 +11,7 @@
 'use strict';
 
 import { urldecode, urlencode, urldecode_params } from 'luci.http';
-import { parseURL, decodeBase64Str, validation, isEmpty } from 'limcore';
+import { parseURL, decodeBase64Str, validation, isEmpty, normalizeVlessEncryption } from 'limcore';
 import { connect } from 'ubus';
 const sing_features = connect().call('luci.limcore', 'singbox_get_features', {}) || {};
 
@@ -429,7 +429,9 @@ export function parse_uri(uri, log) {
 				tls_reality_public_key: params.pbk ? urldecode(params.pbk) : null,
 				tls_reality_short_id: params.sid,
 				tls_utls: sing_features.with_utls ? params.fp : null,
-				vless_flow: (params.security in ['tls', 'reality']) ? params.flow : null
+				vless_flow: (params.security in ['tls', 'reality']) ? params.flow : null,
+				/* post-quantum VLESS encryption; normalized to the shape sing-box parses */
+				vless_encryption: normalizeVlessEncryption(params.encryption ? urldecode(params.encryption) : null)
 			};
 			switch(params.type) {
 			case 'grpc':
