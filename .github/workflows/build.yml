@@ -99,12 +99,23 @@ jobs:
 
       - name: Setup APK signing key
         run: |
+          # The private key file MUST be named LimCoreWRT: apk records the signer's key
+          # name in the package and looks for a matching file under /etc/apk/keys/ when
+          # verifying. install.sh installs the public half as /etc/apk/keys/LimCoreWRT.pub,
+          # so signing with /tmp/apk-signing.key would have produced packages nobody could
+          # verify — apk would silently fall back to --allow-untrusted and signing would
+          # have bought nothing.
           if [ -n "${{ secrets.APK_SIGNING_KEY }}" ]; then
-            echo "${{ secrets.APK_SIGNING_KEY }}" > /tmp/apk-signing.key
-            chmod 600 /tmp/apk-signing.key
-            openssl rsa -in /tmp/apk-signing.key -pubout -out .github/LimCoreWRT.pub 2>/dev/null || \
-            openssl ec  -in /tmp/apk-signing.key -pubout -out .github/LimCoreWRT.pub 2>/dev/null || true
-            echo "APK_SIGN_KEY=/tmp/apk-signing.key" >> $GITHUB_ENV
+            echo "${{ secrets.APK_SIGNING_KEY }}" > /tmp/LimCoreWRT
+            chmod 600 /tmp/LimCoreWRT
+            openssl rsa -in /tmp/LimCoreWRT -pubout -out .github/LimCoreWRT.pub 2>/dev/null || \
+            openssl ec  -in /tmp/LimCoreWRT -pubout -out .github/LimCoreWRT.pub 2>/dev/null || true
+            if [ ! -s .github/LimCoreWRT.pub ]; then
+              echo "::error::APK_SIGNING_KEY is set but no public key could be derived from it."
+              exit 1
+            fi
+            echo "APK_SIGN_KEY=/tmp/LimCoreWRT" >> $GITHUB_ENV
+            echo "Signing enabled; public key derived."
           else
             echo "No APK_SIGNING_KEY secret set — building unsigned package"
           fi
