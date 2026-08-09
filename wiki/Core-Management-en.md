@@ -10,7 +10,7 @@ LimCore has two parts: the LuCI app is the interface, and a separate **core** bi
 
 LimCore runs on **[sing-box-extended](https://github.com/shtorm-7/sing-box-extended)**, shtorm-7's build of sing-box with an extended set of build tags. On top of stock sing-box it adds **AmneziaWG**, **WARP**, TrustTunnel and several other protocols.
 
-The installed binary is roughly 75 MB raw. On a **compressing** overlay (jffs2/ubifs) it occupies about 26 MB because the filesystem compresses it in place; on ext4/f2fs it needs the full size.
+The installed binary is roughly 73 MB, and that barely depends on the filesystem. This page used to claim a compressing overlay (jffs2/ubifs) stores it about three times smaller; measuring on ubifs disproved it — 73,408 KB of logical size occupied 73,412 KB of blocks, a ratio of 1.0. Go binaries are already dense and do not compress.
 
 Which protocols appear in the node editor depends on the build tags of the core version you have — the **Core & Tools** section lists them. See [Supported Protocols](Supported-Protocols-en).
 
@@ -22,7 +22,7 @@ Which protocols appear in the node editor depends on the build tags of the core 
 
 Core Management has a single **Install** button. It inspects the device before downloading and refuses to install something that cannot fit.
 
-1. It reads the free space on `/overlay` (persistent flash), adjusted for whether the filesystem compresses.
+1. It reads the free space on `/overlay` (persistent flash).
 2. If there isn't enough room it stops with a clear message instead of installing something broken.
 3. The downloaded package is **verified against the byte count** GitHub reports before it is handed to the package manager.
 4. After installation it confirms that `/usr/bin/sing-box` actually landed on disk.
@@ -39,11 +39,15 @@ A related trap is a binary **larger than the free overlay**: it gets **truncated
 
 | Free on `/overlay` | Result |
 |--------------------|--------|
-| ~80 MB+ (non-compressing fs) | Installs |
-| ~32 MB+ (jffs2 / ubifs) | Installs — the filesystem compresses the binary |
+| ~80 MB+ | Installs |
 | Less | Not enough — free space, or bake the core into a custom firmware image |
 
-> The installer detects the overlay type itself — trust its check over the table above.
+> The threshold is the same on every filesystem: overlay compression buys nothing on this binary.
+
+**An upgrade needs as much room as a fresh install**: the package manager writes the new
+binary before removing the old one, so both exist for a while. On a device where the core
+only just fits, upgrading in place will not work — remove the core first, then install it
+again.
 
 Tight on flash but building your own image? The core fits comfortably when **baked into the SquashFS** root at image-build time (the SquashFS root is compressed and read-only), rather than installed into the writable overlay.
 
