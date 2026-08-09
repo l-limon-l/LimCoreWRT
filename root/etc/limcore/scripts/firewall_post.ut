@@ -70,6 +70,18 @@ let routing_port = uci.get(cfgname, 'config', 'routing_port');
 if (routing_port === 'common')
 	routing_port = uci.get(cfgname, 'infra', 'common_port') || '22,53,80,143,443,465,587,853,873,993,995,8080,8443,9418';
 
+/* "Proxy calls" routes voice UDP to the proxy, but that rule lives inside the core and is
+ * unreachable unless the packets are intercepted first — and the common-port list holds
+ * only TCP-ish service ports (5222 for XMPP was added for exactly this reason, the UDP
+ * side was not). The result was a toggle that did nothing for voice: measured on a Russian
+ * ISP, Discord voice kept going direct and lost half its return packets, showing 5000 ms.
+ *
+ * Only the narrow voice ranges are added. 50000-65530 is deliberately NOT among them: it
+ * would swallow BitTorrent and game traffic, which is the whole point of "common ports
+ * only (bypass P2P)". Pick "All ports" if you want those proxied too. */
+if (routing_port && uci.get(cfgname, 'config', 'proxy_calls') === '1')
+	routing_port += ',19294-19344,3478-3497,16384-16387,16393-16402';
+
 const proxy_mode = uci.get(cfgname, 'config', 'proxy_mode') || 'redirect_tproxy',
       ipv6_support = uci.get(cfgname, 'config', 'ipv6_support') || '0';
 
