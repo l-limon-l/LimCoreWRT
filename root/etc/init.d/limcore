@@ -93,6 +93,22 @@ start_service() {
 		fi
 	fi
 
+	# Validate before handing the config to procd. sing-box treats an unknown field as a
+	# decode FATAL and refuses to start at all, so ONE bad option on ONE node takes the
+	# whole tunnel down — and without this check the only evidence is a respawn loop with
+	# nothing useful in the daemon log. Most protocol-specific fields are emitted without
+	# a type guard (they are simply null until the matching UCI option exists), so a node
+	# carrying a field from another protocol — after an import, or a type change — is
+	# enough to trigger it. Fail loudly here instead.
+	local check_out
+	check_out="$("$PROG" check -c "$RUN_DIR/core.json" 2>&1)"
+	if [ -n "$check_out" ]; then
+		log "Generated config rejected by the core, not starting:"
+		log "$check_out"
+		log "Fix the offending node, or switch main node, then start LimCore again."
+		return 1
+	fi
+
 	# DNSMasq rules
 	local ipv6_support dns_port
 	config_get_bool ipv6_support "config" "ipv6_support" "0"
