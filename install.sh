@@ -87,8 +87,8 @@ info "Версия: OpenWrt $VER  |  Архитектура: $ARCH  |  Мене�
 ok "[1/5] Устанавливаю LuCI-приложение LimCore..."
 if [ "$PM" = apk ]; then
 	if [ ! -f /etc/apk/keys/LimCoreWRT.pub ]; then
-		dl "https://github.com/l-limon-l/LimCoreWRT/releases/latest/download/LimCoreWRT.pub" /tmp/hp.pub \
-			&& cp /tmp/hp.pub /etc/apk/keys/ && rm -f /tmp/hp.pub && ok "  ключ подписи добавлен в доверенные" \
+		dl "https://github.com/l-limon-l/LimCoreWRT/releases/latest/download/LimCoreWRT.pub" /tmp/LimCoreWRT.pub \
+			&& cp /tmp/LimCoreWRT.pub /etc/apk/keys/ && rm -f /tmp/LimCoreWRT.pub && ok "  ключ подписи добавлен в доверенные" \
 			|| warn "  не удалось скачать ключ подписи — поставлю без проверки подписи"
 	fi
 fi

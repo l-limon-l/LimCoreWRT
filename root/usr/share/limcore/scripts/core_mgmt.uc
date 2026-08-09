@@ -73,19 +73,15 @@ function free_ram_kb() {
 	return m ? int(m[1]) : 0;
 }
 
-/* Does the overlay filesystem transparently compress? jffs2/ubifs do (~3x on a Go binary),
- * ext4/f2fs do not. This decides how much flash the binary actually occupies. */
-function overlay_compresses() {
-	const fd = popen("mount 2>/dev/null | awk '$3==\"/overlay\"{print $5; exit}'");
-	let t = '';
-	if (fd) { t = trim(fd.read('all')); fd.close(); }
-	return (t in ['jffs2', 'ubifs']);
-}
-
-/* Footprint thresholds (KB). The Go binary is ~76 MB raw → ~76 MB on ext4/f2fs, but only
- * ~26 MB on a compressing overlay. */
-const FULL_OVERLAY_RAW_KB  = 81920;   /* ~80 MB free on an uncompressed overlay */
-const FULL_OVERLAY_COMP_KB = 32768;   /* ~32 MB on a compressing overlay */
+/* Footprint threshold (KB). This used to be halved on jffs2/ubifs on the assumption that
+ * a compressing overlay stores the binary ~3x smaller. Measured on ubifs, that assumption
+ * is simply false for this binary: 75,169,918 bytes logical occupied 73,412 KB of blocks —
+ * a ratio of 1.0. Go binaries are already dense and do not compress.
+ *
+ * The old 32 MB figure was actively dangerous: a device with ~35 MB free passed the check
+ * and then had a 73 MB write fail partway, which is precisely the truncated-binary /
+ * SIGBUS outcome this guard exists to prevent. One threshold, sized for reality. */
+const FULL_OVERLAY_KB = 81920;   /* ~80 MB — the binary is ~73 MB plus install headroom */
 
 const CORE_BINARY = '/usr/bin/sing-box';
 const RELEASE_API = 'https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest';
@@ -164,12 +160,20 @@ if (action === 'info') {
 				let overlay_free_kb = free_kb('/overlay');
 				if (!overlay_free_kb) overlay_free_kb = free_kb('/');
 				const ext = pkg_manager === 'apk' ? '.apk' : '.ipk';
-				const need = overlay_compresses() ? FULL_OVERLAY_COMP_KB : FULL_OVERLAY_RAW_KB;
+				const need = FULL_OVERLAY_KB;
 
 				/* An install that runs out of overlay mid-extraction leaves a registered
-				 * package with a truncated/absent binary, so refuse up front. */
+				 * package with a truncated/absent binary, so refuse up front.
+				 *
+				 * An upgrade needs the same room as a fresh install: the package manager
+				 * writes the new binary before dropping the old one, so the two coexist.
+				 * Say so, because "not enough space" on a device that is already running
+				 * the core reads like a bug otherwise. */
 				if (overlay_free_kb < need) {
-					result = { error: `Not enough overlay space: ${overlay_free_kb} KB free, sing-box-extended needs ~${need} KB.` };
+					const installed = access(CORE_BINARY);
+					result = { error: installed
+						? `Not enough overlay space to upgrade: ${overlay_free_kb} KB free, ~${need} KB needed. The new binary is written before the old one is removed, so an upgrade needs as much room as a fresh install — remove the core first, then install it again.`
+						: `Not enough overlay space: ${overlay_free_kb} KB free, sing-box-extended needs ~${need} KB.` };
 				} else {
 					const api = github_api(RELEASE_API);
 					if (api.error) {
