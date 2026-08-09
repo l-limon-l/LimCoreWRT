@@ -1522,7 +1522,12 @@ if (!isEmpty(main_node)) {
 			push(config.route.rules, {
 				network: 'udp',
 				port: [1400, 8443],
-				port_range: ['50000:65530', '596:599', '3478:3497', '16384:16387', '16393:16402'],
+				/* 19294:19344 is Discord's voice range — the same one the zapret_voice rule
+				 * above targets. It was missing here, so "proxy calls" covered WhatsApp,
+				 * Telegram and FaceTime but silently did nothing for Discord: its voice UDP
+				 * kept going direct, straight into whatever the ISP does to it. Measured on
+				 * a Russian ISP: 49 packets out, 22 back, and Discord reporting 5000 ms. */
+				port_range: ['19294:19344', '50000:65530', '596:599', '3478:3497', '16384:16387', '16393:16402'],
 				action: 'route',
 				outbound: 'main-out'
 			});
