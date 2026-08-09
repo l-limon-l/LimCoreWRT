@@ -604,7 +604,6 @@ export function parse_uri(uri, log) {
 				mieru_protocol: params.protocol || null,
 				mieru_port_range: params.port || null,
 				mieru_multiplexing: params.multiplexing || null,
-				mieru_handshake_mode: params['handshake-mode'] || null
 			};
 
 			break;

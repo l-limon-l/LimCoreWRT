@@ -375,8 +375,7 @@ function parseShareLink(uri, features) {
 				password: url.password ? decodeURIComponent(url.password) : null,
 				mieru_protocol: params.get('protocol') || null,
 				mieru_port_range: params.get('port') || null,
-				mieru_multiplexing: params.get('multiplexing') || null,
-				mieru_handshake_mode: params.get('handshake-mode') || null
+				mieru_multiplexing: params.get('multiplexing') || null
 			};
 
 			break;
@@ -1212,9 +1211,6 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends('type', 'mieru');
 	o.modalonly = true;
 
-	o = s.option(form.Value, 'mieru_handshake_mode', _('Handshake mode'));
-	o.depends('type', 'mieru');
-	o.modalonly = true;
 	/* Mieru config end */
 
 	/* TUIC config start */

@@ -90,7 +90,7 @@ const zapret_mark = uci.get(uciconfig, ucimain, 'zapret_mark') || '110';
 const zapret_voice = uci.get(uciconfig, ucimain, 'zapret_voice') || '0';
 
 let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outbound_dns,
-    domain_strategy, sniff_override, dns_server, china_dns_server, iran_dns_server, russia_dns_server,
+    domain_strategy, dns_server, china_dns_server, iran_dns_server, russia_dns_server,
     secure_dns_server, proxy_calls, no_proxy_torrents, show_advanced_rules, dns_default_strategy, dns_default_server, dns_disable_cache,
     dns_disable_cache_expire, dns_independent_cache, dns_client_subnet, cache_file_store_rdrc,
     cache_file_rdrc_timeout, direct_domain_list, proxy_domain_list;
@@ -143,7 +143,6 @@ if (routing_mode !== 'custom') {
 	if (proxy_domain_list)
 		proxy_domain_list = split(proxy_domain_list, /[\r\n]/);
 
-	sniff_override = uci.get(uciconfig, uciinfra, 'sniff_override') || '1';
 } else {
 	/* DNS settings */
 	dns_default_strategy = uci.get(uciconfig, ucidnssetting, 'default_strategy');
@@ -159,7 +158,6 @@ if (routing_mode !== 'custom') {
 	default_outbound = uci.get(uciconfig, uciroutingsetting, 'default_outbound') || 'nil';
 	default_outbound_dns = uci.get(uciconfig, uciroutingsetting, 'default_outbound_dns') || 'default-dns';
 	domain_strategy = uci.get(uciconfig, uciroutingsetting, 'domain_strategy');
-	sniff_override = uci.get(uciconfig, uciroutingsetting, 'sniff_override');
 }
 
 const proxy_mode = uci.get(uciconfig, ucimain, 'proxy_mode') || 'redirect_tproxy',
@@ -507,10 +505,15 @@ function generate_outbound(node) {
 		/* NaiveProxy */
 		quic: (node.type === 'naive') ? strToBool(node.naive_quic) : null,
 		extra_headers: (node.type === 'naive') ? (node.naive_extra_headers ? json(node.naive_extra_headers) : null) : null,
-		/* sing-box-extended's ssh outbound has NO udp_over_tcp field → emitting it FATALs
-		 * with "unknown field udp_over_tcp" (verified on sing-box check), so ssh never
-		 * carries it. naive spells it as a plain bool. */
-		udp_over_tcp: (node.type === 'naive') ? strToBool(node.naive_udp_over_tcp) : null,
+		/* udp_over_tcp exists ONLY on shadowsocks and socks — vless/vmess/trojan/ssh FATAL
+		 * with "unknown field udp_over_tcp" (verified against sing-box check). naive spells
+		 * it as a plain bool instead of the SUoT object. The UI gates the flag to the same
+		 * two types. */
+		udp_over_tcp: (node.type === 'naive') ? strToBool(node.naive_udp_over_tcp) :
+		              ((node.udp_over_tcp === '1' && (node.type in ['shadowsocks', 'socks'])) ? {
+			enabled: true,
+			version: strToInt(node.udp_over_tcp_version)
+		} : null),
 		tcp_fast_open: strToBool(node.tcp_fast_open),
 		tcp_multi_path: strToBool(node.tcp_multi_path),
 		udp_fragment: strToBool(node.udp_fragment),
