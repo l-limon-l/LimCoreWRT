@@ -285,7 +285,7 @@ export function parse_uri(uri, log) {
 			}
 
 			let ssh_host_key = null;
-			/* Hiddify: hk=key1\n,key2\n,key3\n — urldecode_params already decodes values */
+			/* hk=key1\n,key2\n,key3\n — urldecode_params already decodes values */
 			const raw_hk = ssh_params.hk || ssh_params.host_key || ssh_params.hostKey;
 			if (raw_hk) {
 				const ssh_hk_lines = filter(split(raw_hk, ','), (l) => length(trim(l)) > 0);
@@ -299,11 +299,11 @@ export function parse_uri(uri, log) {
 				port: ssh_port,
 				username: ssh_user,
 				password: length(ssh_pass) ? ssh_pass : null,
-				/* Hiddify uses pk= (short) or private_key= ; urldecode_params already decoded */
+				/* pk= (short) or private_key= ; urldecode_params already decoded */
 				ssh_priv_key: ssh_params.pk || ssh_params.private_key || ssh_params.privateKey || null,
 				ssh_priv_key_pp: length(ssh_params.passphrase) ? ssh_params.passphrase : null,
 				ssh_host_key: ssh_host_key,
-				/* Hiddify always enables udp_over_tcp for SSH; only disable if explicitly set to 0 */
+				/* SSH defaults to udp_over_tcp; only disable if explicitly set to 0 */
 				ssh_udp_over_tcp: (ssh_params.uot === '0' || ssh_params.udp_over_tcp in ['0', 'false']) ? null : '1'
 			};
 
@@ -359,14 +359,15 @@ export function parse_uri(uri, log) {
 				break;
 			}
 
-			if (params.hiddify === '1') {
-				if (params.fragment)
-					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
-					   tuning, so only the intent survives the import. */
-					config.tls_fragment = '1';
-				if (params.allowInsecure === 'true' || params.insecure === 'true')
-					config.tls_insecure = '1';
-			}
+			/* Read unconditionally. These used to sit behind a `hiddify=1` marker, but
+			   other clients emit the same parameters without it, so the marker only
+			   caused links to import with settings silently dropped.
+			   sing-box's tls.fragment is a plain bool - no size/sleep tuning exists,
+			   so only the intent survives the import. */
+			if (params.fragment)
+				config.tls_fragment = '1';
+			if (params.allowInsecure === 'true' || params.insecure === 'true')
+				config.tls_insecure = '1';
 
 			break;
 		case 'tuic':
@@ -464,40 +465,49 @@ export function parse_uri(uri, log) {
 				break;
 			}
 
-			if (params.hiddify === '1') {
-				if (params.fragment)
-					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
-					   tuning, so only the intent survives the import. */
-					config.tls_fragment = '1';
-				if (params.allowInsecure === 'true' || params.insecure === 'true')
-					config.tls_insecure = '1';
-				if (params.extra) {
-					try {
-						const extra = json(urldecode(params.extra));
-						if (extra.headers && length(keys(extra.headers)) > 0)
-							config.xhttp_headers = sprintf('%J', extra.headers);
-						if (extra.downloadSettings) {
-							const dl = extra.downloadSettings;
-							config.xhttp_download_server = dl.address;
-							config.xhttp_download_port = '' + dl.port;
-							if (dl.xhttpSettings) {
-								config.xhttp_download_path = dl.xhttpSettings.path;
-								config.xhttp_download_host = dl.xhttpSettings.host;
-								config.xhttp_download_mode = dl.xhttpSettings.mode;
-							}
-							config.xhttp_download_security = dl.security;
-							if (dl.security === 'reality' && dl.realitySettings) {
-								config.xhttp_download_sni = dl.realitySettings.serverName;
-								config.xhttp_download_fp = dl.realitySettings.fingerprint;
-								config.xhttp_download_pbk = dl.realitySettings.publicKey;
-								config.xhttp_download_sid = dl.realitySettings.shortId;
-							} else if (dl.security === 'tls' && dl.tlsSettings) {
-								config.xhttp_download_sni = dl.tlsSettings.serverName;
-								config.xhttp_download_alpn = dl.tlsSettings.alpn;
-							}
+			/* Read unconditionally. These used to sit behind a `hiddify=1` marker, but
+			   other clients emit the same parameters without it, so a link carrying
+			   fragment / allowInsecure / extra imported with those settings silently
+			   dropped unless the marker happened to be there too. */
+			if (params.fragment)
+				/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+				   tuning, so only the intent survives the import. */
+				config.tls_fragment = '1';
+			if (params.allowInsecure === 'true' || params.insecure === 'true')
+				config.tls_insecure = '1';
+			if (params.extra) {
+				try {
+					const extra = json(urldecode(params.extra));
+					if (extra.headers && length(keys(extra.headers)) > 0)
+						config.xhttp_headers = sprintf('%J', extra.headers);
+					/* Xray puts the xhttp tuning inside `extra`, not in the query string.
+					   sing-box implements these three, and ignoring them meant the
+					   generator fell back to its own padding default while the server
+					   expected the subscription's value. */
+					config.xhttp_padding_bytes = config.xhttp_padding_bytes || extra.xPaddingBytes || null;
+					config.xhttp_sc_max_each_post_bytes = config.xhttp_sc_max_each_post_bytes || extra.scMaxEachPostBytes || null;
+					config.xhttp_sc_min_posts_interval_ms = config.xhttp_sc_min_posts_interval_ms || extra.scMinPostsIntervalMs || null;
+					if (extra.downloadSettings) {
+						const dl = extra.downloadSettings;
+						config.xhttp_download_server = dl.address;
+						config.xhttp_download_port = '' + dl.port;
+						if (dl.xhttpSettings) {
+							config.xhttp_download_path = dl.xhttpSettings.path;
+							config.xhttp_download_host = dl.xhttpSettings.host;
+							config.xhttp_download_mode = dl.xhttpSettings.mode;
 						}
-					} catch(e) {}
-				}
+						config.xhttp_download_security = dl.security;
+						if (dl.security === 'reality' && dl.realitySettings) {
+							config.xhttp_download_sni = dl.realitySettings.serverName;
+							config.xhttp_download_fp = dl.realitySettings.fingerprint;
+							config.xhttp_download_pbk = dl.realitySettings.publicKey;
+							config.xhttp_download_sid = dl.realitySettings.shortId;
+						} else if (dl.security === 'tls' && dl.tlsSettings) {
+							config.xhttp_download_sni = dl.tlsSettings.serverName;
+							config.xhttp_download_alpn = dl.tlsSettings.alpn;
+						}
+					}
+				} catch(e) {}
 			}
 
 			break;
