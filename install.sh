@@ -4,7 +4,7 @@
 #
 # Вручную ставится только LuCI-приложение + ключ подписи, а ядро, ByeDPI и Zapret
 # устанавливаются через собственный бэкенд приложения (core_mgmt.uc + rpcd-объект
-# luci.homeproxy) — поэтому определение архитектуры, компактные сборки под малую
+# luci.limcore) — поэтому определение архитектуры, компактные сборки под малую
 # флеш-память, проверка подписи и резерв через зеркало GitHub работают той же
 # проверенной логикой, что и графический интерфейс.
 #
@@ -94,8 +94,8 @@ if [ "$PM" = apk ]; then
 	fi
 fi
 APPURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
-	| grep -o "https://github\.com/[^\"]*luci-app-re-homeproxy[^\"]*${SUFFIX}\.${EXT}" | head -1)
-[ -n "$APPURL" ] || die "Не нашёл пакет luci-app-re-homeproxy${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
+	| grep -o "https://github\.com/[^\"]*luci-app-limcore[^\"]*${SUFFIX}\.${EXT}" | head -1)
+[ -n "$APPURL" ] || die "Не нашёл пакет luci-app-limcore${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
 dl "$APPURL" /tmp/app.$EXT || die "Не удалось скачать приложение (попробуйте GH_MIRROR=...)."
 if [ "$PM" = apk ]; then
 	apk add /tmp/app.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/app.$EXT || die "apk add завершился ошибкой."
@@ -113,9 +113,9 @@ case "$REPLY" in
 		info "  ставлю русский язык LuCI..."
 		# базовый перевод интерфейса LuCI (из фида, best-effort)
 		if [ "$PM" = apk ]; then apk add luci-i18n-base-ru >/dev/null 2>&1; else opkg install luci-i18n-base-ru >/dev/null 2>&1; fi
-		# перевод самого приложения (из релиза homeproxy)
+		# перевод самого приложения (из релиза limcore)
 		LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
-			| grep -o "https://github\.com/[^\"]*luci-i18n-homeproxy-ru[^\"]*\.${EXT}" | head -1)
+			| grep -o "https://github\.com/[^\"]*luci-i18n-limcore-ru[^\"]*\.${EXT}" | head -1)
 		if [ -n "$LURL" ] && dl "$LURL" /tmp/i18n.$EXT; then
 			if [ "$PM" = apk ]; then apk add /tmp/i18n.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/i18n.$EXT; \
 			else opkg install /tmp/i18n.$EXT; fi
@@ -126,12 +126,12 @@ case "$REPLY" in
 esac
 
 # Прописываем зеркало в бэкенд, чтобы делегированные загрузки тоже его использовали
-if [ -n "$GH_MIRROR" ]; then uci set homeproxy.config.github_mirror="$GH_MIRROR"; uci commit homeproxy; fi
+if [ -n "$GH_MIRROR" ]; then uci set limcore.config.github_mirror="$GH_MIRROR"; uci commit limcore; fi
 
 # Генерация постоянного HWID роутера на основе MAC-адреса
-if [ -z "$(uci -q get homeproxy.config.hwid)" ]; then
+if [ -z "$(uci -q get limcore.config.hwid)" ]; then
 	MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || cat /etc/machine-id 2>/dev/null)
-	[ -n "$MAC" ] || MAC="homeproxy-default-hwid-key"
+	[ -n "$MAC" ] || MAC="limcore-default-hwid-key"
 	HEX=$(echo -n "$MAC" | md5sum | cut -d' ' -f1)
 	H1=$(echo "$HEX" | cut -c1-8)
 	H2=$(echo "$HEX" | cut -c9-12)
@@ -139,13 +139,13 @@ if [ -z "$(uci -q get homeproxy.config.hwid)" ]; then
 	H4=$(echo "$HEX" | cut -c18-20)
 	H5=$(echo "$HEX" | cut -c21-32)
 	GEN_HWID="${H1}-${H2}-4${H3}-a${H4}-${H5}"
-	uci set homeproxy.config.hwid="$GEN_HWID"
-	uci commit homeproxy
+	uci set limcore.config.hwid="$GEN_HWID"
+	uci commit limcore
 fi
 
 # rpcd нужно перезапустить, чтобы появились ubus-методы приложения (установка ByeDPI/Zapret)
 /etc/init.d/rpcd restart >/dev/null 2>&1; sleep 2
-CM=/usr/share/homeproxy/scripts/core_mgmt.uc
+CM=/usr/share/limcore/scripts/core_mgmt.uc
 [ -f "$CM" ] || die "core_mgmt.uc не найден после установки — прерываю."
 
 # ------------------------------------------------------- 2. ядро прокси (обязательно)
@@ -175,7 +175,7 @@ ok "  ядро установлено: $(/usr/bin/sing-box version 2>/dev/null |
 # --------------------------------------------------------------- 3. Zapret (опционально)
 DO_ZAPRET=0
 if [ "$AUTO" = 1 ]; then
-	[ "$(uci -q get homeproxy.config.zapret_enabled)" = "1" ] || [ -x "/opt/zapret2/nfq2/nfqws2" ] && DO_ZAPRET=1
+	[ "$(uci -q get limcore.config.zapret_enabled)" = "1" ] || [ -x "/opt/zapret2/nfq2/nfqws2" ] && DO_ZAPRET=1
 else
 	ask "[3/5] Установить Zapret 2 (обход DPI на уровне пакетов — видео/QUIC, звонки)? [y/N]:"
 	is_yes "$REPLY" && DO_ZAPRET=1
@@ -183,19 +183,19 @@ fi
 if [ "$DO_ZAPRET" = 1 ]; then
 	info "  ставлю модуль ядра NFQUEUE..."
 	if [ "$PM" = apk ]; then apk add kmod-nft-queue >/dev/null 2>&1; else opkg install kmod-nft-queue >/dev/null 2>&1; fi
-	ZP=$(ubus call luci.homeproxy zapret_prepare_install 2>/dev/null)
+	ZP=$(ubus call luci.limcore zapret_prepare_install 2>/dev/null)
 	if [ -z "$ZP" ] || jerr "$ZP"; then warn "  не удалось подготовить Zapret — пропускаю. ($(jget "$ZP" error))"
 	else
 		ZURL=$(jget "$ZP" dl_url); ZTMP=$(jget "$ZP" tmp_path); ZPMG=$(jget "$ZP" pkg_manager)
 		if [ -n "$ZURL" ] && dl "$ZURL" "$ZTMP"; then
-			RES=$(ubus call luci.homeproxy zapret_install_pkg "{\"tmp_path\":\"$ZTMP\",\"pkg_manager\":\"$ZPMG\"}" 2>/dev/null)
+			RES=$(ubus call luci.limcore zapret_install_pkg "{\"tmp_path\":\"$ZTMP\",\"pkg_manager\":\"$ZPMG\"}" 2>/dev/null)
 			if jtrue "$RES"; then
 				ok "  Zapret установлен."
-				ZST=$(ubus call luci.homeproxy zapret_status 2>/dev/null)
+				ZST=$(ubus call luci.limcore zapret_status 2>/dev/null)
 				if jfalse "$ZST" kmod_ok; then
 					warn "  модуль NFQUEUE не загружен — Zapret не включаю (иначе сломается firewall). Включите вручную после kmod-nft-queue."
 				else
-					uci set homeproxy.config.zapret_enabled=1; uci commit homeproxy; ok "  Zapret включён."
+					uci set limcore.config.zapret_enabled=1; uci commit limcore; ok "  Zapret включён."
 				fi
 			else warn "  установка Zapret не удалась."; fi
 		else warn "  не удалось скачать Zapret — пропускаю."; fi
@@ -205,7 +205,7 @@ fi
 # --------------------------------------------------------------- 4. ByeDPI (опционально)
 DO_BYEDPI=0
 if [ "$AUTO" = 1 ]; then
-	[ "$(uci -q get homeproxy.config.byedpi_enabled)" = "1" ] || [ -x "/usr/bin/ciadpi" ] && DO_BYEDPI=1
+	[ "$(uci -q get limcore.config.byedpi_enabled)" = "1" ] || [ -x "/usr/bin/ciadpi" ] && DO_BYEDPI=1
 else
 	ask "[4/5] Установить ByeDPI (обход DPI на уровне SOCKS, нужен curl)? [y/N]:"
 	is_yes "$REPLY" && DO_BYEDPI=1
@@ -213,15 +213,15 @@ fi
 if [ "$DO_BYEDPI" = 1 ]; then
 	info "  ставлю curl (его использует тестер стратегий ByeDPI)..."
 	if [ "$PM" = apk ]; then apk add curl >/dev/null 2>&1; else opkg install curl >/dev/null 2>&1; fi
-	BP=$(ubus call luci.homeproxy byedpi_prepare_install 2>/dev/null)
+	BP=$(ubus call luci.limcore byedpi_prepare_install 2>/dev/null)
 	if [ -z "$BP" ] || jerr "$BP"; then warn "  не удалось подготовить ByeDPI — пропускаю. ($(jget "$BP" error))"
 	else
 		BURL=$(jget "$BP" dl_url); BTMP=$(jget "$BP" tmp_path); BPMG=$(jget "$BP" pkg_manager)
 		if [ -n "$BURL" ] && dl "$BURL" "$BTMP"; then
-			RES=$(ubus call luci.homeproxy byedpi_install_pkg "{\"tmp_path\":\"$BTMP\",\"pkg_manager\":\"$BPMG\"}" 2>/dev/null)
+			RES=$(ubus call luci.limcore byedpi_install_pkg "{\"tmp_path\":\"$BTMP\",\"pkg_manager\":\"$BPMG\"}" 2>/dev/null)
 			if jtrue "$RES"; then
 				ok "  ByeDPI установлен."
-				uci set homeproxy.config.byedpi_enabled=1; uci commit homeproxy; ok "  ByeDPI включён."
+				uci set limcore.config.byedpi_enabled=1; uci commit limcore; ok "  ByeDPI включён."
 			else warn "  установка ByeDPI не удалась."; fi
 		else warn "  не удалось скачать ByeDPI — пропускаю."; fi
 	fi
@@ -232,22 +232,22 @@ ask "[5/5] Настроить режим «Россия — раздельное
 case "$REPLY" in
 	n|N|no|NO|нет|Нет|н|Н) ;;  # отказ — оставляем как есть
 	*)
-		CURMODE=$(uci -q get homeproxy.config.routing_mode)
+		CURMODE=$(uci -q get limcore.config.routing_mode)
 		if [ -z "$CURMODE" ]; then
-			uci set homeproxy.config.routing_mode=proxy_banned_ru
-			uci set homeproxy.config.proxy_calls=1
-			uci set homeproxy.config.no_proxy_torrents=1
-			uci set homeproxy.config.ipv6_support=0
-			uci commit homeproxy
+			uci set limcore.config.routing_mode=proxy_banned_ru
+			uci set limcore.config.proxy_calls=1
+			uci set limcore.config.no_proxy_torrents=1
+			uci set limcore.config.ipv6_support=0
+			uci commit limcore
 			CURMODE=proxy_banned_ru
 		fi
 		# Re:filter через основной пул — только если режим РФ и правил ещё нет
-		if [ "$CURMODE" = proxy_banned_ru ] && ! uci show homeproxy 2>/dev/null | grep -q "=proxy_ru_rule$"; then
-			SEC=$(uci add homeproxy proxy_ru_rule)
-			uci set "homeproxy.$SEC.source=refilter"
-			uci set "homeproxy.$SEC.node=main-out"
-			uci set "homeproxy.$SEC.enabled=1"
-			uci commit homeproxy
+		if [ "$CURMODE" = proxy_banned_ru ] && ! uci show limcore 2>/dev/null | grep -q "=proxy_ru_rule$"; then
+			SEC=$(uci add limcore proxy_ru_rule)
+			uci set "limcore.$SEC.source=refilter"
+			uci set "limcore.$SEC.node=main-out"
+			uci set "limcore.$SEC.enabled=1"
+			uci commit limcore
 			ok "  режим настроен: Re:filter через основной сервер"
 		else
 			info "  режим/правила уже заданы — не меняю"
@@ -255,8 +255,8 @@ case "$REPLY" in
 esac
 
 # ------------------------------------------------------------------- 6. финал
-/etc/init.d/homeproxy enable  >/dev/null 2>&1
-/etc/init.d/homeproxy start   >/dev/null 2>&1
+/etc/init.d/limcore enable  >/dev/null 2>&1
+/etc/init.d/limcore start   >/dev/null 2>&1
 
 # LAN-адрес роутера для прямой ссылки на страницу LuCI (обрезаем /маску на 25.12+)
 LANIP=$(uci -q get network.lan.ipaddr | cut -d/ -f1)
@@ -265,7 +265,7 @@ LANIP=$(uci -q get network.lan.ipaddr | cut -d/ -f1)
 
 echo
 ok "===== Готово ====="
-info "Откройте Re:HomeProxy в браузере:"
-URL="http://$LANIP/cgi-bin/luci/admin/services/homeproxy"
+info "Откройте LimCore в браузере:"
+URL="http://$LANIP/cgi-bin/luci/admin/services/limcore"
 # OSC 8: кликабельная ссылка в поддерживающих терминалах; в остальных просто виден URL
 printf '\033[0;36m  \033]8;;%s\033\\%s\033]8;;\033\\\033[0m\n' "$URL" "$URL"

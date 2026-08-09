@@ -98,7 +98,7 @@ This is illustrative only — adjust inbound type/port, outbound settings, and r
 ## Tips
 
 - **Validate before saving.** An invalid JSON config will silently fail to apply. Use a JSON validator before pasting — syntax errors will not be reported in the UI. After saving, check the log (see below) to confirm the config loaded correctly.
-- **Logs.** If the config applies but traffic does not work, check the core log in **LimCore → Core & Tools** or via SSH: `tail -f /var/run/homeproxy/hiddify-c.log`.
+- **Logs.** If the config applies but traffic does not work, check the core log in **LimCore → Core & Tools** or via SSH: `tail -f /var/run/limcore/hiddify-c.log`.
 - **Inbound ports.** LimCore's firewall rules expect specific ports. If you change inbound ports in a custom config, the nftables redirect rules will not match and traffic will not reach your inbound. The default inbound configuration used by LimCore is:
 
   ```json
@@ -140,8 +140,8 @@ This is illustrative only — adjust inbound type/port, outbound settings, and r
   ]
   ```
 
-  If you need to change these ports, update them both in your custom JSON and in `/etc/config/homeproxy` (the `proxy_port`, `redirect_port`, `tproxy_port`, and `dns_port` options) so the firewall rules stay in sync.
-- **`default_mark`.** This is **required** in the `route` section to prevent tproxy routing loops. Without it, hiddify-core's own outbound traffic gets intercepted by the nftables tproxy rules and sent back to the proxy, causing a loop. The value must match `self_mark` in `/etc/config/homeproxy` (default: `100`):
+  If you need to change these ports, update them both in your custom JSON and in `/etc/config/limcore` (the `proxy_port`, `redirect_port`, `tproxy_port`, and `dns_port` options) so the firewall rules stay in sync.
+- **`default_mark`.** This is **required** in the `route` section to prevent tproxy routing loops. Without it, hiddify-core's own outbound traffic gets intercepted by the nftables tproxy rules and sent back to the proxy, causing a loop. The value must match `self_mark` in `/etc/config/limcore` (default: `100`):
 
   ```json
   "route": {
@@ -150,7 +150,7 @@ This is illustrative only — adjust inbound type/port, outbound settings, and r
   }
   ```
 
-  If you change this value, update `self_mark` in `/etc/config/homeproxy` to match.
+  If you change this value, update `self_mark` in `/etc/config/limcore` to match.
 
 - **Outbound tags.** Route rules reference outbound tags by name — keep them consistent.
 

@@ -8,10 +8,10 @@
 
 **Symptom:** Saving any form (client settings, access control lists, etc.) shows:
 ```
-RPC call to luci.homeproxy/[method] failed with error -32000: Object not found
+RPC call to luci.limcore/[method] failed with error -32000: Object not found
 ```
 
-**Cause:** rpcd has not loaded the `luci.homeproxy` module. This commonly happens right after installing or upgrading the package if the post-install script sent a reload signal while rpcd was not yet running.
+**Cause:** rpcd has not loaded the `luci.limcore` module. This commonly happens right after installing or upgrading the package if the post-install script sent a reload signal while rpcd was not yet running.
 
 **Fix:**
 ```sh
@@ -25,7 +25,7 @@ Then **log out and log back in** to the web UI. An existing session does not pic
 
 **Symptom:** The Proxy Mode selector on the Client page only shows "Redirect TCP". TProxy and Tun options are absent even though the required kernel modules are installed.
 
-**Cause:** Same as above — `luci.homeproxy` not loaded. The feature detection call (`singbox_get_features`) returns empty, so all capability flags are false and the options are hidden.
+**Cause:** Same as above — `luci.limcore` not loaded. The feature detection call (`singbox_get_features`) returns empty, so all capability flags are false and the options are hidden.
 
 **Fix:** Same as above — restart rpcd and re-login.
 
@@ -33,7 +33,7 @@ Then **log out and log back in** to the web UI. An existing session does not pic
 
 ## TypeError on the Client Page
 
-**Symptom:** Opening `/cgi-bin/luci/admin/services/homeproxy/client` shows:
+**Symptom:** Opening `/cgi-bin/luci/admin/services/limcore/client` shows:
 ```
 TypeError: Cannot read properties of undefined (reading 'content')
 ```
@@ -86,17 +86,17 @@ Add the following rule as a persistent firewall include:
 
 ```sh
 uci add firewall include
-uci set firewall.@include[-1].path='/etc/firewall.d/homeproxy-mwan3'
+uci set firewall.@include[-1].path='/etc/firewall.d/limcore-mwan3'
 uci set firewall.@include[-1].type='script'
 uci set firewall.@include[-1].reload='1'
 uci commit firewall
 
 mkdir -p /etc/firewall.d
-cat > /etc/firewall.d/homeproxy-mwan3 << 'EOF'
+cat > /etc/firewall.d/limcore-mwan3 << 'EOF'
 #!/bin/sh
 iptables -t mangle -I OUTPUT 1 -m mark --mark 0x64/0x64 -j RETURN
 EOF
-chmod +x /etc/firewall.d/homeproxy-mwan3
+chmod +x /etc/firewall.d/limcore-mwan3
 
 /etc/init.d/firewall reload
 ```
@@ -119,6 +119,6 @@ The `0x64` mark rule should appear as line 1.
 
 If you are on the latest release and still see this, run manually over SSH to check for errors:
 ```sh
-ucode /etc/homeproxy/scripts/update_subscriptions.uc
+ucode /etc/limcore/scripts/update_subscriptions.uc
 ```
 
