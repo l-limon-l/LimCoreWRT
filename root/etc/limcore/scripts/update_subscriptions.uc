@@ -750,15 +750,10 @@ function parse_uri(uri) {
 			}
 
 			if (params.hiddify === '1') {
-				if (params.fragment) {
-					const fparts = split(urldecode(params.fragment), ',');
-					if (length(fparts) >= 2) {
-						config.tls_fragment = '1';
-						config.tls_fragment_size = fparts[0];
-						config.tls_fragment_sleep = fparts[1];
-						config.tls_fragment_type = fparts[2] || null;
-					}
-				}
+				if (params.fragment)
+					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+					   tuning, so only the intent survives the import. */
+					config.tls_fragment = '1';
 				if (params.allowInsecure === 'true' || params.insecure === 'true')
 					config.tls_insecure = '1';
 			}
@@ -858,15 +853,10 @@ function parse_uri(uri) {
 			}
 
 			if (params.hiddify === '1') {
-				if (params.fragment) {
-					const fparts = split(urldecode(params.fragment), ',');
-					if (length(fparts) >= 2) {
-						config.tls_fragment = '1';
-						config.tls_fragment_size = fparts[0];
-						config.tls_fragment_sleep = fparts[1];
-						config.tls_fragment_type = fparts[2] || null;
-					}
-				}
+				if (params.fragment)
+					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+					   tuning, so only the intent survives the import. */
+					config.tls_fragment = '1';
 				if (params.allowInsecure === 'true' || params.insecure === 'true')
 					config.tls_insecure = '1';
 				if (params.extra) {
