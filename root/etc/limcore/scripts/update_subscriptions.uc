@@ -133,15 +133,12 @@ function parse_singbox_outbound(ob, companion_map) {
 			config.http_path = tr.path || null;
 			config.http_host = tr.host || null;
 			config.xhttp_mode = tr.mode || null;
-			/* Accept both dialects: hiddify camelCase (what the Hiddify app exports) and
-			 * sing-box snake_case. */
-			config.xhttp_padding_bytes = tr.xPaddingBytes || tr.x_padding_bytes || null;
-			config.xhttp_sc_max_each_post_bytes = tr.scMaxEachPostBytes || tr.sc_max_each_post_bytes || null;
-			config.xhttp_sc_min_posts_interval_ms = tr.scMinPostsIntervalMs || tr.sc_min_posts_interval_ms || null;
+			config.xhttp_padding_bytes = tr.x_padding_bytes || null;
+			config.xhttp_sc_max_each_post_bytes = tr.sc_max_each_post_bytes || null;
+			config.xhttp_sc_min_posts_interval_ms = tr.sc_min_posts_interval_ms || null;
 			if (!isEmpty(tr.headers))
 				config.xhttp_headers = sprintf('%J', tr.headers);
-			/* Split download — hiddify `downloadSettings` or sing-box `download`. */
-			let dl = tr.downloadSettings || tr.download;
+			let dl = tr.download;
 			if (dl) {
 				let dl_tls = dl.tls || {};
 				config.xhttp_download_path = dl.path || null;
@@ -223,12 +220,8 @@ function parse_singbox_outbound(ob, companion_map) {
 		break;
 	case 'mieru':
 		config.port = '0';
-		if (ob.portBindings && ob.portBindings[0]) {
-			/* Hiddify format */
-			config.mieru_protocol = ob.portBindings[0].protocol || null;
-			config.mieru_port_range = ob.portBindings[0].portRange || null;
-		} else if (ob.server_ports && ob.server_ports[0]) {
-			/* sing-box format — transport may be absent, infer from tag */
+		if (ob.server_ports && ob.server_ports[0]) {
+			/* transport may be absent, infer from tag */
 			config.mieru_port_range = ob.server_ports[0] || null;
 			config.mieru_protocol = ob.transport ||
 				(match(ob.tag, /UDP/i) ? 'UDP' : (match(ob.tag, /TCP/i) ? 'TCP' : null));
@@ -677,7 +670,7 @@ function parse_uri(uri) {
 			}
 
 			let ssh_host_key = null;
-			/* Hiddify: hk=key1\n,key2\n,key3\n — urldecode_params already decodes values */
+			/* hk=key1\n,key2\n,key3\n — urldecode_params already decodes values */
 			const raw_hk = ssh_params.hk || ssh_params.host_key || ssh_params.hostKey;
 			if (raw_hk) {
 				const ssh_hk_lines = filter(split(raw_hk, ','), (l) => length(trim(l)) > 0);
@@ -691,11 +684,11 @@ function parse_uri(uri) {
 				port: ssh_port,
 				username: ssh_user,
 				password: length(ssh_pass) ? ssh_pass : null,
-				/* Hiddify uses pk= (short) or private_key= ; urldecode_params already decoded */
+				/* pk= (short) or private_key= ; urldecode_params already decoded */
 				ssh_priv_key: ssh_params.pk || ssh_params.private_key || ssh_params.privateKey || null,
 				ssh_priv_key_pp: length(ssh_params.passphrase) ? ssh_params.passphrase : null,
 				ssh_host_key: ssh_host_key,
-				/* Hiddify always enables udp_over_tcp for SSH; only disable if explicitly set to 0 */
+				/* SSH defaults to udp_over_tcp; only disable if explicitly set to 0 */
 				ssh_udp_over_tcp: (ssh_params.uot === '0' || ssh_params.udp_over_tcp in ['0', 'false']) ? null : '1'
 			};
 
@@ -751,14 +744,15 @@ function parse_uri(uri) {
 				break;
 			}
 
-			if (params.hiddify === '1') {
-				if (params.fragment)
-					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
-					   tuning, so only the intent survives the import. */
-					config.tls_fragment = '1';
-				if (params.allowInsecure === 'true' || params.insecure === 'true')
-					config.tls_insecure = '1';
-			}
+			/* Read unconditionally. These used to sit behind a `hiddify=1` marker, but
+			   other clients emit the same parameters without it, so the marker only
+			   caused links to import with settings silently dropped.
+			   sing-box's tls.fragment is a plain bool - no size/sleep tuning exists,
+			   so only the intent survives the import. */
+			if (params.fragment)
+				config.tls_fragment = '1';
+			if (params.allowInsecure === 'true' || params.insecure === 'true')
+				config.tls_insecure = '1';
 
 			break;
 		case 'tuic':
@@ -856,40 +850,49 @@ function parse_uri(uri) {
 				break;
 			}
 
-			if (params.hiddify === '1') {
-				if (params.fragment)
-					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
-					   tuning, so only the intent survives the import. */
-					config.tls_fragment = '1';
-				if (params.allowInsecure === 'true' || params.insecure === 'true')
-					config.tls_insecure = '1';
-				if (params.extra) {
-					try {
-						const extra = json(urldecode(params.extra));
-						if (extra.headers && length(keys(extra.headers)) > 0)
-							config.xhttp_headers = sprintf('%J', extra.headers);
-						if (extra.downloadSettings) {
-							const dl = extra.downloadSettings;
-							config.xhttp_download_server = dl.address;
-							config.xhttp_download_port = '' + dl.port;
-							if (dl.xhttpSettings) {
-								config.xhttp_download_path = dl.xhttpSettings.path;
-								config.xhttp_download_host = dl.xhttpSettings.host;
-								config.xhttp_download_mode = dl.xhttpSettings.mode;
-							}
-							config.xhttp_download_security = dl.security;
-							if (dl.security === 'reality' && dl.realitySettings) {
-								config.xhttp_download_sni = dl.realitySettings.serverName;
-								config.xhttp_download_fp = dl.realitySettings.fingerprint;
-								config.xhttp_download_pbk = dl.realitySettings.publicKey;
-								config.xhttp_download_sid = dl.realitySettings.shortId;
-							} else if (dl.security === 'tls' && dl.tlsSettings) {
-								config.xhttp_download_sni = dl.tlsSettings.serverName;
-								config.xhttp_download_alpn = dl.tlsSettings.alpn;
-							}
+			/* Read unconditionally. These used to sit behind a `hiddify=1` marker, but
+			   other clients emit the same parameters without it, so a link carrying
+			   fragment / allowInsecure / extra imported with those settings silently
+			   dropped unless the marker happened to be there too. */
+			if (params.fragment)
+				/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+				   tuning, so only the intent survives the import. */
+				config.tls_fragment = '1';
+			if (params.allowInsecure === 'true' || params.insecure === 'true')
+				config.tls_insecure = '1';
+			if (params.extra) {
+				try {
+					const extra = json(urldecode(params.extra));
+					if (extra.headers && length(keys(extra.headers)) > 0)
+						config.xhttp_headers = sprintf('%J', extra.headers);
+					/* Xray puts the xhttp tuning inside `extra`, not in the query string.
+					   sing-box implements these three, and ignoring them meant the
+					   generator fell back to its own padding default while the server
+					   expected the subscription's value. */
+					config.xhttp_padding_bytes = config.xhttp_padding_bytes || extra.xPaddingBytes || null;
+					config.xhttp_sc_max_each_post_bytes = config.xhttp_sc_max_each_post_bytes || extra.scMaxEachPostBytes || null;
+					config.xhttp_sc_min_posts_interval_ms = config.xhttp_sc_min_posts_interval_ms || extra.scMinPostsIntervalMs || null;
+					if (extra.downloadSettings) {
+						const dl = extra.downloadSettings;
+						config.xhttp_download_server = dl.address;
+						config.xhttp_download_port = '' + dl.port;
+						if (dl.xhttpSettings) {
+							config.xhttp_download_path = dl.xhttpSettings.path;
+							config.xhttp_download_host = dl.xhttpSettings.host;
+							config.xhttp_download_mode = dl.xhttpSettings.mode;
 						}
-					} catch(e) {}
-				}
+						config.xhttp_download_security = dl.security;
+						if (dl.security === 'reality' && dl.realitySettings) {
+							config.xhttp_download_sni = dl.realitySettings.serverName;
+							config.xhttp_download_fp = dl.realitySettings.fingerprint;
+							config.xhttp_download_pbk = dl.realitySettings.publicKey;
+							config.xhttp_download_sid = dl.realitySettings.shortId;
+						} else if (dl.security === 'tls' && dl.tlsSettings) {
+							config.xhttp_download_sni = dl.tlsSettings.serverName;
+							config.xhttp_download_alpn = dl.tlsSettings.alpn;
+						}
+					}
+				} catch(e) {}
 			}
 
 			break;
@@ -1073,8 +1076,11 @@ function main() {
 		const groupHash = md5(url);
 		node_cache[groupHash] = {};
 
-		/* Try Hiddify JSON format first: User-Agent triggers sing-box JSON on Hiddify Manager servers */
-		let res = wGET(url, 'HiddifyNext/2.0.0', hwid);
+		/* One fetch with the configured User-Agent; every format below is attempted on
+		 * whatever comes back. There used to be an extra probe with a HiddifyNext UA to
+		 * coax sing-box JSON out of Hiddify Manager panels — dropped along with the rest
+		 * of the Hiddify support, and it saves a request per subscription. */
+		let res = wGET(url, user_agent, hwid);
 		let nodes;
 
 		if (!isEmpty(res) && match(trim(res), /^\s*\{/)) {
@@ -1095,8 +1101,7 @@ function main() {
 		}
 
 		/* Xray/V2Ray JSON config array (e.g. connliberty): an ARRAY of full Xray
-		 * configs, each with .outbounds and a .remarks name. The first fetch above
-		 * (HiddifyNext UA) already returns it on app-gated servers. */
+		 * configs, each with .outbounds and a .remarks name. */
 		if (isEmpty(nodes) && !isEmpty(res) && match(trim(res), /^\s*\[/)) {
 			let xray_arr;
 			try { xray_arr = json(res); } catch(e) {}
@@ -1111,9 +1116,6 @@ function main() {
 		}
 
 		if (isEmpty(nodes)) {
-			/* Fallback: fetch with configured user_agent */
-			res = wGET(url, user_agent, hwid);
-
 			/* Empty or HTML response: server may require /raw suffix (e.g. HAPP-style
 			 * subscription servers that serve a web page by default). */
 			if (isEmpty(res) || match(res, /^\s*</)) {

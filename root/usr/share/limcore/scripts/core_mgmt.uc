@@ -235,13 +235,9 @@ if (action === 'info') {
 	}
 
 } else if (action === 'install_pkg') {
-	/* (tmp_path, pkg_manager). Also tolerate a leading core arg from older callers. */
-	let tmp_path    = ARGV[1];
-	let pkg_manager = ARGV[2];
-	if (ARGV[3] && (ARGV[1] in ['hiddify', 'singbox'])) {
-		tmp_path    = ARGV[2];
-		pkg_manager = ARGV[3];
-	}
+	/* (tmp_path, pkg_manager) */
+	const tmp_path    = ARGV[1];
+	const pkg_manager = ARGV[2];
 
 	if (!tmp_path || !pkg_manager) {
 		result = { result: false, error: 'invalid arguments' };

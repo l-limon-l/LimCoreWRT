@@ -595,14 +595,12 @@ function parseShareLink(uri, features) {
 				break;
 			}
 
-			if (params.get('hiddify') === '1') {
-				if (params.get('fragment'))
-					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
-					   tuning, so only the intent survives the import. */
-					config.tls_fragment = '1';
-				if (params.get('allowInsecure') === 'true' || params.get('insecure') === 'true')
-					config.tls_insecure = '1';
-			}
+			/* Read unconditionally: other clients emit these without the `hiddify=1`
+			   marker that used to gate them. sing-box's tls.fragment is a plain bool. */
+			if (params.get('fragment'))
+				config.tls_fragment = '1';
+			if (params.get('allowInsecure') === 'true' || params.get('insecure') === 'true')
+				config.tls_insecure = '1';
 
 			break;
 		case 'tuic':
@@ -699,40 +697,46 @@ function parseShareLink(uri, features) {
 				break;
 			}
 
-			if (params.get('hiddify') === '1') {
-				if (params.get('fragment'))
-					/* sing-box's tls.fragment is a plain bool - it has no size/sleep
-					   tuning, so only the intent survives the import. */
-					config.tls_fragment = '1';
-				if (params.get('allowInsecure') === 'true' || params.get('insecure') === 'true')
-					config.tls_insecure = '1';
-				if (params.get('extra')) {
-					try {
-						const extra = JSON.parse(params.get('extra'));
-						if (extra.headers && Object.keys(extra.headers).length > 0)
-							config.xhttp_headers = JSON.stringify(extra.headers);
-						if (extra.downloadSettings) {
-							const dl = extra.downloadSettings;
-							config.xhttp_download_server = dl.address || null;
-							config.xhttp_download_port = dl.port ? String(dl.port) : null;
-							if (dl.xhttpSettings) {
-								config.xhttp_download_path = dl.xhttpSettings.path || null;
-								config.xhttp_download_host = dl.xhttpSettings.host || null;
-								config.xhttp_download_mode = dl.xhttpSettings.mode || null;
-							}
-							config.xhttp_download_security = dl.security || null;
-							if (dl.security === 'reality' && dl.realitySettings) {
-								config.xhttp_download_sni = dl.realitySettings.serverName || null;
-								config.xhttp_download_fp = dl.realitySettings.fingerprint || null;
-								config.xhttp_download_pbk = dl.realitySettings.publicKey || null;
-								config.xhttp_download_sid = dl.realitySettings.shortId || null;
-							} else if (dl.security === 'tls' && dl.tlsSettings) {
-								config.xhttp_download_sni = dl.tlsSettings.serverName || null;
-								config.xhttp_download_alpn = dl.tlsSettings.alpn || null;
-							}
+			/* Read unconditionally. These used to sit behind a `hiddify=1` marker, but
+			   other clients emit the same parameters without it, so a link carrying
+			   fragment / allowInsecure / extra imported with those settings silently
+			   dropped unless the marker happened to be there too. */
+			if (params.get('fragment'))
+				/* sing-box's tls.fragment is a plain bool - it has no size/sleep
+				   tuning, so only the intent survives the import. */
+				config.tls_fragment = '1';
+			if (params.get('allowInsecure') === 'true' || params.get('insecure') === 'true')
+				config.tls_insecure = '1';
+			if (params.get('extra')) {
+				try {
+					const extra = JSON.parse(params.get('extra'));
+					if (extra.headers && Object.keys(extra.headers).length > 0)
+						config.xhttp_headers = JSON.stringify(extra.headers);
+					/* Xray puts the xhttp tuning inside `extra`, not in the query string. */
+					config.xhttp_padding_bytes = config.xhttp_padding_bytes || extra.xPaddingBytes || null;
+					config.xhttp_sc_max_each_post_bytes = config.xhttp_sc_max_each_post_bytes || extra.scMaxEachPostBytes || null;
+					config.xhttp_sc_min_posts_interval_ms = config.xhttp_sc_min_posts_interval_ms || extra.scMinPostsIntervalMs || null;
+					if (extra.downloadSettings) {
+						const dl = extra.downloadSettings;
+						config.xhttp_download_server = dl.address || null;
+						config.xhttp_download_port = dl.port ? String(dl.port) : null;
+						if (dl.xhttpSettings) {
+							config.xhttp_download_path = dl.xhttpSettings.path || null;
+							config.xhttp_download_host = dl.xhttpSettings.host || null;
+							config.xhttp_download_mode = dl.xhttpSettings.mode || null;
 						}
-					} catch(e) { }
-				}
+						config.xhttp_download_security = dl.security || null;
+						if (dl.security === 'reality' && dl.realitySettings) {
+							config.xhttp_download_sni = dl.realitySettings.serverName || null;
+							config.xhttp_download_fp = dl.realitySettings.fingerprint || null;
+							config.xhttp_download_pbk = dl.realitySettings.publicKey || null;
+							config.xhttp_download_sid = dl.realitySettings.shortId || null;
+						} else if (dl.security === 'tls' && dl.tlsSettings) {
+							config.xhttp_download_sni = dl.tlsSettings.serverName || null;
+							config.xhttp_download_alpn = dl.tlsSettings.alpn || null;
+						}
+					}
+				} catch(e) { }
 			}
 
 			break;
