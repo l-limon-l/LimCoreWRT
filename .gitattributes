@@ -9,7 +9,12 @@
 *.js    text eol=lf
 *.json  text eol=lf
 
-# Extensionless router scripts
+# Extensionless router scripts. Every one of these is read by busybox ash, ucode or
+# uci on the device; a CRLF checkout ships \r in the shebang and the file will not run.
 root/etc/init.d/*               text eol=lf
 root/usr/share/rpcd/ucode/*     text eol=lf
 root/etc/uci-defaults/*         text eol=lf
+root/usr/bin/*                  text eol=lf
+root/etc/config/*               text eol=lf
+root/usr/share/homeproxy/*      text eol=lf
+install.sh                      text eol=lf

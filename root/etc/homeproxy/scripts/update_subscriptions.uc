@@ -233,7 +233,6 @@ function parse_singbox_outbound(ob, companion_map) {
 				(match(ob.tag, /UDP/i) ? 'UDP' : (match(ob.tag, /TCP/i) ? 'TCP' : null));
 		}
 		config.mieru_multiplexing = ob.multiplexing || null;
-		config.mieru_handshake_mode = ob.handshake_mode || null;
 		break;
 	}
 
@@ -994,8 +993,7 @@ function parse_uri(uri) {
 				password: url.password ? urldecode(url.password) : null,
 				mieru_protocol: params.protocol || null,
 				mieru_port_range: params.port || null,
-				mieru_multiplexing: params.multiplexing || null,
-				mieru_handshake_mode: params['handshake-mode'] || null
+				mieru_multiplexing: params.multiplexing || null
 			};
 
 			break;
