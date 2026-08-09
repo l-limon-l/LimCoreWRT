@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { access, error, lstat, popen, readfile, writefile } from 'fs';
+import { access, basename, error, lstat, popen, readfile, writefile } from 'fs';
 
 /* Kanged from ucode/luci */
 function shellquote(s) {
@@ -42,36 +42,25 @@ function hasKernelModule(kmod) {
 
 const HP_DIR = '/etc/homeproxy';
 const RUN_DIR = '/var/run/homeproxy';
+const UPDATE_BIN = '/usr/bin/limcore-update';
+const UPDATE_LOG = '/tmp/limcore-update.log';
+const UPDATE_PID = '/tmp/limcore-update.pid';
 
 function get_active_core() {
-	/* Mirror init.d / generate_client.uc precedence: honor preferred_core when that core
-	 * is installed, else auto (hiddify-core first, then sing-box). Otherwise file presence
-	 * alone would report the wrong core when both are installed. */
-	let preferred = null;
-	let pfd = popen('uci get homeproxy.config.preferred_core 2>/dev/null');
-	if (pfd) { preferred = trim(pfd.read('all')); pfd.close(); }
-
-	const have_hiddify = access('/usr/bin/hiddify-core');
-	const have_singbox = access('/usr/bin/sing-box');
-	const HID = { path: '/usr/bin/hiddify-core', type: 'hiddify', proc_name: 'hiddify-core' };
-	const SB  = { path: '/usr/bin/sing-box',     type: 'singbox', proc_name: 'sing-box' };
-
-	if (preferred === 'hiddify' && have_hiddify) return HID;
-	if (preferred === 'singbox' && have_singbox) return SB;
-	if (have_hiddify) return HID;
-	if (have_singbox) return SB;
+	/* Mirror init.d / generate_client.uc precedence: the standard sing-box binary, else a
+	 * user-supplied one from custom_core_path. Must stay in sync with those two, or LuCI
+	 * would report a core the service never actually runs. */
+	if (access('/usr/bin/sing-box'))
+		return { path: '/usr/bin/sing-box', type: 'singbox', proc_name: 'sing-box' };
 
 	let custom_path = null;
-	let custom_type = null;
-	let fd = popen('uci get homeproxy.config.custom_core_path 2>/dev/null');
+	const fd = popen('uci -q get homeproxy.config.custom_core_path 2>/dev/null');
 	if (fd) { custom_path = trim(fd.read('all')); fd.close(); }
-	fd = popen('uci get homeproxy.config.custom_core_type 2>/dev/null');
-	if (fd) { custom_type = trim(fd.read('all')); fd.close(); }
 	if (length(custom_path) > 0 && access(custom_path))
 		return {
 			path:      custom_path,
-			type:      length(custom_type) > 0 ? custom_type : 'singbox',
-			proc_name: custom_type === 'hiddify' ? 'hiddify-core' : 'sing-box',
+			type:      'singbox',
+			proc_name: basename(custom_path),
 			custom:    true
 		};
 	return null;
@@ -209,7 +198,7 @@ const methods = {
 	log_clean: {
 		args: { type: 'type' },
 		call: function(req) {
-			if (index(['homeproxy', 'hiddify-c'], req.args?.type) === -1)
+			if (index(['homeproxy', 'limcore'], req.args?.type) === -1)
 				return { result: false, error: 'illegal type' };
 
 			const filestat = lstat(`${RUN_DIR}/${req.args?.type}.log`);
@@ -303,8 +292,7 @@ const methods = {
 				features.hp_has_tun = hasKernelModule('tun.ko') || !!access('/etc/modules.d/30-tun');
 
 				features.available_cores = [];
-				if (access('/usr/bin/hiddify-core')) push(features.available_cores, 'hiddify');
-				if (access('/usr/bin/sing-box'))     push(features.available_cores, 'singbox');
+				if (access('/usr/bin/sing-box')) push(features.available_cores, 'singbox');
 
 				return features;
 		}
@@ -323,90 +311,16 @@ const methods = {
 			if (fd) { out = trim(fd.read('all')); fd.close(); }
 			if (length(out) === 0)
 				return { result: false, error: 'Binary produced no output' };
-			let core_type = null;
-			if (match(out, /hiddify/))
-				core_type = 'hiddify';
-			else if (match(out, /sing.box|singbox/))
-				core_type = 'singbox';
-			if (!core_type)
-				return { result: false, error: 'Unknown binary type. Output: ' + substr(out, 0, 120) };
+			if (!match(out, /sing.box|singbox/))
+				return { result: false, error: 'Not a sing-box compatible binary. Output: ' + substr(out, 0, 120) };
 			const verMatch = match(out, / version v?(\S+)/);
 			const version = verMatch ? verMatch[1] : null;
 			system('uci set homeproxy.config.custom_core_path=' + shellquote(path));
-			system('uci set homeproxy.config.custom_core_type=' + shellquote(core_type));
 			system('uci commit homeproxy');
-			return { result: true, type: core_type, version: version };
+			return { result: true, type: 'singbox', version: version };
 		}
 	},
 
-	clash_ip_info: {
-		call: function() {
-			const fd = popen('wget -qO- --timeout=3 http://127.0.0.1:9090/proxies');
-			if (!fd)
-				return { error: 'failed to run wget' };
-			const raw = trim(fd.read('all'));
-			fd.close();
-			if (!length(raw))
-				return { error: 'Clash API not reachable — regenerate config and restart homeproxy' };
-			let data;
-			try {
-				data = json(raw);
-			} catch(e) {
-				return { error: 'invalid JSON from Clash API' };
-			}
-			const proxies = data?.proxies || {};
-
-			const lastHistory = (name) => {
-				const h = proxies[name]?.history;
-				return (h && length(h)) ? h[length(h) - 1] : null;
-			};
-
-			/* Direct IP: from direct-out node */
-			const directEntry = lastHistory('direct-out');
-
-			/* Proxy IP: follow GLOBAL.now to the active leaf node */
-			let proxyEntry = null;
-			let proxyNodeName = null;
-			const nonProxy = (name) => name === 'direct-out' || name === 'block-out' || !name;
-			const globalNow = proxies['GLOBAL']?.now;
-			if (globalNow && proxies[globalNow] && !nonProxy(globalNow)) {
-				const g = proxies[globalNow];
-				if (g.type === 'URLTest' || g.type === 'Fallback' || g.type === 'Selector')
-					proxyNodeName = g.now;
-				else
-					proxyNodeName = globalNow;
-			}
-			/* Fallback: first URLTest/Fallback/Selector group */
-			if (!proxyNodeName) {
-				for (let name in proxies) {
-					if (name === 'GLOBAL') continue;
-					const p = proxies[name];
-					if ((p.type === 'URLTest' || p.type === 'Fallback' || p.type === 'Selector') && p.now) {
-						proxyNodeName = p.now;
-						break;
-					}
-				}
-			}
-			/* Last fallback: main-out (route-based modes use it directly) */
-			if (!proxyNodeName && proxies['main-out'])
-				proxyNodeName = 'main-out';
-			if (proxyNodeName)
-				proxyEntry = lastHistory(proxyNodeName);
-
-			const toEntry = (h, name) => h ? {
-				ip:      h.ipinfo?.ip,
-				country: h.ipinfo?.country_code,
-				org:     h.ipinfo?.org,
-				delay:   h.delay,
-				node:    name || null
-			} : null;
-
-			return {
-				direct: toEntry(directEntry, null),
-				proxy:  toEntry(proxyEntry, proxyNodeName)
-			};
-		}
-	},
 	clash_proxies: {
 		call: function() {
 			const fd = popen('wget -qO- --timeout=3 http://127.0.0.1:9090/proxies');
@@ -523,7 +437,6 @@ const methods = {
 			const proc_name = core ? core.proc_name : 'sing-box';
 
 			const result = {
-				hiddify_installed: !!access('/usr/bin/hiddify-core'),
 				singbox_installed: !!access('/usr/bin/sing-box'),
 				binary:            binary,
 				version:           null,
@@ -576,7 +489,7 @@ const methods = {
 			if (fd) {
 				const ports = [];
 				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
-					if (match(line, /hiddify|sing.box|ciadpi/))
+					if (match(line, /sing.box|nfqws|ciadpi/))
 						push(ports, trim(line));
 				}
 				fd.close();
@@ -591,7 +504,7 @@ const methods = {
 		call: function() {
 			const core = get_active_core();
 			const binary = core ? core.path : null;
-			const config_path = RUN_DIR + '/hiddify-c.json';
+			const config_path = RUN_DIR + '/limcore.json';
 
 			if (!binary)
 				return { valid: false, check_output: 'No core binary found', stats: {} };
@@ -615,19 +528,11 @@ const methods = {
 				} catch(e) {}
 			}
 
-			let valid, check_output;
-			if (core.type === 'singbox') {
-				/* sing-box has a real config validator */
-				let fd = popen(binary + ' check -c ' + shellquote(config_path) + ' 2>&1');
-				if (fd) { check_output = trim(fd.read('all')); fd.close(); }
-				valid = (system(binary + ' check -c ' + shellquote(config_path) + ' >/dev/null 2>&1') === 0);
-			} else {
-				/* hiddify-core (HiddifyCli) has no `check` subcommand — fall back to JSON parse */
-				valid = parse_ok;
-				check_output = parse_ok
-					? 'Config parses (JSON OK). Deep validation unavailable — hiddify-core has no "check" command.'
-					: 'Config is not valid JSON.';
-			}
+			/* sing-box has a real config validator */
+			let check_output;
+			let fd = popen(shellquote(binary) + ' check -c ' + shellquote(config_path) + ' 2>&1');
+			if (fd) { check_output = trim(fd.read('all')); fd.close(); }
+			const valid = (system(shellquote(binary) + ' check -c ' + shellquote(config_path) + ' >/dev/null 2>&1') === 0);
 
 			return {
 				valid:        valid,
@@ -657,7 +562,7 @@ const methods = {
 			if (!rd) return { skip: true };
 
 			/* Get the region resolver + secure-dns server address from running config */
-			const content = readfile(RUN_DIR + '/hiddify-c.json');
+			const content = readfile(RUN_DIR + '/limcore.json');
 			if (!content) return { error: 'Config not found — is the service running?' };
 			let cfg;
 			try { cfg = json(content); } catch(e) { return { error: 'Config parse error' }; }
@@ -852,7 +757,7 @@ const methods = {
 			add('');
 
 			add('## Config Stats');
-			const config_path = RUN_DIR + '/hiddify-c.json';
+			const config_path = RUN_DIR + '/limcore.json';
 			const stat = lstat(config_path);
 			if (stat) {
 				add('Size: ' + stat.size + ' bytes');
@@ -901,7 +806,7 @@ const methods = {
 			fd = popen('netstat -tlnup 2>/dev/null');
 			if (fd) {
 				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
-					if (match(line, /hiddify|sing.box|ciadpi/))
+					if (match(line, /sing.box|nfqws|ciadpi/))
 						add(trim(line));
 				}
 				fd.close();
@@ -927,7 +832,7 @@ const methods = {
 				if (rd) {
 					let region_server = null;
 					let secure_server = null;
-					const dns_servers = ((() => { try { return json(readfile(RUN_DIR + '/hiddify-c.json')); } catch(e) { return {}; } })().dns || {}).servers || [];
+					const dns_servers = ((() => { try { return json(readfile(RUN_DIR + '/limcore.json')); } catch(e) { return {}; } })().dns || {}).servers || [];
 					for (let s in dns_servers) {
 						if (s.tag === rd.tag) region_server = s.server || s.address;
 						if (s.tag === 'secure-dns') secure_server = s.server || s.address;
@@ -949,8 +854,8 @@ const methods = {
 			add('## Connectivity');
 			/* Same site probes as the interactive Connectivity card (connection_check),
 			 * captured into the report so a copy/download carries them. Exit-IP rows
-			 * (Direct IP / Proxy IP) are intentionally omitted — they are interactive,
-			 * hiddify-only, and expose addresses. */
+			 * (Direct IP / Proxy IP) are intentionally omitted — they are interactive
+			 * and expose addresses. */
 			let conn_sites = [
 				['Baidu',     'https://www.baidu.com'],
 				['Google',    'https://www.google.com'],
@@ -974,7 +879,7 @@ const methods = {
 			add('');
 
 			add('## Core Log (last 50 lines)');
-			fd = popen('tail -n 50 ' + RUN_DIR + '/hiddify-c.log 2>/dev/null');
+			fd = popen('tail -n 50 ' + RUN_DIR + '/limcore.log 2>/dev/null');
 			if (fd) {
 				for (let line = fd.read('line'); length(line); line = fd.read('line'))
 					add(replace(trim(line), /https?:\/\/[^ \t\n]+/, '[REDACTED_URL]'));
@@ -1485,27 +1390,53 @@ const methods = {
 
 	app_update: {
 		call: function(req) {
-			let cmd = 'limcore-update >/tmp/limcore-update.log 2>&1 &';
-			if (!access('/usr/bin/limcore-update')) {
-				cmd = 'wget -qO- https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh | sh -s -- --auto >/tmp/limcore-update.log 2>&1 &';
-			}
-			system('rm -f /tmp/limcore-update.log');
-			let rc = system(cmd);
-			return { result: rc === 0 };
+			if (!access(UPDATE_BIN))
+				return { result: false, error: 'limcore-update is not installed' };
+
+			system(`rm -f ${UPDATE_LOG} ${UPDATE_PID}`);
+
+			/* setsid is mandatory, not a nicety: install.sh restarts rpcd, and a plain
+			 * background child of rpcd is reaped with it — the update would die halfway
+			 * through, every time, which is exactly the "Update LimCore does nothing"
+			 * symptom. setsid detaches into its own session, reparented to init, so it
+			 * outlives both the rpcd restart and the package upgrade that triggers it. */
+			const cmd = access('/usr/bin/setsid')
+				? `setsid ${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`
+				: `${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`;
+
+			const rc = system(cmd);
+			return { result: rc === 0, detached: !!access('/usr/bin/setsid') };
 		}
 	},
 
 	app_update_status: {
 		call: function(req) {
-			let log = access('/tmp/limcore-update.log') ? readfile('/tmp/limcore-update.log') : '';
-			let pipe = popen('pgrep -f "install.sh|limcore-update" 2>/dev/null');
+			const log = (access(UPDATE_LOG) ? readfile(UPDATE_LOG) : '') || '';
+
+			/* The updater's last line is LIMCORE_UPDATE_RC=<code>. Its presence means the
+			 * run reached the end under its own power; without it a not-running updater
+			 * was killed mid-flight, which must NOT be reported as success. */
+			const m = match(log, /LIMCORE_UPDATE_RC=([0-9]+)/);
+			const finished = !!m;
+			const exit_code = m ? int(m[1]) : null;
+
+			/* Liveness from the updater's own PID file, never a process-list pattern: a
+			 * `pgrep -f limcore-update` also matches the shell rpcd spawns to run the
+			 * check, so `running` was permanently true and the page span forever.
+			 * The digit guard matters — access('/proc/' + '') is TRUE (that's /proc). */
 			let running = false;
-			if (pipe) {
-				let out = trim(pipe.read('all') || '');
-				pipe.close();
-				if (length(out) > 0) running = true;
-			}
-			return { running, log: log || '' };
+			const pid = trim(readfile(UPDATE_PID) || '');
+			if (length(pid) > 0 && match(pid, /^[0-9]+$/))
+				running = !!access(`/proc/${pid}`);
+
+			return {
+				running,
+				finished,
+				exit_code,
+				/* killed mid-run: not running, but never wrote its completion marker */
+				interrupted: (!running && length(log) > 0 && !finished),
+				log
+			};
 		}
 	}
 };

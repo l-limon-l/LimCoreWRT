@@ -9,7 +9,6 @@ START=99
 STOP=10
 
 CONF="homeproxy"
-PROG_HIDDIFY="/usr/bin/hiddify-core"
 PROG_SINGBOX="/usr/bin/sing-box"
 
 HP_DIR="/etc/homeproxy"
@@ -44,32 +43,19 @@ start_service() {
 
 	config_load "$CONF"
 
-	local preferred_core
-	config_get preferred_core "config" "preferred_core" "auto"
+	# sing-box is the standard core; a user-supplied binary (custom_core_path) is honored
+	# when it is absent. This must match the precedence in generate_client.uc and the
+	# rpcd backend, or LuCI would report a core the service never actually runs.
+	local custom_core_path
+	config_get custom_core_path "config" "custom_core_path" ""
 
-	# Try the preferred core first; fall back to whichever is installed
-	case "$preferred_core" in
-	hiddify)
-		if [ -x "$PROG_HIDDIFY" ]; then
-			PROG="$PROG_HIDDIFY"; RUN_CMD="srun"; CORE_TYPE="hiddify"
-		fi
-		;;
-	singbox)
-		if [ -x "$PROG_SINGBOX" ]; then
-			PROG="$PROG_SINGBOX"; RUN_CMD="run"; CORE_TYPE="singbox"
-		fi
-		;;
-	esac
-
-	if [ -z "$PROG" ]; then
-		if [ -x "$PROG_HIDDIFY" ]; then
-			PROG="$PROG_HIDDIFY"; RUN_CMD="srun"; CORE_TYPE="hiddify"
-		elif [ -x "$PROG_SINGBOX" ]; then
-			PROG="$PROG_SINGBOX"; RUN_CMD="run"; CORE_TYPE="singbox"
-		else
-			log "Error: No supported core found. Install hiddify-core or sing-box first."
-			return 1
-		fi
+	if [ -x "$PROG_SINGBOX" ]; then
+		PROG="$PROG_SINGBOX"; RUN_CMD="run"; CORE_TYPE="singbox"
+	elif [ -n "$custom_core_path" ] && [ -x "$custom_core_path" ]; then
+		PROG="$custom_core_path"; RUN_CMD="run"; CORE_TYPE="singbox"
+	else
+		log "Error: No supported core found. Install sing-box-extended first."
+		return 1
 	fi
 
 	local routing_mode proxy_mode
@@ -83,16 +69,16 @@ start_service() {
 
 	# Generate or copy client config
 	if [ "$routing_mode" = "custom_json" ]; then
-		if [ -e "$HP_DIR/hiddify-c.json" ]; then
-			cp "$HP_DIR/hiddify-c.json" "$RUN_DIR/hiddify-c.json"
-		elif [ ! -e "$RUN_DIR/hiddify-c.json" ]; then
-			log "Error: client config not found. Place your config at $HP_DIR/hiddify-c.json"
+		if [ -e "$HP_DIR/limcore.json" ]; then
+			cp "$HP_DIR/limcore.json" "$RUN_DIR/limcore.json"
+		elif [ ! -e "$RUN_DIR/limcore.json" ]; then
+			log "Error: client config not found. Place your config at $HP_DIR/limcore.json"
 			return 1
 		fi
 	else
-		rm -f "$RUN_DIR/hiddify-c.json"
+		rm -f "$RUN_DIR/limcore.json"
 		ucode "$HP_DIR/scripts/generate_client.uc"
-		if [ ! -e "$RUN_DIR/hiddify-c.json" ]; then
+		if [ ! -e "$RUN_DIR/limcore.json" ]; then
 			log "Error: failed to generate client config."
 			return 1
 		fi
@@ -129,11 +115,11 @@ start_service() {
 		ip -6 route add local ::/0 dev lo table "$table_mark"
 	fi
 
-	# hiddify-core (client)
-	procd_open_instance "hiddify-c"
+	# proxy core (client)
+	procd_open_instance "limcore"
 
 	procd_set_param command "$PROG"
-	procd_append_param command $RUN_CMD --config "$RUN_DIR/hiddify-c.json"
+	procd_append_param command $RUN_CMD --config "$RUN_DIR/limcore.json"
 
 	# QUIC-GO GSO is broken on kernel 6.6 currently
 	uname -r | grep -Eq "^6\.6" && procd_set_param env "QUIC_GO_DISABLE_GSO"="true"
@@ -151,7 +137,7 @@ start_service() {
 	procd_set_param respawn
 	procd_close_instance
 
-	echo > "$RUN_DIR/hiddify-c.log"
+	echo > "$RUN_DIR/limcore.log"
 
 	# Setup firewall
 	# Strip CR: a CRLF-tainted template (e.g. transferred from Windows) would otherwise
@@ -304,8 +290,8 @@ stop_service() {
 	rm -rf "$DNSMASQ_DIR/../dnsmasq-homeproxy.conf" "$DNSMASQ_DIR"
 	/etc/init.d/dnsmasq restart >"/dev/null" 2>&1
 
-	# Only remove the log; hiddify-c.json is manually placed by the user
-	rm -f "$RUN_DIR/hiddify-c.log"
+	# Only remove the log; limcore.json is manually placed by the user
+	rm -f "$RUN_DIR/limcore.log"
 
 	log "Service stopped."
 }

@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { access, readfile, writefile } from 'fs';
+import { readfile, writefile } from 'fs';
 import { isnan } from 'math';
 import { connect } from 'ubus';
 import { cursor } from 'uci';
@@ -78,32 +78,6 @@ if (!wan_dns)
 const dns_port = uci.get(uciconfig, uciinfra, 'dns_port') || '5333';
 
 const ntp_server = uci.get(uciconfig, uciinfra, 'ntp_server') || 'time.apple.com';
-
-/* Detect active core. Must match the core init.d actually runs, or the generated dialect
- * won't fit it. Mirror init.d's precedence: honor preferred_core when that core is
- * installed, otherwise auto-pick (hiddify-core first, then sing-box). Falls back to a
- * UCI custom path when neither standard binary is present. */
-const preferred_core = uci.get(uciconfig, ucimain, 'preferred_core') || 'auto';
-const have_hiddify = !!access('/usr/bin/hiddify-core');
-const have_singbox = !!access('/usr/bin/sing-box');
-
-let is_hiddify = false, is_singbox = false;
-if (preferred_core === 'hiddify' && have_hiddify)
-	is_hiddify = true;
-else if (preferred_core === 'singbox' && have_singbox)
-	is_singbox = true;
-else if (have_hiddify)
-	is_hiddify = true;
-else if (have_singbox)
-	is_singbox = true;
-else {
-	const custom_path = uci.get(uciconfig, ucimain, 'custom_core_path');
-	const custom_type = uci.get(uciconfig, ucimain, 'custom_core_type');
-	if (custom_path && access(custom_path)) {
-		is_hiddify = custom_type === 'hiddify';
-		is_singbox = !is_hiddify;
-	}
-}
 
 const ipv6_support = uci.get(uciconfig, ucimain, 'ipv6_support') || '0';
 const byedpi_enabled = uci.get(uciconfig, ucimain, 'byedpi_enabled');
@@ -330,7 +304,7 @@ function generate_endpoint(node) {
 /* The transport "host" JSON type differs by transport: sing-box's HTTP/2 (`http`)
  * transport takes an ARRAY of strings, while xhttp and httpupgrade take a single
  * STRING. The UI's DynamicList (and some share-link parsers) store http_host as a
- * UCI list, which would emit a JSON array and crash hiddify-core on an xhttp node
+ * UCI list, which would emit a JSON array and crash the core on an xhttp node
  * ("json: cannot unmarshal array into Go value of type string"). Coerce to the
  * correct shape per transport here, so every input path (UI edit, share-link,
  * subscription) produces valid config. */
@@ -346,12 +320,9 @@ function transport_host(node) {
 /* xhttp "split download" (the "dl=h2"/"dl=h3" feature): the download direction can use
  * a different host, path, server/port and TLS (commonly a different server_name + ALPN
  * such as h2/h3) than the upload. sing-box-extended names this nested transport
- * `download`; hiddify-core uses the xray-style `downloadSettings`. The inner shape is
- * the same sing-box transport + TLS for both, so build it once and let the caller pick
- * the key per core. Returns null when the node has no split download configured. An
- * unset server/port is omitted (removeBlankAttrs strips it) = "reuse the main
- * connection" — this matches the hiddify reference configs (and works on hiddify-core);
- * sing-box users should set an explicit download server. */
+ * `download`. Returns null when the node has no split download configured. An unset
+ * server/port is omitted (removeBlankAttrs strips it) = "reuse the main connection";
+ * prefer setting an explicit download server. */
 function xhttp_download(node) {
 	if (node.transport !== 'xhttp')
 		return null;
@@ -407,7 +378,7 @@ function generate_outbound(node) {
 		server: (node.type === 'shadowsocks' && node.shadowtls_enabled === '1') ? null : node.address,
 		server_port: (node.type === 'mieru') ? 0 : ((node.type === 'shadowsocks' && node.shadowtls_enabled === '1') ? null : strToInt(node.port)),
 		/* Hysteria(2) / Mieru (sing-box-extended) */
-		server_ports: (!is_hiddify && node.type === 'mieru' && node.mieru_port_range) ? [node.mieru_port_range] : node.hysteria_hopping_port,
+		server_ports: (node.type === 'mieru' && node.mieru_port_range) ? [node.mieru_port_range] : node.hysteria_hopping_port,
 
 		username: (node.type !== 'ssh') ? node.username : null,
 		user: (node.type === 'ssh') ? node.username : null,
@@ -441,11 +412,7 @@ function generate_outbound(node) {
 		/* ShadowTLS / Socks */
 		version: (node.type === 'shadowtls') ? strToInt(node.shadowtls_version) : ((node.type === 'socks') ? node.socks_version : null),
 		/* Mieru */
-		portBindings: (is_hiddify && node.type === 'mieru' && node.mieru_protocol && node.mieru_port_range) ? [
-			{ protocol: node.mieru_protocol, portRange: node.mieru_port_range }
-		] : null,
 		multiplexing: (node.type === 'mieru') ? node.mieru_multiplexing : null,
-		handshake_mode: (is_hiddify && node.type === 'mieru') ? node.mieru_handshake_mode : null,
 		/* SSH */
 		client_version: node.ssh_client_version,
 		host_key: node.ssh_host_key,
@@ -485,12 +452,10 @@ function generate_outbound(node) {
 			size: node.tls_fragment_size,
 			sleep: node.tls_fragment_sleep
 		} : null,
-		/* Shadowsocks has no top-level tls field in ANY sing-box-based core — for a
-		 * ShadowTLS-wrapped Shadowsocks the TLS lives on the separate shadowtls transport
-		 * outbound (detour). Both sing-box-extended AND hiddify-core 4.1.0 (HiddifyCli)
-		 * strict-reject a stray tls here ("unknown field tls" → FATAL), so suppress it for
-		 * shadowsocks unconditionally (the earlier is_singbox-only gate was wrong — hiddify
-		 * is not lenient). */
+		/* Shadowsocks has no top-level tls field — for a ShadowTLS-wrapped Shadowsocks the
+		 * TLS lives on the separate shadowtls transport outbound (detour). sing-box
+		 * strict-rejects a stray tls here ("unknown field tls" → FATAL), so suppress it for
+		 * shadowsocks unconditionally. */
 		tls: (node.tls === '1' && node.type !== 'shadowsocks') ? {
 			enabled: true,
 			server_name: node.tls_sni,
@@ -505,11 +470,10 @@ function generate_outbound(node) {
 				config: node.tls_ech_config,
 				config_path: node.tls_ech_config_path
 			} : null,
-			/* Reality REQUIRES uTLS in sing-box ("uTLS is required by reality client"
-			 * is a FATAL that crash-loops the whole service; hiddify-core defaults it
-			 * silently). So when reality is on we always emit utls, defaulting the
-			 * fingerprint to 'edge' if the node (e.g. a sub-imported reality node)
-			 * didn't carry one. */
+			/* Reality REQUIRES uTLS in sing-box ("uTLS is required by reality client" is a
+			 * FATAL that crash-loops the whole service). So when reality is on we always
+			 * emit utls, defaulting the fingerprint to 'edge' if the node (e.g. a
+			 * sub-imported reality node) didn't carry one. */
 			utls: (!isEmpty(node.tls_utls) || node.tls_reality === '1') ? {
 				enabled: true,
 				fingerprint: !isEmpty(node.tls_utls) ? node.tls_utls : 'edge'
@@ -520,23 +484,17 @@ function generate_outbound(node) {
 				short_id: node.tls_reality_short_id
 			} : null
 		} : null,
-		transport: (!is_hiddify && node.type === 'mieru') ? node.mieru_protocol : !isEmpty(node.transport) ? {
+		transport: (node.type === 'mieru') ? node.mieru_protocol : !isEmpty(node.transport) ? {
 			type: node.transport,
 			host: transport_host(node),
 			path: node.http_path || node.ws_path,
 			mode: (node.transport === 'xhttp') ? (node.xhttp_mode || 'auto') : null,
-			/* xhttp transport options differ by core DIALECT: hiddify-core (HiddifyCli, the
-			 * format the Hiddify app exports) uses camelCase — xPaddingBytes /
-			 * scMaxEachPostBytes / scMinPostsIntervalMs — while sing-box-extended uses
-			 * snake_case. Emit both spellings; the wrong-core one is null and removeBlankAttrs
-			 * strips it before write. sing-box keeps a forced 100-1000 padding default to
-			 * preserve prior behaviour; hiddify only emits what the node actually carries. */
-			x_padding_bytes: (is_singbox && node.transport === 'xhttp') ? xhttp_padding(node.xhttp_padding_bytes) : null,
-			xPaddingBytes: (is_hiddify && node.transport === 'xhttp' && !isEmpty(node.xhttp_padding_bytes)) ? xhttp_padding(node.xhttp_padding_bytes) : null,
-			sc_max_each_post_bytes: (is_singbox && node.transport === 'xhttp') ? (node.xhttp_sc_max_each_post_bytes || null) : null,
-			scMaxEachPostBytes: (is_hiddify && node.transport === 'xhttp') ? (node.xhttp_sc_max_each_post_bytes || null) : null,
-			sc_min_posts_interval_ms: (is_singbox && node.transport === 'xhttp') ? (node.xhttp_sc_min_posts_interval_ms || null) : null,
-			scMinPostsIntervalMs: (is_hiddify && node.transport === 'xhttp') ? (node.xhttp_sc_min_posts_interval_ms || null) : null,
+			/* sing-box spells the xhttp options in snake_case. x_padding_bytes carries a
+			 * forced 100-1000 default: an absent field decodes to "" and FATALs
+			 * ("cannot be disabled"). */
+			x_padding_bytes: (node.transport === 'xhttp') ? xhttp_padding(node.xhttp_padding_bytes) : null,
+			sc_max_each_post_bytes: (node.transport === 'xhttp') ? (node.xhttp_sc_max_each_post_bytes || null) : null,
+			sc_min_posts_interval_ms: (node.transport === 'xhttp') ? (node.xhttp_sc_min_posts_interval_ms || null) : null,
 			headers: node.xhttp_headers ? json(node.xhttp_headers) : (node.ws_host ? { Host: node.ws_host } : null),
 			method: node.http_method,
 			max_early_data: strToInt(node.websocket_early_data),
@@ -550,15 +508,9 @@ function generate_outbound(node) {
 		quic: (node.type === 'naive') ? strToBool(node.naive_quic) : null,
 		extra_headers: (node.type === 'naive') ? (node.naive_extra_headers ? json(node.naive_extra_headers) : null) : null,
 		/* sing-box-extended's ssh outbound has NO udp_over_tcp field → emitting it FATALs
-		 * with "unknown field udp_over_tcp" (verified on sing-box check). hiddify-core's
-		 * ssh works with it as-is (tested), so keep the ssh branch for hiddify only.
-		 * naive/shadowsocks keep udp_over_tcp on both cores. */
-		udp_over_tcp: (node.type === 'naive') ? strToBool(node.naive_udp_over_tcp) :
-		              (is_hiddify && node.type === 'ssh') ? (node.ssh_udp_over_tcp !== '0' ? true : null) :
-		              ((is_hiddify && node.udp_over_tcp === '1') ? {
-			enabled: true,
-			version: strToInt(node.udp_over_tcp_version)
-		} : null),
+		 * with "unknown field udp_over_tcp" (verified on sing-box check), so ssh never
+		 * carries it. naive spells it as a plain bool. */
+		udp_over_tcp: (node.type === 'naive') ? strToBool(node.naive_udp_over_tcp) : null,
 		tcp_fast_open: strToBool(node.tcp_fast_open),
 		tcp_multi_path: strToBool(node.tcp_multi_path),
 		udp_fragment: strToBool(node.udp_fragment),
@@ -566,20 +518,15 @@ function generate_outbound(node) {
 		detour: (node.type === 'shadowsocks' && node.shadowtls_enabled === '1') ? ('cfg-' + node['.name'] + '-shadowtls-out') : null
 	};
 
-	/* xhttp split download: attach under the per-core key (`download` for
-	 * sing-box-extended, `downloadSettings` for hiddify-core). The download block is a
-	 * full xhttp transport, so sing-box requires it to carry x_padding_bytes too — an
-	 * absent field decodes to "" and FATALs ("cannot be disabled"). Mirror the main
-	 * transport's per-core padding spelling (sing-box always forces a default; hiddify
-	 * only emits what the node carries). */
+	/* xhttp split download: attached under sing-box's `download` key. The download block
+	 * is a full xhttp transport, so it must carry x_padding_bytes too — an absent field
+	 * decodes to "" and FATALs ("cannot be disabled"). */
 	if (type(outbound.transport) === 'object') {
 		const dl = xhttp_download(node);
 		if (dl) {
-			if (is_singbox && node.transport === 'xhttp')
+			if (node.transport === 'xhttp')
 				dl.x_padding_bytes = xhttp_padding(node.xhttp_padding_bytes);
-			else if (is_hiddify && node.transport === 'xhttp' && !isEmpty(node.xhttp_padding_bytes))
-				dl.xPaddingBytes = xhttp_padding(node.xhttp_padding_bytes);
-			outbound.transport[is_hiddify ? 'downloadSettings' : 'download'] = dl;
+			outbound.transport.download = dl;
 		}
 	}
 
@@ -689,7 +636,7 @@ const has_outbound = (tag) => {
 config.log = {
 	disabled: false,
 	level: log_level,
-	output: RUN_DIR + '/hiddify-c.log',
+	output: RUN_DIR + '/limcore.log',
 	timestamp: true
 };
 
@@ -977,9 +924,6 @@ push(config.inbounds, {
 	listen: '::',
 	listen_port: int(mixed_port),
 	udp_timeout: strToTime(udp_timeout),
-	sniff: is_hiddify ? true : null,
-	sniff_override_destination: is_hiddify ? strToBool(sniff_override) : null,
-	set_system_proxy: is_hiddify ? false : null,
 });
 
 if (match(proxy_mode, /redirect/))
@@ -989,8 +933,6 @@ if (match(proxy_mode, /redirect/))
 
 		listen: '::',
 		listen_port: int(redirect_port),
-		sniff: is_hiddify ? true : null,
-		sniff_override_destination: is_hiddify ? strToBool(sniff_override) : null,
 	});
 if (match(proxy_mode, /tproxy/))
 	push(config.inbounds, {
@@ -1001,8 +943,6 @@ if (match(proxy_mode, /tproxy/))
 		listen_port: int(tproxy_port),
 		network: 'udp',
 		udp_timeout: strToTime(udp_timeout),
-		sniff: is_hiddify ? true : null,
-		sniff_override_destination: is_hiddify ? strToBool(sniff_override) : null,
 	});
 if (match(proxy_mode, /tun/))
 	push(config.inbounds, {
@@ -1016,8 +956,6 @@ if (match(proxy_mode, /tun/))
 		endpoint_independent_nat: strToBool(endpoint_independent_nat),
 		udp_timeout: strToTime(udp_timeout),
 		stack: tcpip_stack,
-		sniff: is_hiddify ? true : null,
-		sniff_override_destination: is_hiddify ? strToBool(sniff_override) : null,
 	});
 /* Server inbounds */
 uci.foreach(uciconfig, uciserver, (cfg) => {
@@ -1156,7 +1094,7 @@ uci.foreach(uciconfig, uciserver, (cfg) => {
 			host: transport_host(cfg),
 			path: cfg.http_path || cfg.ws_path,
 			mode: (cfg.transport === 'xhttp') ? (cfg.xhttp_mode || 'auto') : null,
-			x_padding_bytes: (is_singbox && cfg.transport === 'xhttp') ? xhttp_padding(cfg.xhttp_padding_bytes) : null,
+			x_padding_bytes: (cfg.transport === 'xhttp') ? xhttp_padding(cfg.xhttp_padding_bytes) : null,
 			headers: cfg.ws_host ? {
 				Host: cfg.ws_host
 			} : null,
@@ -1429,11 +1367,8 @@ config.route = {
 			action: 'hijack-dns'
 		},
 		{
-			/* Explicit sniff action — emit for BOTH cores. hiddify-core's legacy inbound
-			 * `sniff: true` does NOT sniff QUIC (TLS works, QUIC doesn't), so without this
-			 * route action QUIC carries no SNI and can't be domain-routed (e.g. YouTube
-			 * video → zapret-out fell through to direct). Device-confirmed on hiddify-core
-			 * 1.13.1; both cores support the action. */
+			/* Explicit sniff action. Without it QUIC carries no SNI and can't be
+			 * domain-routed (e.g. YouTube video → zapret-out fell through to direct). */
 			action: 'sniff'
 		}
 	],
@@ -1446,14 +1381,13 @@ config.route = {
 /* Routing rules */
 if (!isEmpty(main_node)) {
 	/* Avoid DNS loop */
-	/* sing-box-extended supports action object; hiddify-core (standard sing-box 1.12) expects a string tag */
 	const default_resolver_server = is_bypass_mode(routing_mode) ? 'region-dns' :
 	                                (routing_mode === 'proxy_banned_ru') ? 'russia-dns' : 'default-dns';
-	config.route.default_domain_resolver = is_singbox ? {
+	config.route.default_domain_resolver = {
 		action: 'route',
 		server: default_resolver_server,
 		strategy: (ipv6_support !== '1') ? 'prefer_ipv4' : null
-	} : default_resolver_server;
+	};
 
 	/* Direct list (not needed in proxy_banned_ru — direct is the default) */
 	if (length(direct_domain_list) && routing_mode !== 'proxy_banned_ru')
@@ -1778,10 +1712,10 @@ if (!isEmpty(main_node)) {
 	if (isEmpty(config.route.rule_set))
 		config.route.rule_set = null;
 } else if (!isEmpty(default_outbound)) {
-	config.route.default_domain_resolver = is_singbox ? {
+	config.route.default_domain_resolver = {
 		action: 'resolve',
 		server: get_resolver(default_outbound_dns)
-	} : get_resolver(default_outbound_dns);
+	};
 
 	if (domain_strategy)
 		push(config.route.rules, {
@@ -1895,4 +1829,4 @@ if (is_selective_mode(routing_mode) || routing_mode === 'custom') {
 /* Experimental end */
 
 system('mkdir -p ' + RUN_DIR);
-writefile(RUN_DIR + '/hiddify-c.json', sprintf('%.J\n', removeBlankAttrs(config)));
+writefile(RUN_DIR + '/limcore.json', sprintf('%.J\n', removeBlankAttrs(config)));

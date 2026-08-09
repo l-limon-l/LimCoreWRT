@@ -45,15 +45,14 @@ function getServiceStatus() {
 	return L.resolveDefault(callServiceList('homeproxy'), {}).then((res) => {
 		let isRunning = false;
 		try {
-			isRunning = res['homeproxy']['instances']['hiddify-c']['running'];
+			isRunning = res['homeproxy']['instances']['limcore']['running'];
 		} catch (e) { }
 		return isRunning;
 	});
 }
 
 function renderStatus(isRunning, features) {
-	let coreName = features.core_type === 'singbox' ? 'sing-box' :
-	               features.core_type === 'hiddify' ? 'hiddify-core' : null;
+	let coreName = features.core_type === 'singbox' ? 'sing-box' : null;
 	let verStr = features.version ? 'v' + features.version : _('unknown');
 	let coreStr = coreName ? ('%s %s').format(coreName, verStr) : _('no core installed');
 	let spanTemp = '<em><span style="color:%s"><strong>%s (%s) %s</strong></span></em>';

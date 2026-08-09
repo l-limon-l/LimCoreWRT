@@ -7,7 +7,7 @@
 				"/usr/bin/ucode": [ "exec" ],
 				"/etc/homeproxy/zapret_candidates.json": [ "read" ],
 				"/var/run/homeproxy/homeproxy.log": [ "read" ],
-				"/var/run/homeproxy/hiddify-c.log": [ "read" ]
+				"/var/run/homeproxy/limcore.log": [ "read" ]
 			},
 			"ubus": {
 				"service": [ "list" ],

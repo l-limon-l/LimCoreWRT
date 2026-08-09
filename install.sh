@@ -26,7 +26,7 @@ for arg in "$@"; do
 		--auto|-y|--update|-u) AUTO=1 ;;
 	esac
 done
-[ -n "$AUTO_UPDATE" ] || [ -n "$NONINTERACTIVE" ] && AUTO=1
+if [ -n "$AUTO_UPDATE" ] || [ -n "$NONINTERACTIVE" ]; then AUTO=1; fi
 
 G='\033[0;32m'; R='\033[0;31m'; Y='\033[0;33m'; C='\033[0;36m'; N='\033[0m'
 ok()   { echo -e "${G}$1${N}"; }
@@ -48,6 +48,8 @@ jget()  { printf '%s\n' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^
 jtrue() { printf '%s'   "$1" | grep -qE "\"result\"[[:space:]]*:[[:space:]]*true"; }
 jerr()  { printf '%s\n' "$1" | grep -qE "\"error\""; }
 jfalse(){ printf '%s'   "$1" | grep -qE "\"$2\"[[:space:]]*:[[:space:]]*false"; }
+jnum()  { printf '%s
+' "$1" | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\([0-9]\+\).*//p" | head -1; }
 
 # --- Загрузка «сначала GitHub, при сбое — зеркало» для первого хопа (app + ключ),
 #     пока ещё нет собственного gh_fetch приложения. dl <url> <файл>
@@ -147,31 +149,28 @@ CM=/usr/share/homeproxy/scripts/core_mgmt.uc
 [ -f "$CM" ] || die "core_mgmt.uc не найден после установки — прерываю."
 
 # ------------------------------------------------------- 2. ядро прокси (обязательно)
-ok "[2/5] Ядро прокси (обязательно — выберите одно)"
-echo "    1) hiddify-core       (по умолчанию; на малой флеш-памяти выберет компактную сборку)"
-echo "    2) sing-box-extended  (AmneziaWG / WARP, самый широкий набор протоколов)"
-if [ "$AUTO" = 1 ]; then
-	PREF=$(uci -q get homeproxy.config.preferred_core)
-	if [ "$PREF" = "singbox" ] || { [ -x "/usr/bin/sing-box" ] && [ ! -x "/usr/bin/hiddify-core" ]; }; then
-		CORE=singbox
-	else
-		CORE=hiddify
-	fi
-	info "  [AUTO] Выбрано ядро: $CORE"
-else
-	ask "  Выбор [1/2] (по умолчанию 1):"
-	case "$REPLY" in 2) CORE=singbox ;; *) CORE=hiddify ;; esac
-fi
-
-PREP=$(ucode "$CM" prepare_install "$CORE")
+ok "[2/5] Устанавливаю ядро sing-box-extended..."
+PREP=$(ucode "$CM" prepare_install)
 jerr "$PREP" && die "  подготовка ядра не удалась: $(jget "$PREP" error)"
 DLURL=$(jget "$PREP" dl_url); TMP=$(jget "$PREP" tmp_path); PMG=$(jget "$PREP" pkg_manager)
+DLSIZE=$(jnum "$PREP" dl_size)
 [ -n "$DLURL" ] && [ -n "$TMP" ] && [ -n "$PMG" ] || die "  подготовка ядра не вернула данные для загрузки."
-info "  скачиваю $CORE..."
-jtrue "$(ucode "$CM" download_pkg "$DLURL" "$TMP")" || die "  не удалось скачать ядро (попробуйте GH_MIRROR=...)."
-jtrue "$(ucode "$CM" install_pkg "$CORE" "$TMP" "$PMG")" || die "  установка ядра не удалась."
+
+# Загрузка проверяется по размеру: оборванная закачка раньше проходила молча, apk
+# регистрировал пакет, но 75-мегабайтный бинарник на диск не попадал.
+info "  скачиваю ядро (~$((DLSIZE / 1048576)) МБ)..."
+DLRES=$(ucode "$CM" download_pkg "$DLURL" "$TMP" "$DLSIZE")
+jtrue "$DLRES" || die "  не удалось скачать ядро: $(jget "$DLRES" error)"
+
+info "  устанавливаю пакет..."
+INSRES=$(ucode "$CM" install_pkg "$TMP" "$PMG")
+jtrue "$INSRES" || die "  установка ядра не удалась: $(jget "$INSRES" error)"
+
 jtrue "$(ucode "$CM" install_kmods "$PMG")" || warn "  не удалось поставить kmod — без kmod-nft-tproxy/kmod-tun прокси не будет маршрутизировать."
-ok "  $CORE установлен."
+
+# Финальная проверка по факту, а не по коду возврата установщика
+[ -x /usr/bin/sing-box ] || die "  пакет установлен, но /usr/bin/sing-box отсутствует — повторите установку."
+ok "  ядро установлено: $(/usr/bin/sing-box version 2>/dev/null | head -1)"
 
 # --------------------------------------------------------------- 3. Zapret (опционально)
 DO_ZAPRET=0

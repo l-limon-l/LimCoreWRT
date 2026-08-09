@@ -94,15 +94,14 @@ function getServiceStatus() {
 	return L.resolveDefault(callServiceList('homeproxy'), {}).then((res) => {
 		let isRunning = false;
 		try {
-			isRunning = res['homeproxy']['instances']['hiddify-c']['running'];
+			isRunning = res['homeproxy']['instances']['limcore']['running'];
 		} catch (e) { }
 		return isRunning;
 	});
 }
 
 function renderStatus(isRunning, features) {
-	let coreName = features.core_type === 'singbox' ? 'sing-box' :
-	               features.core_type === 'hiddify' ? 'hiddify-core' : null;
+	let coreName = features.core_type === 'singbox' ? 'sing-box' : null;
 	let verStr = features.version ? 'v' + features.version : _('unknown');
 	let coreStr = coreName ? ('%s %s').format(coreName, verStr) : _('no core installed');
 	let spanTemp = '<em><span style="color:%s"><strong>%s (%s) %s</strong></span></em>';
@@ -175,17 +174,6 @@ return view.extend({
 		s = m.section(form.NamedSection, 'config', 'homeproxy');
 
 		s.tab('routing', _('Routing Settings'));
-
-		if (features.available_cores && features.available_cores.length > 1) {
-			o = s.taboption('routing', form.ListValue, 'preferred_core', _('Preferred core'));
-			o.value('auto', _('Auto'));
-			if (features.available_cores.indexOf('hiddify') >= 0)
-				o.value('hiddify', 'hiddify-core');
-			if (features.available_cores.indexOf('singbox') >= 0)
-				o.value('singbox', 'sing-box');
-			o.default = 'auto';
-			o.rmempty = false;
-		}
 
 		o = s.taboption('routing', form.ListValue, 'main_node', _('Main node') + ' 🔗',
 			_('In this mode: only blocked domains are routed through this node — all other traffic goes direct.'));

@@ -65,52 +65,6 @@ function resolveTag(tag) {
 	return tag;
 }
 
-function getIPInfo(o, type) {
-	const callIPInfo = rpc.declare({
-		object: 'luci.homeproxy',
-		method: 'clash_ip_info',
-		expect: { '': {} }
-	});
-
-	const resultEl = E('strong', { 'style': 'color:gray' }, _('unchecked'));
-
-	const formatIPInfo = (entry, nodeTag) => {
-		if (!entry)
-			return E('strong', { 'style': 'color:red' }, _('No data'));
-
-		const lines = [];
-		if (nodeTag)
-			lines.push(E('span', {}, [ _('Node') + ': ', E('strong', {}, resolveTag(nodeTag)) ]));
-		if (entry.ip) {
-			const delayStr = (entry.delay && entry.delay !== 65535) ? ` — ${entry.delay} ms` : '';
-			const meta = [entry.country, entry.org].filter(Boolean).join(', ');
-			const label = entry.ip + (meta ? ` (${meta})` : '') + delayStr;
-			lines.push(E('span', {}, [ 'IP: ', E('strong', { 'style': 'color:green' }, label) ]));
-		}
-
-		return E('span', {}, lines.map((l) => E('div', {}, [ l ])));
-	};
-
-	o.default = E('div', { 'style': 'cbi-value-field' }, [
-		E('button', {
-			'class': 'btn cbi-button cbi-button-action',
-			'click': ui.createHandlerFn(this, () => {
-				return L.resolveDefault(callIPInfo(), {}).then((ret) => {
-					const el = o.default.firstElementChild.nextElementSibling;
-					if (ret.error) {
-						dom.content(el, E('span', { 'style': 'color:red' }, ret.error));
-						return;
-					}
-					const entry = ret[type];
-					dom.content(el, formatIPInfo(entry, type === 'proxy' ? entry?.node : null));
-				});
-			})
-		}, [ _('Check') ]),
-		' ',
-		resultEl
-	]);
-}
-
 function getConnStat(o, site) {
 	const callConnStat = rpc.declare({
 		object: 'luci.homeproxy',
@@ -148,7 +102,7 @@ function getRuntimeLog(o, name, _option_index, section_id, _in_table) {
 	case 'homeproxy':
 		section = null;
 		break;
-	case 'hiddify-c':
+	case 'limcore':
 		section = 'config';
 		break;
 	}
@@ -633,40 +587,38 @@ function callCoreInfo() {
 	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'info'], 'json');
 }
 
-function callCoreCheckRemote(core) {
-	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'check_remote', core], 'json');
+function callCoreCheckRemote() {
+	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'check_remote'], 'json');
 }
 
-function callCorePrepare(core, variant) {
-	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'prepare_install', core, variant || ''], 'json');
+function callCorePrepare() {
+	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'prepare_install'], 'json');
 }
 
-function callCoreDownload(url, tmpPath) {
-	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'download_pkg', url, tmpPath], 'json');
+function callCoreDownload(url, tmpPath, expectedSize) {
+	return fs.exec_direct('/usr/bin/ucode',
+		[CORE_MGMT, 'download_pkg', url, tmpPath, String(expectedSize || 0)], 'json');
 }
 
-function callCoreInstallPkg(core, tmpPath, pkgManager) {
-	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'install_pkg', core, tmpPath, pkgManager], 'json');
+function callCoreInstallPkg(tmpPath, pkgManager) {
+	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'install_pkg', tmpPath, pkgManager], 'json');
 }
 
 function callCoreInstallKmods(pkgManager) {
 	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'install_kmods', pkgManager], 'json');
 }
 
-function callCoreRemove(core) {
-	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'remove', core], 'json');
+function callCoreRemove() {
+	return fs.exec_direct('/usr/bin/ucode', [CORE_MGMT, 'remove'], 'json');
 }
 
-function buildCoreCard(core, coreInfo) {
-	const isHiddify = core === 'hiddify';
-	const name = isHiddify ? 'hiddify-core' : 'sing-box-extended';
+function buildCoreCard(coreInfo) {
+	const name = 'sing-box-extended';
 	const pkgMgr = coreInfo.pkg_manager;
-	const coreData = (isHiddify ? coreInfo.hiddify : coreInfo.singbox) || {};
+	const coreData = coreInfo.singbox || {};
 	const canInstall = !!pkgMgr;
 
-	const desc = isHiddify
-		? _('hiddify-core with sing-box syntax compatibility. Supports Hiddify App protocols and advanced features. Best compatibility with Hiddify Manager protocols. Does not support AmneziaWG.')
-		: _('Extended sing-box with additional protocols including AmneziaWG and TrustTunnel support. Created by shtorm-7.');
+	const desc = _('Extended sing-box with additional protocols including AmneziaWG and TrustTunnel support. Created by shtorm-7.');
 
 	let installed = coreData.installed || false;
 	let version   = coreData.version   || null;
@@ -686,7 +638,7 @@ function buildCoreCard(core, coreInfo) {
 			checkBtn.disabled = true;
 			remoteEl.textContent = _('Checking...');
 			remoteEl.style.color = 'gray';
-			const ret = await L.resolveDefault(callCoreCheckRemote(core), {});
+			const ret = await L.resolveDefault(callCoreCheckRemote(), {});
 			checkBtn.disabled = false;
 			if (ret.error) {
 				remoteEl.textContent = ret.error;
@@ -698,8 +650,6 @@ function buildCoreCard(core, coreInfo) {
 		}
 	}, [ _('Check update') ]);
 
-	/* One smart Install: the backend auto-picks the build that fits this device's flash
-	 * (and RAM for the compact one) — the user never sees "UPX" or has to choose. */
 	const doInstall = async () => {
 		const prevInstalled = installed;
 		const prevVersion   = version;
@@ -719,31 +669,35 @@ function buildCoreCard(core, coreInfo) {
 		};
 
 		setMsg(_('Checking requirements...'), 'gray');
-		const prep = await L.resolveDefault(callCorePrepare(core, ''), {});
+		const prep = await L.resolveDefault(callCorePrepare(), {});
 		if (prep.error) return fail(prep.error);
 
-		const compact = (prep.variant === 'upx');
-		setMsg(prep.note || _('Downloading...'), prep.note ? 'darkorange' : 'gray');
-		const dl = await L.resolveDefault(callCoreDownload(prep.dl_url, prep.tmp_path), {});
+		setMsg(_('Downloading...'), 'gray');
+		const dl = await L.resolveDefault(callCoreDownload(prep.dl_url, prep.tmp_path, prep.dl_size), {});
 		if (!dl.result) return fail(dl.error || _('Download failed'));
 
 		setMsg(_('Installing package...'), 'gray');
-		const inst = await L.resolveDefault(callCoreInstallPkg(core, prep.tmp_path, prep.pkg_manager), {});
+		const inst = await L.resolveDefault(callCoreInstallPkg(prep.tmp_path, prep.pkg_manager), {});
 		if (!inst.result) return fail(inst.error || _('Installation failed'));
 
 		setMsg(_('Installing kernel modules...'), 'gray');
 		await L.resolveDefault(callCoreInstallKmods(prep.pkg_manager), {});
 
+		/* Trust the fresh probe, not the installer's exit code: a package can register
+		 * without its binary ever landing on disk. */
 		const fresh = await L.resolveDefault(callCoreInfo(), {});
-		const fd = (isHiddify ? fresh.hiddify : fresh.singbox) || {};
-		installed = fd.installed || false;
-		version   = fd.version   || null;
-		statusEl.textContent = installed ? 'v' + version : _('Unknown');
-		statusEl.style.color = installed ? 'green' : 'gray';
+		const fd = fresh.singbox || {};
+		if (!fd.installed)
+			return fail(_('Package installed but the sing-box binary is missing — retry the installation'));
+
+		installed = true;
+		version   = fd.version || null;
+		statusEl.textContent = version ? 'v' + version : _('Installed');
+		statusEl.style.color = 'green';
 		installBtn.textContent = _('Update');
 		installBtn.disabled = false;
 		removeBtn.disabled  = false;
-		setMsg(compact ? _('Installed successfully (compact build)') : _('Installed successfully'), 'green');
+		setMsg(_('Installed successfully'), 'green');
 	};
 
 	const installBtn = E('button', {
@@ -763,7 +717,7 @@ function buildCoreCard(core, coreInfo) {
 			installBtn.disabled = true;
 			setMsg(_('Removing...'), 'gray');
 
-			const ret = await L.resolveDefault(callCoreRemove(core), {});
+			const ret = await L.resolveDefault(callCoreRemove(), {});
 
 			installBtn.disabled = false;
 			if (ret.result) {
@@ -825,29 +779,43 @@ function buildLimCoreAppCard() {
 				updateBtn.disabled = false;
 				statusEl.textContent = _('Installed');
 				statusEl.style.color = 'green';
-				setMsg(_('Failed to launch update process'), 'red');
+				setMsg(res.error || _('Failed to launch update process'), 'red');
 				return;
 			}
 
+			const stop = (text, color, reload) => {
+				clearInterval(timer);
+				updateBtn.disabled = false;
+				statusEl.textContent = reload ? _('Updated') : _('Installed');
+				statusEl.style.color = reload ? 'green' : 'red';
+				setMsg(text, color);
+				if (reload)
+					setTimeout(() => { window.location.reload(); }, 2000);
+			};
+
+			/* Don't equate "process gone" with "update succeeded": the updater writes an
+			   explicit completion marker, and its absence means it was killed mid-run. */
 			let pollCount = 0;
-			const timer = setInterval(async () => {
+			var timer = setInterval(async () => {
 				pollCount++;
 				const st = await L.resolveDefault(callAppUpdateStatus(), {});
-				if (st && st.running) {
+
+				/* finished wins over running: the completion marker is authoritative, and
+				   a stale PID file must never keep the page spinning. */
+				if (st && st.finished) {
+					if (st.exit_code === 0)
+						stop(_('LimCore successfully updated! Reloading...'), 'green', true);
+					else
+						stop(_('Update failed (exit code %d) — see /tmp/limcore-update.log').format(st.exit_code),
+						     'red', false);
+				} else if (st && st.running) {
 					setMsg(_('Updating LimCore & dependencies in background...'), 'gray');
-				} else {
-					clearInterval(timer);
-					updateBtn.disabled = false;
-					statusEl.textContent = _('Updated');
-					statusEl.style.color = 'green';
-					setMsg(_('LimCore successfully updated! Reloading...'), 'green');
-					setTimeout(() => { window.location.reload(); }, 2000);
+				} else if (st && st.interrupted) {
+					stop(_('Update was interrupted before it finished — see /tmp/limcore-update.log'), 'red', false);
 				}
-				if (pollCount > 60) {
-					clearInterval(timer);
-					updateBtn.disabled = false;
-					setMsg(_('Update finished. Reload page to see changes.'), 'green');
-				}
+
+				if (pollCount > 150)
+					stop(_('Update is still running after 5 minutes — check /tmp/limcore-update.log'), 'darkorange', false);
 			}, 2000);
 		}
 	}, [ _('Update LimCore') ]);
@@ -887,8 +855,7 @@ return view.extend({
 		s.anonymous = true;
 
 		o = s.option(form.DummyValue, '_active_core', _('Active core'));
-		const coreName = features.core_type === 'hiddify' ? 'hiddify-core' :
-		                 features.core_type === 'singbox' ? 'sing-box' : null;
+		const coreName = features.core_type === 'singbox' ? 'sing-box' : null;
 		const coreVer = features.version ? ' v' + features.version : '';
 		const coreCustomSuffix = features.core_custom ? ' (custom)' : '';
 
@@ -905,7 +872,7 @@ return view.extend({
 				'type': 'text',
 				'class': 'cbi-input-text',
 				'value': savedPath,
-				'placeholder': '/path/to/hiddify-core',
+				'placeholder': '/path/to/sing-box',
 				'style': 'width:260px; margin-right:4px'
 			});
 			const detectMsg = E('span', { 'style': 'margin-left:8px; font-size:0.9em; color:gray' }, '');
@@ -920,8 +887,7 @@ return view.extend({
 					const ret = await L.resolveDefault(callDetectCustomCore(path), {});
 					detectBtn.disabled = false;
 					if (ret.result) {
-						const typeName = ret.type === 'hiddify' ? 'hiddify-core' : 'sing-box';
-						detectMsg.textContent = _('Detected') + ': ' + typeName + (ret.version ? ' v' + ret.version : '') + ' — ' + _('reload page to apply');
+						detectMsg.textContent = _('Detected') + ': sing-box' + (ret.version ? ' v' + ret.version : '') + ' — ' + _('reload page to apply');
 						detectMsg.style.color = 'green';
 					} else {
 						detectMsg.textContent = ret.error || _('Detection failed');
@@ -993,11 +959,8 @@ return view.extend({
 		o = s.option(form.DummyValue, '_app_limcore');
 		o.default = buildLimCoreAppCard();
 
-		o = s.option(form.DummyValue, '_core_hiddify');
-		o.default = buildCoreCard('hiddify', coreInfo);
-
 		o = s.option(form.DummyValue, '_core_singbox');
-		o.default = buildCoreCard('singbox', coreInfo);
+		o.default = buildCoreCard(coreInfo);
 
 		s = m.section(form.NamedSection, 'config', 'homeproxy', _('AntiDPI'));
 		s.anonymous = true;
@@ -1017,7 +980,7 @@ return view.extend({
 		o = s.option(form.DummyValue, '_homeproxy_logview');
 		o.render = L.bind(getRuntimeLog, this, o, _('LimCore'));
 
-		o = s.option(form.DummyValue, '_hiddify-c_logview');
+		o = s.option(form.DummyValue, '_limcore_logview');
 		o.render = L.bind(getRuntimeLog, this, o, _('core client'));
 
 		return m.render();

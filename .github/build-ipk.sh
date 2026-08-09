@@ -68,7 +68,17 @@ add_group_and_user
 default_postinst
 [ -n "${IPKG_INSTROOT}" ] || { rm -f /tmp/luci-indexcache.*
 	rm -rf /tmp/luci-modulecache/
-	killall -HUP rpcd 2>/dev/null
+	# Full restart, NOT kill -HUP: SIGHUP only reloads ACLs/session, so rpcd keeps the
+	# OLD ucode method set from /usr/share/rpcd/ucode/. Any release that adds or changes
+	# a method would leave it missing/stale until a manual restart ("Unknown method",
+	# "DNS not ready", yellow ? in diagnostics). setsid detaches the restarter into its
+	# own session so it survives both the install teardown and rpcd stopping itself —
+	# a plain background subshell stays in the postinst process group and gets reaped.
+	if command -v setsid >/dev/null 2>&1; then
+		setsid sh -c 'sleep 3; /etc/init.d/rpcd restart' >/dev/null 2>&1 &
+	else
+		( sleep 3; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
+	fi
 	exit 0
 }' > "$TEMP_DIR/post-install"
 
@@ -84,7 +94,17 @@ add_group_and_user
 default_postinst
 [ -n "${IPKG_INSTROOT}" ] || { rm -f /tmp/luci-indexcache.*
 	rm -rf /tmp/luci-modulecache/
-	killall -HUP rpcd 2>/dev/null
+	# Full restart, NOT kill -HUP: SIGHUP only reloads ACLs/session, so rpcd keeps the
+	# OLD ucode method set from /usr/share/rpcd/ucode/. Any release that adds or changes
+	# a method would leave it missing/stale until a manual restart ("Unknown method",
+	# "DNS not ready", yellow ? in diagnostics). setsid detaches the restarter into its
+	# own session so it survives both the install teardown and rpcd stopping itself —
+	# a plain background subshell stays in the postinst process group and gets reaped.
+	if command -v setsid >/dev/null 2>&1; then
+		setsid sh -c 'sleep 3; /etc/init.d/rpcd restart' >/dev/null 2>&1 &
+	else
+		( sleep 3; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
+	fi
 	exit 0
 }' > "$TEMP_DIR/post-upgrade"
 
@@ -190,6 +210,13 @@ default_postinst $0 $@' > "$TEMP_PKG_DIR/CONTROL/postinst"
 	(. /etc/uci-defaults/$PKG_NAME) && rm -f /etc/uci-defaults/$PKG_NAME
 	rm -f /tmp/luci-indexcache
 	rm -rf /tmp/luci-modulecache/
+	# Same reason as the apk post-install: rpcd must fully restart to pick up new/changed
+	# ucode methods, and setsid keeps the restarter alive past the install teardown.
+	if command -v setsid >/dev/null 2>&1; then
+		setsid sh -c 'sleep 3; /etc/init.d/rpcd restart' >/dev/null 2>&1 &
+	else
+		( sleep 3; /etc/init.d/rpcd restart ) >/dev/null 2>&1 &
+	fi
 	exit 0
 }" > "$TEMP_PKG_DIR/CONTROL/postinst-pkg"
 	chmod 0755 "$TEMP_PKG_DIR/CONTROL/postinst-pkg"
