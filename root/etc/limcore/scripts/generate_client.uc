@@ -14,7 +14,7 @@ import { cursor } from 'uci';
 
 import {
 	isEmpty, parseURL, strToBool, strToInt, strToTime,
-	removeBlankAttrs, validation, HP_DIR, RUN_DIR
+	removeBlankAttrs, validation, normalizeVlessEncryption, HP_DIR, RUN_DIR
 } from 'limcore';
 
 const ubus = connect();
@@ -426,6 +426,11 @@ function generate_outbound(node) {
 		heartbeat: strToTime(node.tuic_heartbeat),
 		/* VLESS / VMess */
 		flow: node.vless_flow,
+		/* Post-quantum VLESS encryption. Re-normalized at generation time, not trusted
+		 * as stored: a node predating the parser fix (or a hand-edited UCI value) could
+		 * still hold Xray's longer form, and sing-box refuses to start on it. Anything
+		 * unrecognised becomes null and is simply omitted. */
+		encryption: (node.type === 'vless') ? normalizeVlessEncryption(node.vless_encryption) : null,
 		alter_id: strToInt(node.vmess_alterid),
 		security: node.vmess_encrypt,
 		global_padding: strToBool(node.vmess_global_padding),

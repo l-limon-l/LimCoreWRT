@@ -1256,6 +1256,26 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.depends('type', 'vless');
 	o.modalonly = true;
 
+	o = s.option(form.TextValue, 'vless_encryption', _('Encryption'),
+		_('Post-quantum VLESS encryption (ML-KEM), as issued by the server. ' +
+		  'Leave empty for an unencrypted VLESS handshake. ' +
+		  'Xray also encodes padding parameters here; sing-box has no equivalent for them ' +
+		  'and they are dropped automatically, keeping suite, mode, 0-RTT flag and the key.'));
+	o.depends('type', 'vless');
+	o.rows = 3;
+	o.monospace = true;
+	o.modalonly = true;
+	o.validate = function(section_id, value) {
+		if (!value || !value.trim() || value.trim() === 'none')
+			return true;
+		const parts = value.trim().split('.');
+		if (!/^mlkem/.test(parts[0]))
+			return _('Unsupported encryption scheme — sing-box only implements ML-KEM here.');
+		if (parts.length < 4)
+			return _('Incomplete encryption string: expected suite.mode.rtt.key');
+		return true;
+	};
+
 	o = s.option(form.Value, 'vmess_alterid', _('Alter ID'),
 		_('Legacy protocol support (VMess MD5 Authentication) is provided for compatibility purposes only, use of alterId > 1 is not recommended.'));
 	o.datatype = 'uinteger';

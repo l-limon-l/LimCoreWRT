@@ -102,6 +102,28 @@ export function wGET(url, ua, hwid) {
 	const output = executeCommand(`/usr/bin/wget -qO- ${hwid_header}--header="x-device-os: OpenWrt" --header="x-device-model: ${model}" --user-agent ${shellQuote(ua)} --timeout=10 ${shellQuote(url)}`) || {};
 	return trim(output.stdout);
 };
+/* VLESS post-quantum `encryption` (ML-KEM). Xray and sing-box spell the same key
+ * differently: Xray adds three padding/timing components that sing-box has no equivalent
+ * for, and sing-box then reads the wrong component as the key and refuses the config
+ * ("invalid encryption key length"). sing-box wants exactly <suite>.<mode>.<rtt>.<key>,
+ * so keep the first three components and the key, and drop what it cannot express.
+ *
+ * Returns null for anything not recognised — emitting an unknown scheme is a decode
+ * FATAL that takes the whole service down, which is far worse than skipping the node. */
+export function normalizeVlessEncryption(enc) {
+	if (!enc || type(enc) !== 'string')
+		return null;
+	enc = trim(enc);
+	if (!length(enc) || enc === 'none')
+		return null;
+	if (!match(enc, /^mlkem/))
+		return null;
+
+	const parts = split(enc, '.');
+	if (length(parts) < 4)
+		return null;
+	return `${parts[0]}.${parts[1]}.${parts[2]}.${parts[length(parts) - 1]}`;
+};
 /* Utilities end */
 
 /* String helper start */

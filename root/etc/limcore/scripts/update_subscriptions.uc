@@ -17,7 +17,7 @@ import { init_action } from 'luci.sys';
 
 import {
 	wGET, decodeBase64Str, getTime, isEmpty, parseURL,
-	validation, HP_DIR, RUN_DIR
+	validation, normalizeVlessEncryption, HP_DIR, RUN_DIR
 } from 'limcore';
 
 /* UCI config start */
@@ -165,6 +165,7 @@ function parse_singbox_outbound(ob, companion_map) {
 	case 'vless':
 		config.uuid = ob.uuid || null;
 		config.vless_flow = ob.flow || null;
+		config.vless_encryption = normalizeVlessEncryption(ob.encryption);
 		config.packet_encoding = ob.packet_encoding || null;
 		break;
 	case 'vmess':
@@ -311,6 +312,7 @@ function parse_xray_outbound(ob, remarks) {
 	case 'vless':
 		config.uuid = user.id || null;
 		config.vless_flow = user.flow || null;
+		config.vless_encryption = normalizeVlessEncryption(user.encryption || ob?.settings?.encryption);
 		break;
 	case 'vmess':
 		config.uuid = user.id || null;
@@ -819,7 +821,9 @@ function parse_uri(uri) {
 				tls_reality_public_key: params.pbk ? urldecode(params.pbk) : null,
 				tls_reality_short_id: params.sid,
 				tls_utls: sing_features.with_utls ? params.fp : null,
-				vless_flow: (params.security in ['tls', 'reality']) ? params.flow : null
+				vless_flow: (params.security in ['tls', 'reality']) ? params.flow : null,
+				/* post-quantum VLESS encryption; normalized to the shape sing-box parses */
+				vless_encryption: normalizeVlessEncryption(params.encryption ? urldecode(params.encryption) : null)
 			};
 			switch(params.type) {
 			case 'grpc':
