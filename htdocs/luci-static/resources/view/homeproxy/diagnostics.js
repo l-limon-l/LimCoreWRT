@@ -74,12 +74,6 @@ const callConnCheck = rpc.declare({
 	expect: { '': {} }
 });
 
-const callIpInfo = rpc.declare({
-	object: 'luci.homeproxy',
-	method: 'clash_ip_info',
-	expect: { '': {} }
-});
-
 const callActiveNode = rpc.declare({
 	object: 'luci.homeproxy',
 	method: 'clash_active_node',
@@ -162,28 +156,6 @@ function buildConnectivitySection(view, coreType) {
 		return E('div', { 'class': 'diag-row' }, [ E('span', { 'class': 'diag-label' }, label), btn, resultEl ]);
 	}
 
-	/* Exit IP / geo — only hiddify-core's Clash API reports it. */
-	function ipRow(label, type) {
-		const resultEl = E('strong', { 'class': 'diag-gray' }, _('unchecked'));
-		function run() {
-			dom.content(resultEl, E('em', { 'class': 'diag-gray' }, _('Testing…')));
-			return L.resolveDefault(callIpInfo(), {}).then(function(ret) {
-				if (ret.error) { dom.content(resultEl, E('span', { 'class': 'diag-fail' }, ret.error)); return; }
-				const entry = ret[type];
-				if (!entry || !entry.ip) { dom.content(resultEl, E('span', { 'class': 'diag-gray' }, _('No data'))); return; }
-				const meta  = [entry.country, entry.org].filter(Boolean).join(', ');
-				const delay = (entry.delay && entry.delay !== 65535) ? ' — ' + entry.delay + ' ms' : '';
-				const node  = (type === 'proxy' && entry.node) ? resolveTag(entry.node) + ': ' : '';
-				dom.content(resultEl, E('strong', { 'class': 'diag-ok' },
-					node + entry.ip + (meta ? ' (' + meta + ')' : '') + delay));
-			});
-		}
-		items.push(run);
-		const btn = E('button', { 'class': 'btn cbi-button cbi-button-action diag-btn',
-			'click': ui.createHandlerFn(view, run) }, [ _('Check') ]);
-		return E('div', { 'class': 'diag-row' }, [ E('span', { 'class': 'diag-label' }, label), btn, resultEl ]);
-	}
-
 	/* Active node — live status (which node sing-box has selected), auto-updating;
 	 * sing-box can't report exit IP, so this stands in for the IP rows. */
 	/* Live active-node row. `tag` selects which outbound group to resolve:
@@ -220,13 +192,9 @@ function buildConnectivitySection(view, coreType) {
 		siteRow(_('Speedtest'), 'speedtest')
 	];
 
-	/* hiddify → exit-IP rows; sing-box → live Active Node (it can't report exit IP). */
-	if (coreType === 'hiddify') {
-		rows.push(ipRow(_('Direct IP'), 'direct'));
-		rows.push(ipRow(_('Proxy IP'),  'proxy'));
-	} else if (coreType === 'singbox') {
+	/* sing-box can't report an exit IP, so show the live Active Node instead. */
+	if (coreType === 'singbox')
 		rows.push(activeNodeRow(_('Active Node')));
-	}
 
 	/* Dedicated UDP node — only the modes that expose "Main UDP node" in the UI set it
 	   (Global + the bypass_cn/bypass_ir reverse modes; proxy_banned_ru/custom don't, and
@@ -259,7 +227,6 @@ function buildCoreSection(view) {
 				: [ E('em', { 'class': 'diag-gray' }, _('none detected')) ];
 
 			dom.content(resultsEl, [
-				row(_('Hiddify-core'),    statusBadge(ret.hiddify_installed, ret.hiddify_installed ? _('installed') : _('not found'))),
 				row(_('sing-box'),        statusBadge(ret.singbox_installed,  ret.singbox_installed  ? _('installed') : _('not found'))),
 				row(_('ByeDPI'),          statusBadge(ret.byedpi_installed,   ret.byedpi_installed   ? _('installed') : _('not found'))),
 				row(_('Zapret 2'),        statusBadge(ret.zapret_installed,   ret.zapret_installed   ? _('installed') : _('not found'))),

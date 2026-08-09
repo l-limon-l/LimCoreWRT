@@ -1,13 +1,76 @@
 #!/bin/sh
 # LimCore Auto-Updater for OpenWrt
 # https://github.com/l-limon-l/LimCoreWRT
+#
+# Runs install.sh in --auto mode. Launched either by hand or by the LuCI page through
+# rpcd; in the rpcd case app_update starts it with setsid, because install.sh restarts
+# rpcd and would otherwise kill this script (its own parent's child) mid-update.
+#
+# The last line of the log is always LIMCORE_UPDATE_RC=<code>, which is how the LuCI
+# page tells a finished-and-failed update from a finished-and-succeeded one. The PID
+# file lets it tell "still working" from "died without finishing" without pattern
+# matching on process lists.
 
-G='\033[0;32m'; C='\033[0;36m'; N='\033[0m'
+G='\033[0;32m'; R='\033[0;31m'; C='\033[0;36m'; N='\033[0m'
+
+PIDFILE="/tmp/limcore-update.pid"
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT INT TERM
+
 echo -e "${C}=== LimCore Auto-Updater ===${N}"
 
-[ "$(id -u)" = 0 ] || { echo "Ошибка: Запустите от root."; exit 1; }
+if [ "$(id -u)" != 0 ]; then
+	echo -e "${R}Ошибка: запустите от root.${N}"
+	echo "LIMCORE_UPDATE_RC=1"
+	exit 1
+fi
 
-echo -e "${C}Скачивание и автоматическое обновление LimCore...${N}"
-wget -qO- https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh | sh -s -- --auto
+# Зеркало GitHub, если основной домен заблокирован (то же значение использует бэкенд).
+GH_MIRROR="${GH_MIRROR:-$(uci -q get homeproxy.config.github_mirror)}"
+export GH_MIRROR
 
-echo -e "${G}=== Обновление LimCore завершено! ===${N}"
+SRC="https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh"
+TMP="/tmp/limcore-install.sh"
+
+fetch() {
+	wget -qO "$TMP" --timeout=20 "$1" 2>/dev/null && [ -s "$TMP" ]
+}
+
+echo -e "${C}Скачиваю установщик...${N}"
+rm -f "$TMP"
+if ! fetch "$SRC"; then
+	MIRRORED=""
+	[ -n "$GH_MIRROR" ] && MIRRORED=$(echo "$SRC" | sed "s#https://raw.githubusercontent.com#${GH_MIRROR%/}#")
+	if [ -z "$MIRRORED" ] || ! fetch "$MIRRORED"; then
+		echo -e "${R}Не удалось скачать install.sh (GitHub недоступен?).${N}"
+		echo "Подсказка: задайте зеркало — uci set homeproxy.config.github_mirror=https://...; uci commit homeproxy"
+		rm -f "$TMP"
+		echo "LIMCORE_UPDATE_RC=1"
+		exit 1
+	fi
+fi
+
+# Минимальная проверка, что скачали скрипт, а не HTML-заглушку провайдера/зеркала.
+if ! head -1 "$TMP" | grep -q '^#!/bin/sh'; then
+	echo -e "${R}Скачанный файл не похож на install.sh — обновление прервано.${N}"
+	head -3 "$TMP"
+	rm -f "$TMP"
+	echo "LIMCORE_UPDATE_RC=1"
+	exit 1
+fi
+
+echo -e "${C}Запускаю обновление LimCore...${N}"
+sh "$TMP" --auto
+RC=$?
+rm -f "$TMP"
+
+if [ "$RC" = 0 ]; then
+	echo -e "${G}=== Обновление LimCore завершено! ===${N}"
+else
+	echo -e "${R}=== Обновление LimCore завершилось с ошибкой (код $RC) ===${N}"
+fi
+
+# Маркер читает app_update_status — он же признак того, что процесс дошёл до конца,
+# а не был убит на середине.
+echo "LIMCORE_UPDATE_RC=$RC"
+exit "$RC"

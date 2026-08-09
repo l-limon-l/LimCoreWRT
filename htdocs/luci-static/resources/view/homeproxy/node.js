@@ -1462,7 +1462,7 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.modalonly = true;
 
 	o = s.option(form.Value, 'xhttp_download_server', _('Download server'),
-		_('Optional separate server address for the download direction. Empty reuses the main server (works on hiddify-core; set explicitly for sing-box).'));
+		_('Optional separate server address for the download direction. Empty reuses the main server; set it explicitly when the download direction uses a different endpoint.'));
 	o.datatype = 'host';
 	o.depends('transport', 'xhttp');
 	o.modalonly = true;

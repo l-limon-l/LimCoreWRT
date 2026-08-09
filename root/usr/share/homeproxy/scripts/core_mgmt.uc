@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { access, popen, readfile } from 'fs';
+import { access, lstat, popen, readfile } from 'fs';
 
 function shellquote(s) {
 	return `'${replace(s, "'", "'\\''")}'`;
@@ -27,6 +27,11 @@ function gh_mirror_base() {
 function gh_mirror_of(url, base) {
 	const m = match(url, /^https:\/\/github\.com(\/[^\/]+\/[^\/]+\/releases\/.+)$/);
 	return m ? `${base}${m[1]}` : null;
+}
+
+function file_size(path) {
+	const st = lstat(path);
+	return (st && st.type === 'file') ? st.size : 0;
 }
 
 /* GitHub-first, mirror-FALLBACK download. Returns wget exit code (0 = success). */
@@ -69,7 +74,7 @@ function free_ram_kb() {
 }
 
 /* Does the overlay filesystem transparently compress? jffs2/ubifs do (~3x on a Go binary),
- * ext4/f2fs do not. This decides how much flash the FULL binary actually occupies. */
+ * ext4/f2fs do not. This decides how much flash the binary actually occupies. */
 function overlay_compresses() {
 	const fd = popen("mount 2>/dev/null | awk '$3==\"/overlay\"{print $5; exit}'");
 	let t = '';
@@ -77,13 +82,32 @@ function overlay_compresses() {
 	return (t in ['jffs2', 'ubifs']);
 }
 
-/* Footprint thresholds (KB). The UPX/compact build is already compressed (~20 MB on ANY fs)
- * but decompresses the whole binary into RAM at every launch (trades flash for RAM). The full
- * Go binary is ~76 MB raw → ~76 MB on ext4/f2fs, but only ~26 MB on a compressing overlay. */
-const FULL_OVERLAY_RAW_KB  = 81920;   /* ~80 MB free for the full binary on an uncompressed overlay */
-const FULL_OVERLAY_COMP_KB = 32768;   /* ~32 MB on a compressing overlay (binary stores ~3x smaller) */
-const COMPACT_OVERLAY_KB   = 25600;   /* ~25 MB for the compact (UPX) build — fs-independent */
-const COMPACT_RAM_KB       = 98304;   /* ~96 MB free RAM to decompress + run the compact build */
+/* Footprint thresholds (KB). The Go binary is ~76 MB raw → ~76 MB on ext4/f2fs, but only
+ * ~26 MB on a compressing overlay. */
+const FULL_OVERLAY_RAW_KB  = 81920;   /* ~80 MB free on an uncompressed overlay */
+const FULL_OVERLAY_COMP_KB = 32768;   /* ~32 MB on a compressing overlay */
+
+const CORE_BINARY = '/usr/bin/sing-box';
+const RELEASE_API = 'https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest';
+
+function github_api(url) {
+	const fd = popen('wget -qO- --timeout=10 ' + shellquote(url) + ' 2>/dev/null');
+	if (!fd) return { error: 'wget failed' };
+	const raw = trim(fd.read('all')); fd.close();
+	if (!length(raw)) return { error: 'no response from GitHub API' };
+	let data;
+	try { data = json(raw); } catch(e) { data = null; }
+	return data ? { data } : { error: 'invalid JSON from GitHub API' };
+}
+
+function core_version() {
+	if (!access(CORE_BINARY)) return null;
+	const fd = popen(CORE_BINARY + ' version 2>/dev/null');
+	if (!fd) return null;
+	const out = fd.read('all'); fd.close();
+	const m = match(out, /version v?(\S+)/);
+	return m ? m[1] : null;
+}
 
 const action = ARGV[0];
 let result;
@@ -97,22 +121,11 @@ if (action === 'info') {
 	if (!overlay_free_kb) overlay_free_kb = free_kb('/');
 	const ram_free_kb = free_ram_kb();
 
-	const hiddify_installed = !!access('/usr/bin/hiddify-core');
-	let hiddify_version = null;
-	if (hiddify_installed) {
-		const fd = popen('/usr/bin/hiddify-core version 2>/dev/null');
-		if (fd) {
-			const out = fd.read('all'); fd.close();
-			const m = match(out, /version v?(\S+)/);
-			if (m) hiddify_version = m[1];
-		}
-	}
-
-	const singbox_installed = !!access('/usr/bin/sing-box');
+	const singbox_installed = !!access(CORE_BINARY);
 	let singbox_version = null;
 	let singbox_extended = false;
 	if (singbox_installed) {
-		const fd = popen('/usr/bin/sing-box version 2>/dev/null');
+		const fd = popen(CORE_BINARY + ' version 2>/dev/null');
 		if (fd) {
 			const out = fd.read('all'); fd.close();
 			const m = match(out, /version v?(\S+)/);
@@ -123,137 +136,69 @@ if (action === 'info') {
 
 	result = {
 		pkg_manager, arch, tmp_free_kb, overlay_free_kb, ram_free_kb,
-		hiddify: { installed: hiddify_installed, version: hiddify_version },
 		singbox: { installed: singbox_installed, version: singbox_version, extended: singbox_extended }
 	};
 
 } else if (action === 'check_remote') {
-	const core = ARGV[1];
-	if (!(core in ['hiddify', 'singbox'])) {
-		result = { error: 'illegal core' };
-	} else {
-		const api_url = core === 'hiddify'
-			? 'https://api.github.com/repos/1andrevich/hiddify-core/releases/latest'
-			: 'https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest';
-
-		const fd = popen('wget -qO- --timeout=10 ' + shellquote(api_url) + ' 2>/dev/null');
-		if (!fd) {
-			result = { error: 'wget failed' };
-		} else {
-			const raw = trim(fd.read('all')); fd.close();
-			if (!length(raw)) {
-				result = { error: 'no response from GitHub API' };
-			} else {
-				let data;
-				try { data = json(raw); } catch(e) { data = null; }
-				if (!data)
-					result = { error: 'invalid JSON from GitHub API' };
-				else if (!data?.tag_name)
-					result = { error: 'could not read tag_name from response' };
-				else
-					result = { tag: data.tag_name, version: replace(data.tag_name, /^v/, '') };
-			}
-		}
-	}
+	const api = github_api(RELEASE_API);
+	if (api.error)
+		result = { error: api.error };
+	else if (!api.data?.tag_name)
+		result = { error: 'could not read tag_name from response' };
+	else
+		result = { tag: api.data.tag_name, version: replace(api.data.tag_name, /^v/, '') };
 
 } else if (action === 'prepare_install') {
-	const core = ARGV[1];
-	const variant = ARGV[2] || '';   /* 'upx' = the compressed hiddify-core build (small flash, decompresses into RAM at launch) */
-	if (!(core in ['hiddify', 'singbox'])) {
-		result = { error: 'illegal core' };
+	const pkg_manager = detect_pkg_manager();
+	if (!pkg_manager) {
+		result = { error: 'no supported package manager found (apk or opkg)' };
 	} else {
-		const pkg_manager = detect_pkg_manager();
-		if (!pkg_manager) {
-			result = { error: 'no supported package manager found (apk or opkg)' };
+		const arch = detect_arch();
+		if (!arch || !match(arch, /^[a-zA-Z0-9_-]+$/)) {
+			result = { error: 'could not detect device architecture' };
 		} else {
-			const arch = detect_arch();
-			if (!arch || !match(arch, /^[a-zA-Z0-9_-]+$/)) {
-				result = { error: 'could not detect device architecture' };
+			const tmp_free_kb = free_kb('/tmp');
+			if (tmp_free_kb < 30720) {
+				result = { error: `not enough /tmp space: ${tmp_free_kb} KB free, need 30 MB` };
 			} else {
-				const tmp_free_kb = free_kb('/tmp');
-				if (tmp_free_kb < 30720) {
-					result = { error: `not enough /tmp space: ${tmp_free_kb} KB free, need 30 MB` };
+				let overlay_free_kb = free_kb('/overlay');
+				if (!overlay_free_kb) overlay_free_kb = free_kb('/');
+				const ext = pkg_manager === 'apk' ? '.apk' : '.ipk';
+				const need = overlay_compresses() ? FULL_OVERLAY_COMP_KB : FULL_OVERLAY_RAW_KB;
+
+				/* An install that runs out of overlay mid-extraction leaves a registered
+				 * package with a truncated/absent binary, so refuse up front. */
+				if (overlay_free_kb < need) {
+					result = { error: `Not enough overlay space: ${overlay_free_kb} KB free, sing-box-extended needs ~${need} KB.` };
 				} else {
-					let overlay_free_kb = free_kb('/overlay');
-					if (!overlay_free_kb) overlay_free_kb = free_kb('/');
-					const ram_free_kb = free_ram_kb();
-					const ext = pkg_manager === 'apk' ? '.apk' : '.ipk';
-					/* full-binary footprint depends on whether the overlay compresses */
-					const full_need = overlay_compresses() ? FULL_OVERLAY_COMP_KB : FULL_OVERLAY_RAW_KB;
-
-					if (core === 'hiddify') {
-						/* Auto-pick the build from free overlay (+ free RAM for the compact one).
-						 * ARGV[2] ('standard'|'upx') is an advanced override; size-checked either way.
-						 * This is the guardrail for the "full binary truncates on a small overlay →
-						 * SIGBUS" trap: never offer a build the device can't actually hold/run. */
-						let chosen = variant;
-						let note = null;
-						/* UPX-compressed binaries are crash-prone (SIGILL on startup) on these
-						 * soft-float MIPS targets, so never AUTO-pick the compact build there —
-						 * fall back to standard, or error cleanly. An explicit variant='upx'
-						 * override is still honored (advanced users). Non-MIPS arches (incl.
-						 * aarch64 like MT7622) are unaffected. */
-						const mips_no_auto_upx = (arch === 'mipsel_24kc' || arch === 'mips_24kc');
-						if (chosen !== 'standard' && chosen !== 'upx') {
-							if (overlay_free_kb >= full_need)
-								chosen = 'standard';
-							else if (mips_no_auto_upx)
-								chosen = null;   /* don't squeeze a crash-prone compact build onto tight-flash MIPS */
-							else if (overlay_free_kb >= COMPACT_OVERLAY_KB && ram_free_kb >= COMPACT_RAM_KB) {
-								chosen = 'upx';
-								note = 'Limited storage — installing the compact build (decompresses into RAM at launch).';
-							} else
-								chosen = null;
-						}
-
-						if (!chosen) {
-							result = mips_no_auto_upx
-								? { error: `Not enough overlay for the full build: ${overlay_free_kb} KB free, need ~${full_need} KB. The compact build is not offered on MIPS (UPX is unreliable there). Free up space, or bake the core into a custom firmware image.` }
-								: (overlay_free_kb >= COMPACT_OVERLAY_KB)
-								? { error: `Device too constrained: ${overlay_free_kb} KB free overlay (full build needs ~${full_need}) and only ${ram_free_kb} KB free RAM (compact build needs ~${COMPACT_RAM_KB}). Use sing-box-extended instead.` }
-								: { error: `Not enough storage: ${overlay_free_kb} KB free overlay, need at least ~${COMPACT_OVERLAY_KB} KB (~25 MB).` };
-						} else {
-							const need = (chosen === 'upx') ? COMPACT_OVERLAY_KB : full_need;
-							if (overlay_free_kb < need) {
-								result = { error: `Not enough overlay space for the ${chosen === 'upx' ? 'compact' : 'full'} build: ${overlay_free_kb} KB free, need ~${need} KB.` };
-							} else {
-								const hp_path = (chosen === 'upx') ? 'download/upx' : 'latest/download';
-								result = {
-									pkg_manager, arch, variant: chosen, note,
-									dl_url: `https://github.com/1andrevich/hiddify-core/releases/${hp_path}/hiddify-core_${arch}${ext}`,
-									tmp_path: `/tmp/hiddify-core${ext}`
-								};
-							}
-						}
-					} else if (overlay_free_kb < full_need) {
-						result = { error: `Not enough overlay space: ${overlay_free_kb} KB free, sing-box-extended needs ~${full_need} KB.` };
+					const api = github_api(RELEASE_API);
+					if (api.error) {
+						result = { error: api.error };
+					} else if (!api.data?.tag_name) {
+						result = { error: 'could not determine latest version from GitHub' };
 					} else {
-						const api_fd = popen('wget -qO- --timeout=10 https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest 2>/dev/null');
-						if (!api_fd) {
-							result = { error: 'failed to contact GitHub API' };
-						} else {
-							const api_raw = trim(api_fd.read('all')); api_fd.close();
-							let api_data;
-							try { api_data = json(api_raw); } catch(e) { api_data = null; }
-							if (!api_data?.tag_name) {
-								result = { error: 'could not determine latest version from GitHub' };
-							} else {
-								let dl_url = null;
-								for (let asset in (api_data?.assets || [])) {
-									const n = asset?.name || '';
-									if (!match(n, /openwrt/)) continue;
-									if (length(split(n, arch)) < 2) continue;
-									if (ext === '.apk' && !match(n, /\.apk$/)) continue;
-									if (ext === '.ipk' && !match(n, /\.ipk$/)) continue;
-									dl_url = asset?.browser_download_url;
-									break;
-								}
-								if (!dl_url)
-									result = { error: `no package found for arch ${arch} in latest release` };
-								else
-									result = { pkg_manager, arch, dl_url, tmp_path: `/tmp/sing-box-extended${ext}` };
-							}
+						let dl_url = null, dl_size = 0;
+						for (let asset in (api.data?.assets || [])) {
+							const n = asset?.name || '';
+							if (!match(n, /openwrt/)) continue;
+							if (length(split(n, arch)) < 2) continue;
+							if (ext === '.apk' && !match(n, /\.apk$/)) continue;
+							if (ext === '.ipk' && !match(n, /\.ipk$/)) continue;
+							dl_url  = asset?.browser_download_url;
+							dl_size = int(asset?.size) || 0;
+							break;
 						}
+						if (!dl_url)
+							result = { error: `no package found for arch ${arch} in latest release` };
+						else
+							result = {
+								pkg_manager, arch, dl_url,
+								/* expected byte count — download_pkg verifies against it, so a
+								 * truncated transfer can never reach apk/opkg */
+								dl_size,
+								version: replace(api.data.tag_name, /^v/, ''),
+								tmp_path: `/tmp/sing-box-extended${ext}`
+							};
 					}
 				}
 			}
@@ -261,58 +206,77 @@ if (action === 'info') {
 	}
 
 } else if (action === 'download_pkg') {
-	/* UI calls (url, tmp_path). Also tolerate an optional leading core arg
-	 * (download_pkg <core> <url> <tmp_path>) so callers that mirror the
-	 * prepare_install/install_pkg core-first signature don't silently fail. */
-	let url      = ARGV[1];
-	let tmp_path = ARGV[2];
-	if (ARGV[3] && (ARGV[1] in ['hiddify', 'singbox'])) {
-		url      = ARGV[2];
-		tmp_path = ARGV[3];
-	}
+	/* (url, tmp_path [, expected_size]). A truncated download is the classic silent
+	 * failure here: wget can exit 0 on a short read, apk then registers the package but
+	 * never extracts the 75 MB binary, and the UI reports "installed / not found". */
+	const url      = ARGV[1];
+	const tmp_path = ARGV[2];
+	const expected = int(ARGV[3]) || 0;
+
 	if (!url || !tmp_path) {
 		result = { result: false, error: 'missing arguments' };
 	} else {
-		const exit_code = gh_fetch(url, tmp_path, 300000);   /* GitHub first, mirror fallback */
-		result = exit_code === 0 ? { result: true } : { result: false, error: 'download failed' };
+		system(`rm -f ${shellquote(tmp_path)}`);
+		const exit_code = gh_fetch(url, tmp_path, 300000);
+		const got = file_size(tmp_path);
+
+		if (exit_code !== 0) {
+			system(`rm -f ${shellquote(tmp_path)}`);
+			result = { result: false, error: 'download failed (network error or GitHub unreachable)' };
+		} else if (!got) {
+			system(`rm -f ${shellquote(tmp_path)}`);
+			result = { result: false, error: 'download produced an empty file' };
+		} else if (expected && got !== expected) {
+			system(`rm -f ${shellquote(tmp_path)}`);
+			result = { result: false, error: `download is incomplete: got ${got} of ${expected} bytes — retry (a mirror via GH_MIRROR may help)` };
+		} else {
+			result = { result: true, size: got };
+		}
 	}
 
 } else if (action === 'install_pkg') {
-	const core        = ARGV[1];
-	const tmp_path    = ARGV[2];
-	const pkg_manager = ARGV[3];
-	if (!(core in ['hiddify', 'singbox']) || !tmp_path || !pkg_manager) {
+	/* (tmp_path, pkg_manager). Also tolerate a leading core arg from older callers. */
+	let tmp_path    = ARGV[1];
+	let pkg_manager = ARGV[2];
+	if (ARGV[3] && (ARGV[1] in ['hiddify', 'singbox'])) {
+		tmp_path    = ARGV[2];
+		pkg_manager = ARGV[3];
+	}
+
+	if (!tmp_path || !pkg_manager) {
 		result = { result: false, error: 'invalid arguments' };
+	} else if (!access(tmp_path)) {
+		result = { result: false, error: 'package file not found — download it first' };
 	} else {
-		let exit_code;
-		if (core === 'hiddify' && pkg_manager === 'apk') {
-			/* Signing key: skip the fetch if already present (a provisioning tool may pre-place
-			 * it); else GitHub-first, mirror-FALLBACK via gh_fetch, best-effort (a
-			 * throttled/blocked GitHub must NOT fail the install — the package already
-			 * arrived over HTTPS). Install trusted if the key is there, else untrusted. */
-			if (!access('/etc/apk/keys/LimCoreWRT.pub')) {
-				if (gh_fetch('https://github.com/l-limon-l/LimCoreWRT/releases/latest/download/LimCoreWRT.pub', '/tmp/LimCoreWRT.pub', 20000) === 0)
-					system('[ -s /tmp/LimCoreWRT.pub ] && cp /tmp/LimCoreWRT.pub /etc/apk/keys/ 2>/dev/null; rm -f /tmp/LimCoreWRT.pub');
-			}
-			if (access('/etc/apk/keys/LimCoreWRT.pub'))
-				exit_code = system(`apk add ${shellquote(tmp_path)} >/dev/null 2>&1; RC=$?; rm -f ${shellquote(tmp_path)}; exit $RC`, 120000);
+		/* Keep the manager's own diagnostics: silencing them is what turned a failed
+		 * extraction into a reported success. */
+		const log = '/tmp/limcore-core-install.log';
+		const cmd = (pkg_manager === 'apk')
+			/* sing-box-extended ships unsigned — allow-untrusted is unavoidable */
+			? `apk add --allow-untrusted ${shellquote(tmp_path)}`
+			: `opkg install --force-reinstall ${shellquote(tmp_path)}`;
+
+		const exit_code = system(`{ ${cmd}; } >${log} 2>&1; RC=$?; rm -f ${shellquote(tmp_path)}; exit $RC`, 300000);
+
+		let out = trim(readfile(log) || '');
+		/* Trim to the tail: apk lists every package it touched, and only the end matters. */
+		if (length(out) > 600)
+			out = '…' + substr(out, length(out) - 600);
+
+		if (exit_code !== 0) {
+			result = { result: false, error: length(out) ? out : 'package installation failed' };
+		} else if (!access(CORE_BINARY)) {
+			/* Registered but not extracted — the exact state a truncated package leaves
+			 * behind. Roll the registration back so a retry actually reinstalls instead of
+			 * hitting apk's "already installed" no-op. */
+			if (pkg_manager === 'apk')
+				system('apk del sing-box-extended >/dev/null 2>&1', 60000);
 			else
-				exit_code = system(`apk add --allow-untrusted ${shellquote(tmp_path)} >/dev/null 2>&1; RC=$?; rm -f ${shellquote(tmp_path)}; exit $RC`, 120000);
-		} else if (pkg_manager === 'apk') {
-			/* sing-box-extended has no signing key — allow-untrusted is unavoidable */
-			exit_code = system(
-				`{ apk add --allow-untrusted ${shellquote(tmp_path)}; } >/dev/null 2>&1` +
-				`; RC=$?; rm -f ${shellquote(tmp_path)}; exit $RC`,
-				120000
-			);
+				system('opkg remove sing-box-extended >/dev/null 2>&1', 60000);
+			result = { result: false, error: `installation reported success but ${CORE_BINARY} is missing (package was rolled back — retry the download)` };
 		} else {
-			exit_code = system(
-				`{ opkg install --force-reinstall ${shellquote(tmp_path)}; } >/dev/null 2>&1` +
-				`; RC=$?; rm -f ${shellquote(tmp_path)}; exit $RC`,
-				120000
-			);
+			result = { result: true, version: core_version() };
 		}
-		result = exit_code === 0 ? { result: true } : { result: false, error: 'package installation failed' };
 	}
 
 } else if (action === 'install_kmods') {
@@ -330,20 +294,14 @@ if (action === 'info') {
 		: { result: false, error: `kmod install failed (pkg_manager=${pkg_manager || 'none'})` };
 
 } else if (action === 'remove') {
-	const core = ARGV[1];
-	if (!(core in ['hiddify', 'singbox'])) {
-		result = { result: false, error: 'illegal core' };
+	const pkg_manager = detect_pkg_manager();
+	if (!pkg_manager) {
+		result = { result: false, error: 'no supported package manager found' };
 	} else {
-		const pkg_manager = detect_pkg_manager();
-		if (!pkg_manager) {
-			result = { result: false, error: 'no supported package manager found' };
-		} else {
-			const pkg_name = core === 'hiddify' ? 'hiddify-core' : 'sing-box-extended';
-			const exit_code = pkg_manager === 'apk'
-				? system(`apk del ${pkg_name} >/dev/null 2>&1`, 30000)
-				: system(`opkg remove ${pkg_name} >/dev/null 2>&1`, 30000);
-			result = { result: (exit_code === 0) };
-		}
+		const exit_code = pkg_manager === 'apk'
+			? system('apk del sing-box-extended >/dev/null 2>&1', 60000)
+			: system('opkg remove sing-box-extended >/dev/null 2>&1', 60000);
+		result = { result: (exit_code === 0) };
 	}
 
 } else {
