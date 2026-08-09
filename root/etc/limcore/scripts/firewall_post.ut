@@ -76,11 +76,17 @@ if (routing_port === 'common')
  * side was not). The result was a toggle that did nothing for voice: measured on a Russian
  * ISP, Discord voice kept going direct and lost half its return packets, showing 5000 ms.
  *
- * Only the narrow voice ranges are added. 50000-65530 is deliberately NOT among them: it
- * would swallow BitTorrent and game traffic, which is the whole point of "common ports
- * only (bypass P2P)". Pick "All ports" if you want those proxied too. */
+ * Discord needs BOTH of its ranges: 19294-19344 carries voice, while screen share and the
+ * newer RTC media servers use 50000-50100 (observed live: voice on 19340 healthy at
+ * 103/92 packets while 50001, 50002 and 50006 sent 3 packets each and got nothing back,
+ * leaving Discord stuck on "Connecting to RTC").
+ *
+ * The full 50000-65530 from the routing rule is still NOT added: it would swallow
+ * BitTorrent and game traffic, which is the whole point of "common ports only (bypass
+ * P2P)". 50000-50100 is narrow enough to miss the BitTorrent defaults (6881-6889, 51413)
+ * and the Source-engine game ports. Pick "All ports" if you want everything proxied. */
 if (routing_port && uci.get(cfgname, 'config', 'proxy_calls') === '1')
-	routing_port += ',19294-19344,3478-3497,16384-16387,16393-16402';
+	routing_port += ',19294-19344,50000-50100,3478-3497,16384-16387,16393-16402';
 
 const proxy_mode = uci.get(cfgname, 'config', 'proxy_mode') || 'redirect_tproxy',
       ipv6_support = uci.get(cfgname, 'config', 'ipv6_support') || '0';
