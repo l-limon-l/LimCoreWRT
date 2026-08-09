@@ -160,11 +160,35 @@ CM=/usr/share/limcore/scripts/core_mgmt.uc
 
 # ------------------------------------------------------- 2. ядро прокси (обязательно)
 ok "[2/5] Устанавливаю ядро sing-box-extended..."
+
+# Если ядро уже стоит и работает, шаг становится необязательным: сбой на этом месте
+# (например, GitHub API временно не ответил) не должен проваливать всё обновление —
+# приложение к этому моменту уже установлено. Раньше такой сбой давал «обновление
+# завершилось с ошибкой» при полностью успешном апдейте.
+CORE_PRESENT=0
+[ -x /usr/bin/sing-box ] && CORE_PRESENT=1
+core_fail() {
+	if [ "$CORE_PRESENT" = 1 ]; then
+		warn "  $1"
+		warn "  ядро уже установлено ($(/usr/bin/sing-box version 2>/dev/null | head -1)) — пропускаю обновление ядра."
+		return 1
+	fi
+	die "  $1"
+}
+
+CORE_OK=1
 PREP=$(ucode "$CM" prepare_install)
-jerr "$PREP" && die "  подготовка ядра не удалась: $(jget "$PREP" error)"
+if jerr "$PREP"; then
+	core_fail "подготовка ядра не удалась: $(jget "$PREP" error)" || CORE_OK=0
+fi
+if [ "$CORE_OK" = 1 ]; then
 DLURL=$(jget "$PREP" dl_url); TMP=$(jget "$PREP" tmp_path); PMG=$(jget "$PREP" pkg_manager)
 DLSIZE=$(jnum "$PREP" dl_size)
-[ -n "$DLURL" ] && [ -n "$TMP" ] && [ -n "$PMG" ] || die "  подготовка ядра не вернула данные для загрузки."
+if [ -z "$DLURL" ] || [ -z "$TMP" ] || [ -z "$PMG" ]; then
+	core_fail "подготовка ядра не вернула данные для загрузки." || CORE_OK=0
+fi
+fi
+if [ "$CORE_OK" = 1 ]; then
 # Пустой размер не должен ронять установщик на арифметике: 0 = проверку пропускаем,
 # загрузка всё равно состоится, просто без сверки длины.
 [ -n "$DLSIZE" ] || DLSIZE=0
@@ -177,17 +201,26 @@ else
 	warn "  размер пакета неизвестен — скачиваю без сверки длины."
 fi
 DLRES=$(ucode "$CM" download_pkg "$DLURL" "$TMP" "$DLSIZE")
-jtrue "$DLRES" || die "  не удалось скачать ядро: $(jget "$DLRES" error)"
+if ! jtrue "$DLRES"; then
+	core_fail "не удалось скачать ядро: $(jget "$DLRES" error)" || CORE_OK=0
+fi
+fi
 
+if [ "$CORE_OK" = 1 ]; then
 info "  устанавливаю пакет..."
 INSRES=$(ucode "$CM" install_pkg "$TMP" "$PMG")
-jtrue "$INSRES" || die "  установка ядра не удалась: $(jget "$INSRES" error)"
+if ! jtrue "$INSRES"; then
+	core_fail "установка ядра не удалась: $(jget "$INSRES" error)" || CORE_OK=0
+fi
+fi
 
-jtrue "$(ucode "$CM" install_kmods "$PMG")" || warn "  не удалось поставить kmod — без kmod-nft-tproxy/kmod-tun прокси не будет маршрутизировать."
+if [ "$CORE_OK" = 1 ]; then
+	jtrue "$(ucode "$CM" install_kmods "$PMG")" || warn "  не удалось поставить kmod — без kmod-nft-tproxy/kmod-tun прокси не будет маршрутизировать."
+fi
 
 # Финальная проверка по факту, а не по коду возврата установщика
-[ -x /usr/bin/sing-box ] || die "  пакет установлен, но /usr/bin/sing-box отсутствует — повторите установку."
-ok "  ядро установлено: $(/usr/bin/sing-box version 2>/dev/null | head -1)"
+[ -x /usr/bin/sing-box ] || die "  ядро отсутствует (/usr/bin/sing-box) — повторите установку."
+[ "$CORE_OK" = 1 ] && ok "  ядро установлено: $(/usr/bin/sing-box version 2>/dev/null | head -1)"
 
 # --------------------------------------------------------------- 3. Zapret (опционально)
 DO_ZAPRET=0
