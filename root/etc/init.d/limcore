@@ -79,7 +79,16 @@ start_service() {
 		rm -f "$RUN_DIR/core.json"
 		ucode "$HP_DIR/scripts/generate_client.uc"
 		if [ ! -e "$RUN_DIR/core.json" ]; then
-			log "Error: failed to generate client config."
+			# A fresh install has no node yet, and the generator deliberately writes
+			# nothing in that case. Reporting it as a generation failure sent every new
+			# user hunting for a bug that isn't there — say what to actually do instead.
+			local main_node
+			config_get main_node "config" "main_node" ""
+			if [ -z "$main_node" ] || [ "$main_node" = "nil" ]; then
+				log "No node configured yet — add one under Node Settings, then start LimCore."
+			else
+				log "Error: failed to generate client config."
+			fi
 			return 1
 		fi
 	fi
