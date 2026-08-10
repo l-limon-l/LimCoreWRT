@@ -1844,5 +1844,76 @@ if (is_selective_mode(routing_mode) || routing_mode === 'custom') {
 }
 /* Experimental end */
 
+/* Cloudflare WARP start */
+/* WARP is layered ON TOP of the proxy, not beside it: a `warp` endpoint whose detour is
+ * main-out, with every rule that pointed at main-out repointed at warp-out. Traffic the
+ * routing mode sends direct stays direct and never touches WARP — so in the Russia mode a
+ * blocked site exits from a Cloudflare address while vk.com or gosuslugi go out untouched.
+ *
+ * The endpoint takes no credentials: this core registers a free WARP account by itself.
+ * There is nothing to generate and nothing to paste, unlike clients that expose the
+ * WireGuard key material.
+ *
+ * WARP rides on UDP, so it only works through a node that actually carries UDP. Measured
+ * across nine real nodes: ws and tcp both work, with or without flow=xtls-rprx-vision
+ * (Germany and the Netherlands run vision and reach Cloudflare fine). What fails is the
+ * xhttp transport — HTTP-based, no UDP, all three xhttp nodes dead — plus the occasional
+ * server that simply refuses UDP regardless of transport.
+ *
+ * That is too server-specific to predict, so the UI offers a test button rather than
+ * guessing, and only warns up front about xhttp, which can never work. */
+if (uci.get(uciconfig, ucimain, 'warp_enabled') === '1' && !isEmpty(main_node)) {
+	let has_main_out = false;
+	for (let o in (config.outbounds || []))
+		if (o.tag === 'main-out') has_main_out = true;
+	for (let e in (config.endpoints || []))
+		if (e.tag === 'main-out') has_main_out = true;
+
+	if (has_main_out) {
+		config.endpoints ??= [];
+		push(config.endpoints, {
+			type: 'warp',
+			tag: 'warp-out',
+			detour: 'main-out'
+		});
+
+		/* Repoint the proxied traffic. DNS keeps its own detour: resolving through the
+		 * proxy while connecting through WARP is fine, and putting DNS behind the extra
+		 * hop only adds a way for name resolution to break. */
+		for (let r in (config.route.rules || []))
+			if (r.outbound === 'main-out')
+				r.outbound = 'warp-out';
+		if (config.route.final === 'main-out')
+			config.route.final = 'warp-out';
+
+		/* WARP registers itself over HTTPS with api.cloudflareclient.com — and that host is
+		 * in the Re:filter list, so the rule that sends blocked domains to the proxy would
+		 * now send WARP's own registration into warp-out. The endpoint cannot come up
+		 * without registering, and cannot register without being up: every connection then
+		 * fails with "endpoint not initialized", indefinitely, taking all proxied traffic
+		 * with it. Observed on-device before this rule existed.
+		 *
+		 * So pin WARP's control plane to the plain proxy, ahead of everything that routes
+		 * into warp-out. It still goes through the tunnel, just not through WARP. */
+		const warp_control = {
+			domain_suffix: ['cloudflareclient.com'],
+			action: 'route',
+			outbound: 'main-out'
+		};
+		let reordered = [], inserted = false;
+		for (let r in (config.route.rules || [])) {
+			if (!inserted && r.outbound === 'warp-out') {
+				push(reordered, warp_control);
+				inserted = true;
+			}
+			push(reordered, r);
+		}
+		if (!inserted)
+			push(reordered, warp_control);
+		config.route.rules = reordered;
+	}
+}
+/* Cloudflare WARP end */
+
 system('mkdir -p ' + RUN_DIR);
 writefile(RUN_DIR + '/core.json', sprintf('%.J\n', removeBlankAttrs(config)));

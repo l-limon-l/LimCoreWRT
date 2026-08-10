@@ -45,6 +45,10 @@ const RUN_DIR = '/var/run/limcore';
 const UPDATE_BIN = '/usr/bin/limcore-update';
 const UPDATE_LOG = '/tmp/limcore-update.log';
 const UPDATE_PID = '/tmp/limcore-update.pid';
+const WARP_PORT   = 10899;
+const WARP_CFG    = '/tmp/limcore-warp-test.json';
+const WARP_LOG    = '/tmp/limcore-warp-test.log';
+const WARP_RESULT = '/tmp/limcore-warp-test.result';
 
 function get_active_core() {
 	/* Mirror init.d / generate_client.uc precedence: the standard sing-box binary, else a
@@ -1361,6 +1365,64 @@ const methods = {
 			let output = pipe.read('all');
 			let rc = pipe.close();
 			return { result: rc === 0, error: rc !== 0 ? trim(output) : null };
+		}
+	},
+
+	/* Does WARP actually come up through the node currently selected? This cannot be
+	 * predicted from the node's settings: measured across nine real nodes, ws and tcp both
+	 * work with or without xtls-rprx-vision, xhttp never works (no UDP over an HTTP
+	 * transport), and one server refused UDP for no visible reason. So test it for real —
+	 * spin a throwaway core on a spare port, chain WARP behind the node, ask who we look
+	 * like. Touches nothing: separate config, separate process, own port.
+	 *
+	 * Split into start + poll because the whole thing takes ~25 s and a single ubus call
+	 * times out well before that. Same shape as app_update/app_update_status. */
+	warp_test: {
+		call: function() {
+			const core = get_active_core();
+			if (!core)
+				return { result: false, error: 'no core installed' };
+
+			system(`rm -f ${WARP_RESULT}`);
+			const script = `
+				${shellquote(core.path)} run -c ${WARP_CFG} >${WARP_LOG} 2>&1 &
+				CORE=$!
+				sleep 8
+				IP=$(curl -s --max-time 15 -x socks5h://127.0.0.1:${WARP_PORT} https://api.ipify.org 2>/dev/null)
+				kill $CORE 2>/dev/null
+				if [ -n "$IP" ]; then printf 'ok %s' "$IP" > ${WARP_RESULT}
+				else printf 'fail %s' "$(grep -iE 'error|fatal' ${WARP_LOG} 2>/dev/null | tail -1 | cut -c1-200)" > ${WARP_RESULT}; fi
+				rm -f ${WARP_CFG}
+			`;
+
+			if (system(`ucode ${HP_DIR}/scripts/warp_probe.uc ${WARP_PORT} >${WARP_CFG} 2>/dev/null`, 15000) !== 0 || !access(WARP_CFG))
+				return { result: false, error: 'could not build a test config — is a main node selected and the service running?' };
+
+			/* setsid for the same reason app_update needs it: this outlives the rpcd call */
+			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
+			return { result: rc === 0 };
+		}
+	},
+
+	warp_test_status: {
+		call: function() {
+			if (!access(WARP_RESULT))
+				return { running: true };
+			const out = trim(readfile(WARP_RESULT) || '');
+			system(`rm -f ${WARP_RESULT}`);
+			const m = match(out, /^ok (.+)$/);
+			if (m)
+				return { running: false, result: true, ip: trim(m[1]) };
+			const e = match(out, /^fail ?(.*)$/);
+			let msg = (e && length(trim(e[1]))) ? trim(e[1]) : '';
+			/* The core logs in colour with a timestamp and a connection id; none of that
+			 * belongs in a UI message. Strip the escapes, the leading date and the id. */
+			msg = replace(msg, /\[[0-9;]*m/g, '');
+			msg = replace(msg, /^[+0-9: -]*(ERROR|FATAL)\s*/, '');
+			msg = replace(msg, /^\[[^\]]*\]\s*/, '');
+			return { running: false, result: false,
+			         error: length(msg) ? msg
+			                : 'no response through WARP — this node does not carry the UDP that WARP needs' };
 		}
 	},
 

@@ -5,6 +5,7 @@
  */
 
 'use strict';
+'require dom';
 'require form';
 'require fs';
 'require network';
@@ -784,6 +785,81 @@ return view.extend({
 				});
 			};
 		})(o);
+
+		/* WARP start */
+		s.tab('warp', _('WARP') + ' ☁️');
+
+		o = s.taboption('warp', form.Flag, 'warp_enabled', _('Enable WARP'),
+			_('Send proxied traffic through Cloudflare WARP <em>after</em> the main node, so it leaves from a Cloudflare address instead of your server\'s. ' +
+			  'Useful when a service blocks datacenter IPs — the proxy still hides you from the ISP, and the destination sees a consumer Cloudflare address.<br><br>' +
+			  'WARP covers <strong>exactly the traffic the proxy already covers</strong>: in “Russia (bypass blocks)” mode that means blocked sites only. ' +
+			  'Anything the routing mode sends direct — vk.com, gosuslugi and the rest — stays direct and never touches WARP.<br><br>' +
+			  'Nothing to configure: the core registers a free WARP account on its own.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		/* WARP rides on UDP, so it lives or dies by whether the node carries UDP — and that
+		   is a property of the server, not of anything visible here. Measured across nine
+		   nodes: ws and tcp both work, with or without xtls-rprx-vision; xhttp never does;
+		   one server refused UDP anyway. So warn only about xhttp, which cannot work by
+		   construction, and let the test button answer the rest. */
+		o = s.taboption('warp', form.DummyValue, '_warp_transport_warning');
+		o.depends('warp_enabled', '1');
+		o.rawhtml = true;
+		o.cfgvalue = function() {
+			const main = uci.get('limcore', 'config', 'main_node');
+			if (!main || uci.get('limcore', main, 'transport') !== 'xhttp')
+				return '';
+			const label = uci.get('limcore', main, 'label') || main;
+			return '<em style="color:#c0392b">' +
+				_('The current main node (%s) uses the <code>xhttp</code> transport, which carries no UDP — WARP cannot establish its tunnel through it, and enabling WARP will stop proxied traffic. Choose a ws or tcp node.').format(label) +
+				'</em>';
+		};
+
+		o = s.taboption('warp', form.Button, '_warp_test', _('Test WARP'),
+			_('Chains WARP behind the selected node on a spare port and reports the address the internet would see. Changes nothing and does not disturb the running service.'));
+		o.inputtitle = _('Test');
+		o.inputstyle = 'apply';
+		o.onclick = function(ev) {
+			const btn = ev.target;
+			let out = document.getElementById('warp_test_result');
+			if (!out) {
+				out = E('div', { 'id': 'warp_test_result', 'style': 'margin-top:6px; font-size:0.9em' }, '');
+				btn.parentNode.appendChild(out);
+			}
+			btn.disabled = true;
+			dom.content(out, E('em', { 'style': 'color:gray' }, _('Testing, this takes about half a minute…')));
+
+			const startTest  = rpc.declare({ object: 'luci.limcore', method: 'warp_test',        expect: { '': {} } });
+			const pollStatus = rpc.declare({ object: 'luci.limcore', method: 'warp_test_status', expect: { '': {} } });
+
+			const finish = (el, ok) => {
+				btn.disabled = false;
+				dom.content(out, E('strong', { 'style': ok ? 'color:green' : 'color:#c0392b' }, el));
+			};
+
+			return L.resolveDefault(startTest(), {}).then(function(res) {
+				if (!res || res.result === false)
+					return finish(res.error || _('Could not start the test.'), false);
+
+				/* The probe runs detached; poll for its verdict. */
+				let tries = 0;
+				const timer = setInterval(function() {
+					if (++tries > 20) {
+						clearInterval(timer);
+						return finish(_('The test did not finish in time.'), false);
+					}
+					L.resolveDefault(pollStatus(), {}).then(function(st) {
+						if (!st || st.running) return;
+						clearInterval(timer);
+						if (st.result)
+							finish(_('WARP works through this node. Exit address: %s').format(st.ip), true);
+						else
+							finish(st.error || _('WARP did not come up through this node.'), false);
+					});
+				}, 3000);
+			});
+		};
 
 		/* Proxy Rules start (per-service overrides — RU forward + CN/IR reverse) */
 		s.tab('ru_rules', _('Proxy Rules'));
