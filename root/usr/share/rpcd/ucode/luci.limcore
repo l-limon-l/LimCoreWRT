@@ -1429,6 +1429,127 @@ const methods = {
 	/* Installed version of the LuCI app versus the newest release. Both halves are needed
 	 * in one place: showing only the latest tag left people guessing whether it was the one
 	 * they already had. */
+	/* Versions of everything actually installed, in one call. Only installed components
+	 * are queried: there is no point asking GitHub about ByeDPI on a router that does not
+	 * have it, and the unauthenticated API allows 60 requests an hour per address — a
+	 * budget four components would chew through if the page were reloaded a few times.
+	 * Hence the short-lived cache: repeated page loads reuse it instead of spending quota,
+	 * and the Check button can force a refresh. */
+	check_all_updates: {
+		args: { refresh: 'refresh' },
+		call: function(req) {
+			const CACHE = '/tmp/limcore-update-check.json';
+			const TTL = 900;   /* 15 minutes */
+
+			if (!req.args?.refresh && access(CACHE)) {
+				const st = lstat(CACHE);
+				if (st && (time() - st.mtime) < TTL) {
+					let cached;
+					try { cached = json(readfile(CACHE) || ''); } catch(e) { cached = null; }
+					if (cached) { cached.cached = true; return cached; }
+				}
+			}
+
+			/* Retried once: api.github.com is itself on the blocked-domain list, so this
+			 * request travels through the proxy and occasionally does not make the
+			 * deadline. A single miss was enough to report "latest: null" for a component
+			 * that was perfectly reachable a second later — observed on consecutive runs. */
+			const latest_tag = (repo) => {
+				for (let attempt = 0; attempt < 2; attempt++) {
+					const fd = popen(`wget -qO- --timeout=12 https://api.github.com/repos/${repo}/releases/latest 2>/dev/null`);
+					if (!fd) continue;
+					const raw = trim(fd.read('all')); fd.close();
+					if (!length(raw)) continue;
+					let d;
+					try { d = json(raw); } catch(e) { continue; }
+					if (d?.tag_name) return replace(d.tag_name, /^v/, '');
+				}
+				return null;
+			};
+
+			/* No regex here on purpose: ucode's regexp() does not honour the \S
+			 * shorthand, and a pattern built with it silently matches nothing — which is
+			 * how this first shipped reporting "installed: null" for a package that was
+			 * plainly installed. Splitting on whitespace needs no escaping to get wrong.
+			 *   apk : "luci-app-limcore-2026.08.10-r26 noarch {...} [installed]"
+			 *   opkg: "luci-app-limcore - 2026.08.10-r26" */
+			const pkg_version = (name) => {
+				let fd = popen(`apk list -I ${name} 2>/dev/null | head -1`);
+				if (fd) {
+					const first = split(trim(fd.read('all')), ' ')[0] || '';
+					fd.close();
+					if (substr(first, 0, length(name) + 1) === name + '-')
+						return substr(first, length(name) + 1);
+				}
+				fd = popen(`opkg list-installed ${name} 2>/dev/null | head -1`);
+				if (fd) {
+					const parts = split(trim(fd.read('all')), ' ');
+					fd.close();
+					if (length(parts) >= 3 && parts[1] === '-')
+						return parts[2];
+				}
+				return null;
+			};
+
+			const binary_version = (path, re) => {
+				if (!access(path)) return null;
+				const fd = popen(`${shellquote(path)} version 2>/dev/null`);
+				if (!fd) return null;
+				const out = fd.read('all'); fd.close();
+				const m = match(out, re);
+				return m ? m[1] : null;
+			};
+
+			let components = [];
+
+			/* The LuCI app itself — always present, that is what is running this. */
+			components = [ ...components, {
+				name: 'LimCore App',
+				installed: pkg_version('luci-app-limcore'),
+				latest: latest_tag('l-limon-l/LimCoreWRT')
+			} ];
+
+			if (access('/usr/bin/sing-box'))
+				push(components, {
+					name: 'sing-box-extended',
+					installed: binary_version('/usr/bin/sing-box', /version v?(\S+)/),
+					latest: latest_tag('shtorm-7/sing-box-extended')
+				});
+
+			if (access('/usr/bin/ciadpi'))
+				push(components, {
+					name: 'ByeDPI',
+					installed: pkg_version('byedpi'),
+					latest: latest_tag('1andrevich/ByeDPI-OpenWrt')
+				});
+
+			if (access('/opt/zapret2/nfq2/nfqws2'))
+				push(components, {
+					name: 'Zapret 2',
+					installed: pkg_version('zapret2'),
+					latest: latest_tag('1andrevich/zapret2-openwrt')
+				});
+
+			let any = false, unknown = false;
+			for (let c in components) {
+				/* Inequality, not ordering: these tags mix date stamps and semver, and any
+				 * ordering rule would eventually rank one of them backwards. */
+				c.update_available = (c.installed !== null && c.latest !== null && c.installed !== c.latest);
+				if (c.update_available) any = true;
+				if (c.latest === null) unknown = true;
+			}
+
+			const result = {
+				components,
+				update_available: any,
+				incomplete: unknown,
+				checked_at: time()
+			};
+			writefile(CACHE, sprintf('%J', result));
+			return result;
+		}
+	},
+
 	app_check_update: {
 		call: function() {
 			let installed = null;
