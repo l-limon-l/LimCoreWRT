@@ -781,6 +781,38 @@ function buildLimCoreAppCard() {
 		expect: { '': {} }
 	});
 
+	const callCheckAll = rpc.declare({
+		object: 'luci.limcore',
+		method: 'check_all_updates',
+		params: ['refresh'],
+		expect: { '': {} }
+	});
+
+	/* One line per installed component, so "is anything out of date" is answerable at a
+	   glance instead of by opening each card in turn. */
+	const allEl = E('div', { style: 'margin-top:6px; font-size:0.9em' }, '');
+
+	const showAll = (ret) => {
+		if (!ret || !ret.components) {
+			dom.content(allEl, E('em', { style: 'color:#c0392b' }, _('Could not check components')));
+			return;
+		}
+		dom.content(allEl, ret.components.map(function(c) {
+			let text, colour;
+			if (c.latest === null) {
+				text = _('%s — could not reach GitHub').format(c.name);
+				colour = '#c0392b';
+			} else if (c.update_available) {
+				text = _('%s — update available: %s → %s').format(c.name, c.installed, c.latest);
+				colour = '#d35400';
+			} else {
+				text = _('%s — up to date (%s)').format(c.name, c.installed || c.latest);
+				colour = 'green';
+			}
+			return E('div', { style: 'color:' + colour }, text);
+		}));
+	};
+
 	/* Says outright whether anything needs doing. The old wording — "Latest: v<tag>" in
 	   orange — left you comparing two version strings by eye to work out which was which. */
 	const versionEl = E('span', { style: 'margin-left:8px; font-size:0.9em; color:gray' }, '');
@@ -809,13 +841,23 @@ function buildLimCoreAppCard() {
 			checkBtn.disabled = true;
 			versionEl.style.color = 'gray';
 			versionEl.textContent = _('Checking…');
-			showVersions(await L.resolveDefault(callAppCheckUpdate(), {}));
+			dom.content(allEl, E('em', { style: 'color:gray' }, _('Checking every installed component…')));
+			/* refresh: the cache exists to stop page loads burning the hourly GitHub
+			   budget, but pressing the button is an explicit request for fresh data. */
+			const [app, all] = await Promise.all([
+				L.resolveDefault(callAppCheckUpdate(), {}),
+				L.resolveDefault(callCheckAll('1'), {})
+			]);
+			showVersions(app);
+			showAll(all);
 			checkBtn.disabled = false;
 		}
 	}, [ _('Check update') ]);
 
-	/* Check once when the page opens, so the answer is already on screen. */
+	/* Check once when the page opens, so the answer is already on screen. Cached server
+	   side, so reloading the page costs no API quota. */
 	L.resolveDefault(callAppCheckUpdate(), {}).then(showVersions);
+	L.resolveDefault(callCheckAll(''), {}).then(showAll);
 
 	const updateBtn = E('button', {
 		class: 'btn cbi-button cbi-button-action',
@@ -881,8 +923,9 @@ function buildLimCoreAppCard() {
 			updateBtn,
 			msgEl
 		]),
+		allEl,
 		E('div', { style: 'margin-top:4px; font-size:0.9em; color:#666' },
-			_('Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases.'))
+			_('Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases. Updating also refreshes the core, ByeDPI and Zapret when they are installed.'))
 	]);
 }
 

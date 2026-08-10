@@ -171,6 +171,20 @@ start_service() {
 
 	procd_close_instance
 
+	# Health sampler, off unless asked for. Intermittent slowdowns are unprovable after
+	# the fact — everything measures fine once you go looking — so this records node
+	# latency, WAN reachability and DNS timing continuously, giving a timeline to read
+	# afterwards instead of guesses.
+	local health_log health_interval
+	config_get_bool health_log "config" "health_log" "0"
+	if [ "$health_log" = "1" ]; then
+		config_get health_interval "config" "health_log_interval" "60"
+		procd_open_instance "health-probe"
+		procd_set_param command "$HP_DIR/scripts/health_probe.sh" "$health_interval"
+		procd_set_param respawn
+		procd_close_instance
+	fi
+
 	# log-cleaner
 	procd_open_instance "log-cleaner"
 	procd_set_param command "$HP_DIR/scripts/clean_log.sh"
