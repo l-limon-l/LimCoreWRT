@@ -798,6 +798,21 @@ return view.extend({
 		o.default = o.disabled;
 		o.rmempty = false;
 
+		o = s.taboption('warp', form.ListValue, 'warp_mode', _('What goes through WARP'),
+			_('A free WARP session is metered in practice: measured on a live link it starts around 5–9 MB/s and drops to roughly 0.9 MB/s after about a hundred megabytes, staying slow until the session is renewed (restarting LimCore renews it). ' +
+			  'Sending everything through WARP therefore spends that allowance on ordinary browsing and leaves the whole tunnel crawling. ' +
+			  'Pick the second option unless you have a reason not to.'));
+		o.value('all', _('Everything the proxy covers'));
+		o.value('domains', _('Only the domains listed below (recommended)'));
+		o.default = 'all';
+		o.depends('warp_enabled', '1');
+		o.rmempty = false;
+
+		o = s.taboption('warp', form.DynamicList, 'warp_domains', _('Domains via WARP'),
+			_('Matched by suffix, so <code>google.com</code> also covers <code>gemini.google.com</code>. Everything else keeps the plain proxy at full speed.'));
+		o.default = 'gemini.google.com';
+		o.depends({'warp_enabled': '1', 'warp_mode': 'domains'});
+
 		/* WARP rides on UDP, so it lives or dies by whether the node carries UDP — and that
 		   is a property of the server, not of anything visible here. Measured across nine
 		   nodes: ws and tcp both work, with or without xtls-rprx-vision; xhttp never does;

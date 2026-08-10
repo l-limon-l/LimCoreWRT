@@ -1877,14 +1877,54 @@ if (uci.get(uciconfig, ucimain, 'warp_enabled') === '1' && !isEmpty(main_node)) 
 			detour: 'main-out'
 		});
 
-		/* Repoint the proxied traffic. DNS keeps its own detour: resolving through the
-		 * proxy while connecting through WARP is fine, and putting DNS behind the extra
-		 * hop only adds a way for name resolution to break. */
-		for (let r in (config.route.rules || []))
-			if (r.outbound === 'main-out')
-				r.outbound = 'warp-out';
-		if (config.route.final === 'main-out')
-			config.route.final = 'warp-out';
+		/* Two modes, because a free WARP session is metered in practice. Measured on a
+		 * live link: it starts at 5-9 MB/s and collapses to ~0.9 MB/s after roughly a
+		 * hundred megabytes, staying there until the session is re-registered (restarting
+		 * the service restores full speed immediately). Sending everything the proxy
+		 * handles through WARP therefore burns the allowance during ordinary browsing and
+		 * leaves the whole tunnel crawling — which is exactly what it looked like from the
+		 * outside: "worked, then suddenly everything loads forever".
+		 *
+		 *   all     — everything the proxy covers also goes through WARP.
+		 *   domains — only the listed domains, everything else keeps the plain proxy.
+		 *
+		 * `domains` is the useful one for the usual reason people want WARP: a handful of
+		 * services that refuse datacenter addresses. The volume stays tiny and the
+		 * throttle never comes near. */
+		const warp_mode = uci.get(uciconfig, ucimain, 'warp_mode') || 'all';
+		let warp_domains = uci.get(uciconfig, ucimain, 'warp_domains') || [];
+		if (type(warp_domains) !== 'array')
+			warp_domains = length(warp_domains) ? [ warp_domains ] : [];
+
+		if (warp_mode === 'domains' && length(warp_domains)) {
+			/* Leave main-out alone; just divert the listed domains, ahead of the rules
+			 * that would otherwise send them to the plain proxy. */
+			let rebuilt = [], placed = false;
+			const warp_rule = {
+				domain_suffix: warp_domains,
+				action: 'route',
+				outbound: 'warp-out'
+			};
+			for (let r in (config.route.rules || [])) {
+				if (!placed && r.outbound === 'main-out') {
+					push(rebuilt, warp_rule);
+					placed = true;
+				}
+				push(rebuilt, r);
+			}
+			if (!placed)
+				push(rebuilt, warp_rule);
+			config.route.rules = rebuilt;
+		} else {
+			/* Repoint everything the proxy handles. DNS keeps its own detour: resolving
+			 * through the proxy while connecting through WARP is fine, and putting DNS
+			 * behind the extra hop only adds a way for name resolution to break. */
+			for (let r in (config.route.rules || []))
+				if (r.outbound === 'main-out')
+					r.outbound = 'warp-out';
+			if (config.route.final === 'main-out')
+				config.route.final = 'warp-out';
+		}
 
 		/* WARP registers itself over HTTPS with api.cloudflareclient.com — and that host is
 		 * in the Re:filter list, so the rule that sends blocked domains to the proxy would
