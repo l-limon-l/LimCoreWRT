@@ -1426,6 +1426,53 @@ const methods = {
 		}
 	},
 
+	/* Installed version of the LuCI app versus the newest release. Both halves are needed
+	 * in one place: showing only the latest tag left people guessing whether it was the one
+	 * they already had. */
+	app_check_update: {
+		call: function() {
+			let installed = null;
+
+			/* apk prints "luci-app-limcore-<version> noarch {...}", opkg prints
+			 * "luci-app-limcore - <version>". */
+			let fd = popen('apk list -I luci-app-limcore 2>/dev/null | head -1');
+			if (fd) {
+				const line = trim(fd.read('all')); fd.close();
+				const m = match(line, /^luci-app-limcore-(\S+)/);
+				if (m) installed = m[1];
+			}
+			if (!installed) {
+				fd = popen('opkg list-installed luci-app-limcore 2>/dev/null | head -1');
+				if (fd) {
+					const line = trim(fd.read('all')); fd.close();
+					const m = match(line, /^luci-app-limcore\s+-\s+(\S+)/);
+					if (m) installed = m[1];
+				}
+			}
+
+			fd = popen('wget -qO- --timeout=10 https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest 2>/dev/null');
+			if (!fd)
+				return { installed, error: 'could not reach GitHub' };
+			const raw = trim(fd.read('all')); fd.close();
+			if (!length(raw))
+				return { installed, error: 'no response from GitHub — blocked, or rate limited' };
+
+			let data;
+			try { data = json(raw); } catch(e) { data = null; }
+			if (!data?.tag_name)
+				return { installed, error: 'could not read the release tag from GitHub' };
+
+			const latest = data.tag_name;
+			return {
+				installed,
+				latest,
+				/* String inequality, not ordering: release tags here are date-based
+				 * (2026.08.10-r24) and a plain comparison would mis-rank r9 against r24. */
+				update_available: (installed !== null) && (installed !== latest)
+			};
+		}
+	},
+
 	app_update: {
 		call: function(req) {
 			if (!access(UPDATE_BIN))

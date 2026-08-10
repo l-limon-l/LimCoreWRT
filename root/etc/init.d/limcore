@@ -177,6 +177,11 @@ start_service() {
 	procd_set_param respawn
 	procd_close_instance
 
+	# Rotate rather than truncate. Restarting the service used to erase the core log, which
+	# is exactly the log you need after something went wrong — and toggling a setting to
+	# "see if that helps" restarts the service, so the evidence was reliably destroyed by
+	# the first thing anyone tries. Keep one generation.
+	[ -s "$RUN_DIR/core.log" ] && mv -f "$RUN_DIR/core.log" "$RUN_DIR/core.log.1"
 	echo > "$RUN_DIR/core.log"
 
 	# Setup firewall
@@ -282,11 +287,27 @@ start_service() {
 		/etc/init.d/cron restart >"/dev/null" 2>&1
 	fi
 
+	# LuCI app auto-update. Separate from the subscription job above: different thing, and
+	# people reasonably want one without the other. Runs limcore-update, which installs
+	# whatever the latest release is; day-of-month stepping (*/N) is how cron expresses
+	# "every N days" — on a 31-day month the step restarts, which is close enough for an
+	# update check and avoids inventing a state file to track the last run.
+	local app_auto_update app_update_days app_update_hour
+	config_get_bool app_auto_update "config" "app_auto_update" "0"
+	if [ "$app_auto_update" = "1" ]; then
+		config_get app_update_days "config" "app_auto_update_days" "3"
+		config_get app_update_hour "config" "app_auto_update_hour" "4"
+		sed -i "/#${CONF}_appupdate/d" "/etc/crontabs/root" 2>"/dev/null"
+		echo -e "0 $app_update_hour */$app_update_days * * /usr/bin/limcore-update >/tmp/limcore-update.log 2>&1 #${CONF}_appupdate" >> "/etc/crontabs/root"
+		/etc/init.d/cron restart >"/dev/null" 2>&1
+	fi
+
 	log "$(basename $PROG) started."
 }
 
 stop_service() {
 	sed -i "/#${CONF}_autosetup/d" "/etc/crontabs/root" 2>"/dev/null"
+	sed -i "/#${CONF}_appupdate/d" "/etc/crontabs/root" 2>"/dev/null"
 	/etc/init.d/cron restart >"/dev/null" 2>&1
 
 	# Load config
@@ -330,7 +351,11 @@ stop_service() {
 	rm -rf "$DNSMASQ_DIR/../dnsmasq-limcore.conf" "$DNSMASQ_DIR"
 	/etc/init.d/dnsmasq restart >"/dev/null" 2>&1
 
-	# Only remove the log; limcore.json is manually placed by the user
+	# Keep the core log across a stop, one generation back. Deleting it here defeated the
+	# rotation in start_service: a restart runs stop first, so the file was already gone by
+	# the time there was anything to rotate — and a restart is the first thing anyone does
+	# when something misbehaves, taking the evidence with it.
+	[ -s "$RUN_DIR/core.log" ] && mv -f "$RUN_DIR/core.log" "$RUN_DIR/core.log.1"
 	rm -f "$RUN_DIR/core.log"
 
 	log "Service stopped."

@@ -640,12 +640,22 @@ function buildCoreCard(coreInfo) {
 			remoteEl.style.color = 'gray';
 			const ret = await L.resolveDefault(callCoreCheckRemote(), {});
 			checkBtn.disabled = false;
+			/* Say what to do, not just what exists. "Latest: v1.2.3" in orange meant the
+			   reader had to compare two version strings themselves to find out whether
+			   that was good news. */
 			if (ret.error) {
 				remoteEl.textContent = ret.error;
-				remoteEl.style.color = 'red';
+				remoteEl.style.color = '#c0392b';
+			} else if (!installed) {
+				remoteEl.textContent = _('Available: v%s').format(ret.version);
+				remoteEl.style.color = 'gray';
+			} else if (version === ret.version) {
+				remoteEl.textContent = _('Up to date (v%s)').format(version);
+				remoteEl.style.color = 'green';
 			} else {
-				remoteEl.textContent = _('Latest') + ': v' + ret.version;
-				remoteEl.style.color = installed && version === ret.version ? 'green' : 'darkorange';
+				remoteEl.textContent = _('Update available: v%s → v%s').format(version, ret.version);
+				remoteEl.style.color = '#d35400';
+				installBtn.classList.add('cbi-button-positive');
 			}
 		}
 	}, [ _('Check update') ]);
@@ -765,6 +775,48 @@ function buildLimCoreAppCard() {
 		expect: { '': {} }
 	});
 
+	const callAppCheckUpdate = rpc.declare({
+		object: 'luci.limcore',
+		method: 'app_check_update',
+		expect: { '': {} }
+	});
+
+	/* Says outright whether anything needs doing. The old wording — "Latest: v<tag>" in
+	   orange — left you comparing two version strings by eye to work out which was which. */
+	const versionEl = E('span', { style: 'margin-left:8px; font-size:0.9em; color:gray' }, '');
+
+	const showVersions = (ret) => {
+		if (!ret || ret.error) {
+			versionEl.style.color = '#c0392b';
+			versionEl.textContent = (ret && ret.error) ? ret.error : _('Check failed');
+			return;
+		}
+		if (ret.update_available) {
+			versionEl.style.color = '#d35400';
+			versionEl.textContent = _('Update available: %s → %s').format(ret.installed, ret.latest);
+			updateBtn.classList.add('cbi-button-positive');
+		} else {
+			versionEl.style.color = 'green';
+			versionEl.textContent = _('Up to date (%s)').format(ret.installed || ret.latest);
+			updateBtn.classList.remove('cbi-button-positive');
+		}
+	};
+
+	const checkBtn = E('button', {
+		class: 'btn cbi-button',
+		style: 'margin-left:4px',
+		click: async function() {
+			checkBtn.disabled = true;
+			versionEl.style.color = 'gray';
+			versionEl.textContent = _('Checking…');
+			showVersions(await L.resolveDefault(callAppCheckUpdate(), {}));
+			checkBtn.disabled = false;
+		}
+	}, [ _('Check update') ]);
+
+	/* Check once when the page opens, so the answer is already on screen. */
+	L.resolveDefault(callAppCheckUpdate(), {}).then(showVersions);
+
 	const updateBtn = E('button', {
 		class: 'btn cbi-button cbi-button-action',
 		style: 'margin-left:4px',
@@ -824,6 +876,8 @@ function buildLimCoreAppCard() {
 		E('div', { style: 'display:flex; align-items:center; flex-wrap:wrap; gap:6px' }, [
 			E('strong', {}, 'LimCore App (luci-app-limcore)'),
 			statusEl,
+			versionEl,
+			checkBtn,
 			updateBtn,
 			msgEl
 		]),
@@ -958,6 +1012,25 @@ return view.extend({
 
 		o = s.option(form.DummyValue, '_app_limcore');
 		o.default = buildLimCoreAppCard();
+
+		o = s.option(form.Flag, 'app_auto_update', _('Update LimCore automatically'),
+			_('Install new releases on a schedule, without opening this page. Uses the same updater as the button above.'));
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.option(form.ListValue, 'app_auto_update_days', _('How often'));
+		o.value('1', _('Every day'));
+		o.value('3', _('Every 3 days'));
+		o.value('7', _('Every week'));
+		o.value('14', _('Every 2 weeks'));
+		o.default = '3';
+		o.depends('app_auto_update', '1');
+
+		o = s.option(form.ListValue, 'app_auto_update_hour', _('At'));
+		for (let h = 0; h < 24; h++)
+			o.value(String(h), (h < 10 ? '0' + h : String(h)) + ':00');
+		o.default = '4';
+		o.depends('app_auto_update', '1');
 
 		o = s.option(form.DummyValue, '_core_singbox');
 		o.default = buildCoreCard(coreInfo);
