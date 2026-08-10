@@ -25,9 +25,23 @@ while true; do
 
 	# Latency to the proxy node, as the core itself measures it. Empty when the core is
 	# down or the Clash API is off — which is itself worth recording.
-	DELAY=$(wget -qO- --timeout=8 \
-		"http://127.0.0.1:9090/proxies/main-out/delay?timeout=5000&url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204" \
-		2>/dev/null | sed -n 's/.*"delay":\([0-9]*\).*/\1/p')
+	probe_node() {
+		wget -qO- --timeout=8 \
+			"http://127.0.0.1:9090/proxies/main-out/delay?timeout=5000&url=http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204" \
+			2>/dev/null | sed -n 's/.*"delay":\([0-9]*\).*/\1/p'
+	}
+
+	# Confirm a failure before recording one. A single miss can be the API being busy for a
+	# moment, and a log full of phantom outages is worse than no log — it sends you
+	# investigating something that never happened. Only a second consecutive miss counts as
+	# DOWN; one that recovers is marked as such, which is a useful signal in its own right.
+	DELAY=$(probe_node)
+	RETRIED=""
+	if [ -z "$DELAY" ]; then
+		sleep 2
+		DELAY=$(probe_node)
+		[ -n "$DELAY" ] && RETRIED=" recovered-on-retry"
+	fi
 
 	# Is the upstream link itself healthy? Separates "the proxy is unhappy" from "the
 	# internet is gone", which is the first fork in any such investigation.
@@ -44,8 +58,13 @@ while true; do
 	DE=$(date +%s%N)
 	DNS=$(( (DE - DS) / 1000000 ))
 
-	printf '%s node=%sms wan=%sms dns=%sms/%s\n' \
-		"$TS" "${DELAY:-DOWN}" "${WAN:-DOWN}" "$DNS" "$DOK" >> "$LOG"
+	# "DOWN" reads better than "DOWNms", and a failed sample is the one you will be
+	# squinting at later, so keep it unambiguous.
+	[ -n "$DELAY" ] && DELAY="${DELAY}ms" || DELAY="DOWN"
+	[ -n "$WAN" ] && WAN="${WAN}ms" || WAN="DOWN"
+
+	printf '%s node=%s wan=%s dns=%sms/%s%s\n' \
+		"$TS" "$DELAY" "$WAN" "$DNS" "$DOK" "$RETRIED" >> "$LOG"
 
 	# Keep it bounded, keeping one generation like the other logs here.
 	if [ -s "$LOG" ] && [ "$(( $(ls -l "$LOG" | awk '{print $5}') / 1024 ))" -ge "$MAX_KB" ]; then
