@@ -1057,7 +1057,7 @@ return view.extend({
 		o.default = buildLimCoreAppCard();
 
 		o = s.option(form.Flag, 'app_auto_update', _('Update LimCore automatically'),
-			_('Install new releases on a schedule, without opening this page. Uses the same updater as the button above.'));
+			_('Check on a schedule, without opening this page, and install only when a newer release exists. The button above always reinstalls, which is also how a broken install gets repaired.'));
 		o.default = o.enabled;
 		o.rmempty = false;
 
