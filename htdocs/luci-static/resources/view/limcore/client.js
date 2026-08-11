@@ -816,7 +816,13 @@ return view.extend({
 		   because Google decides the region from the identity, not from the address the
 		   request comes from: a token refreshed over the plain proxy carries whatever region
 		   that exit sits in, and the API then refuses with "User location is not supported"
-		   however the request itself was routed. */
+		   however the request itself was routed.
+
+		   ogs.google.com is the opposite case, and worth keeping straight: it serves the app
+		   grid behind the 3x3 button, and it decides by the address the request comes from,
+		   not by the account — routed through WARP the Gemini tile comes back, routed through
+		   the plain proxy it does not. www.google.com is deliberately absent: search runs
+		   through it, and WARP throttles hard after about a hundred megabytes. */
 		o.default = [
 			'gemini.google.com',
 			'aistudio.google.com',
@@ -824,7 +830,8 @@ return view.extend({
 			'cloudcode-pa.googleapis.com',
 			'daily-cloudcode-pa.googleapis.com',
 			'antigravity-unleash.goog',
-			'oauth2.googleapis.com'
+			'oauth2.googleapis.com',
+			'ogs.google.com'
 		];
 		o.depends({'warp_enabled': '1', 'warp_mode': 'domains'});
 
