@@ -8,6 +8,18 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: htdocs/luci-static/resources/view/limcore/status.js:803
+msgid "%s — could not reach GitHub"
+msgstr "%s — не удалось связаться с GitHub"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:809
+msgid "%s — up to date (%s)"
+msgstr "%s — установлена последняя версия (%s)"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:806
+msgid "%s — update available: %s → %s"
+msgstr "%s — есть обновление: %s → %s"
+
 #: htdocs/luci-static/resources/view/limcore/status.js:206
 msgid "%s log"
 msgstr "Журнал %s"
@@ -19,6 +31,10 @@ msgstr "Удалено %s узлов"
 #: htdocs/luci-static/resources/limcore.js:279
 msgid "/etc/limcore/certs/..., /etc/acme/..., /etc/ssl/..."
 msgstr "/etc/limcore/certs/..., /etc/acme/..., /etc/ssl/..."
+
+#: htdocs/luci-static/resources/view/limcore/server.js:260
+msgid "32 hex characters"
+msgstr "32 шестнадцатеричных знака"
 
 #: htdocs/luci-static/resources/view/limcore/client.js:609
 msgid "4 or 6. Not limited if empty."
@@ -39,6 +55,18 @@ msgstr ""
 #: htdocs/luci-static/resources/view/limcore/server.js:787
 msgid "<strong>Save your configuration before uploading files!</strong>"
 msgstr "<strong>Сохраните конфигурацию перед загрузкой файлов!</strong>"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:359
+msgid "403.online secondary (10.202.10.102)"
+msgstr "403.online, запасной (10.202.10.102)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:802
+msgid "A free WARP session is metered in practice: measured on a live link it starts around 5–9 MB/s and drops to roughly 0.9 MB/s after about a hundred megabytes, staying slow until the session is renewed (restarting LimCore renews it). Sending everything through WARP therefore spends that allowance on ordinary browsing and leaves the whole tunnel crawling. Pick the second option unless you have a reason not to."
+msgstr "Бесплатный сеанс WARP на деле ограничен по объёму: на живом канале он начинается примерно с 5–9 МБ/с и падает примерно до 0,9 МБ/с после сотни мегабайт, оставаясь медленным до обновления сеанса (перезапуск LimCore его обновляет). Поэтому если пустить через WARP всё, этот запас уйдёт на обычный веб-сёрфинг, а весь туннель будет еле ползти. Выбирайте второй вариант, если нет причин поступить иначе."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:954
+msgid "Active core"
+msgstr "Активное ядро"
 
 #: htdocs/luci-static/resources/view/limcore/server.js:664
 msgid "API token"
@@ -156,6 +184,226 @@ msgstr "Активный узел"
 msgid "Active UDP Node"
 msgstr "Активный UDP-узел"
 
+#: htdocs/luci-static/resources/view/limcore/status.js:1072
+msgid "At"
+msgstr "В"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1432
+msgid "Auto"
+msgstr "Авто"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:928
+msgid "Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases. Updating also refreshes the core, ByeDPI and Zapret when they are installed."
+msgstr "Обновление приложения LimCore, переводов и скриптов ядра из релизов GitHub в одно нажатие. Заодно обновляются ядро, ByeDPI и Zapret, если они установлены."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:650
+msgid "Available: v%s"
+msgstr "Доступно: v%s"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:850
+msgid "Chains WARP behind the selected node on a spare port and reports the address the internet would see. Changes nothing and does not disturb the running service."
+msgstr "Поднимает WARP за выбранным узлом на свободном порту и показывает адрес, который увидит интернет. Ничего не меняет и не мешает работающей службе."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:823
+msgid "Check failed"
+msgstr "Проверка не удалась"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1060
+msgid "Check on a schedule, without opening this page, and install only when a newer release exists. The button above always reinstalls, which is also how a broken install gets repaired."
+msgstr "Проверять по расписанию, не открывая эту страницу, и устанавливать только когда вышла версия новее. Кнопка выше переустанавливает всегда — ею же чинится наполовину установленный пакет."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:844
+msgid "Checking every installed component…"
+msgstr "Проверяю все установленные компоненты…"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:843
+msgid "Checking…"
+msgstr "Проверяю…"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:279
+msgid "Close idle connections after this duration (e.g. 5m, 30s)."
+msgstr "Закрывать простаивающие соединения по истечении этого времени (например, 5m, 30s)."
+
+#: htdocs/luci-static/resources/view/limcore/server.js:290
+msgid "Concurrency"
+msgstr "Параллелизм"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1100
+msgid "core client"
+msgstr "клиент ядра"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:797
+msgid "Could not check components"
+msgstr "Не удалось проверить компоненты"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:873
+msgid "Could not start the test."
+msgstr "Не удалось запустить проверку."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:994
+msgid "Detect"
+msgstr "Определить"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:987
+msgid "Detected"
+msgstr "Определено"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:982
+msgid "Detecting..."
+msgstr "Определяю..."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:990
+msgid "Detection failed"
+msgstr "Не удалось определить"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1258
+msgid "DNS inbound"
+msgstr "inbound DNS"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:266
+msgid "Domain fronting host"
+msgstr "Хост для подмены домена"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:272
+msgid "Domain fronting port"
+msgstr "Порт для подмены домена"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:811
+msgid "Domains via WARP"
+msgstr "Домены через WARP"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:951
+msgid "Duplicate source — only the first rule will take effect"
+msgstr "Повтор источника — сработает только первое правило"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:356
+msgid "Electro/Begzar (78.157.42.100)"
+msgstr "Electro/Begzar (78.157.42.100)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:357
+msgid "Electro/Begzar secondary (78.157.42.101)"
+msgstr "Electro/Begzar, запасной (78.157.42.101)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:792
+msgid "Enable WARP"
+msgstr "Включить WARP"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1263
+msgid "Encryption"
+msgstr "Шифрование"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1068
+msgid "Every 2 weeks"
+msgstr "Раз в 2 недели"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1066
+msgid "Every 3 days"
+msgstr "Раз в 3 дня"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1065
+msgid "Every day"
+msgstr "Каждый день"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1067
+msgid "Every week"
+msgstr "Раз в неделю"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:805
+msgid "Everything the proxy covers"
+msgstr "Весь трафик, который охватывает прокси"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1441
+msgid "Extra headers"
+msgstr "Дополнительные заголовки"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:876
+msgid "Failed to launch update process"
+msgstr "Не удалось запустить процесс обновления"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:284
+msgid "Handshake timeout"
+msgstr "Таймаут рукопожатия"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1064
+msgid "How often"
+msgstr "Как часто"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:999
+msgid "I have a custom core path"
+msgstr "У меня свой путь к ядру"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1252
+msgid "Inbound"
+msgstr "inbound"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1279
+msgid "Incomplete encryption string: expected suite.mode.rtt.key"
+msgstr "Неполная строка шифрования: ожидается suite.mode.rtt.key"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1442
+msgid "JSON object, e.g. {\"X-Header\": \"value\"}. Leave empty for none."
+msgstr "Объект JSON, например {\"X-Header\": \"value\"}. Оставьте пустым, если не нужны."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1570
+msgid "Junk packet count."
+msgstr "Количество мусорных пакетов."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1584
+msgid "Junk packet maximum size."
+msgstr "Наибольший размер мусорного пакета."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1577
+msgid "Junk packet minimum size."
+msgstr "Наименьший размер мусорного пакета."
+
+#: htdocs/luci-static/resources/view/limcore/diagnostics.js:383
+msgid "LimCore chains"
+msgstr "Цепочки LimCore"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:61
+msgid "LimCore Server"
+msgstr "Сервер LimCore"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:901
+msgid "LimCore successfully updated! Reloading..."
+msgstr "LimCore успешно обновлён! Перезагружаю страницу..."
+
+#: htdocs/luci-static/resources/view/limcore/server.js:256
+msgid "List of MTProxy secrets. Each secret is a 32-character hex string (16 bytes). One secret per user."
+msgstr "Список секретов MTProxy. Каждый секрет — шестнадцатеричная строка из 32 знаков (16 байт). По одному секрету на пользователя."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1619
+msgid "Magic header range, e.g. 1603445073-1836768565"
+msgstr "Диапазон магического заголовка, например 1603445073-1836768565"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1625
+msgid "Magic header range, e.g. 2047861992-2141668339"
+msgstr "Диапазон магического заголовка, например 2047861992-2141668339"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1631
+msgid "Magic header range, e.g. 2141792848-2142674170"
+msgstr "Диапазон магического заголовка, например 2141792848-2142674170"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1613
+msgid "Magic header range, e.g. 426560850-1096521767"
+msgstr "Диапазон магического заголовка, например 426560850-1096521767"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1253
+msgid "Match inbound tag."
+msgstr "Совпадение по тегу inbound."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:812
+msgid "Matched by whole labels, so <code>google.com</code> also covers <code>gemini.google.com</code> — but <code>cloudcode-pa.googleapis.com</code> does <em>not</em> cover <code>daily-cloudcode-pa.googleapis.com</code>, because the label differs. Write out each host you mean. Everything else keeps the plain proxy at full speed."
+msgstr "Сравнение идёт по целым меткам: <code>google.com</code> покрывает и <code>gemini.google.com</code>, но <code>cloudcode-pa.googleapis.com</code> <em>не</em> покрывает <code>daily-cloudcode-pa.googleapis.com</code> — метка другая. Выписывайте каждый нужный хост целиком. Всё остальное идёт через обычный прокси на полной скорости."
+
+#: htdocs/luci-static/resources/view/limcore/server.js:285
+msgid "Maximum time to complete handshake (e.g. 10s)."
+msgstr "Наибольшее время на завершение рукопожатия (например, 10s)."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1259
+msgid "Mixed (SOCKS/HTTP) inbound"
+msgstr "inbound Mixed (SOCKS/HTTP)"
+
 #: htdocs/luci-static/resources/view/limcore/status.js
 msgid "No active node"
 msgstr "Нет активного узла"
@@ -189,6 +437,185 @@ msgstr "Ошибка при обновлении подписок: %s"
 msgid "Fetching nodes, please wait..."
 msgstr "Загрузка узлов, пожалуйста подождите..."
 
+#: htdocs/luci-static/resources/view/limcore/client.js:107
+msgid "no core installed"
+msgstr "ядро не установлено"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:997
+msgid "No core installed"
+msgstr "Ядро не установлено"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2835
+msgid "No strategy set — pick a preset or enter options first"
+msgstr "Стратегия не задана — выберите заготовку или введите параметры"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:806
+msgid "Only the domains listed below (recommended)"
+msgstr "Только перечисленные ниже домены (рекомендуется)"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1637
+msgid "Optional cookie byte sequence in &lt;b 0x...&gt; format."
+msgstr "Необязательная последовательность байтов cookie в формате &lt;b 0x...&gt;."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1475
+msgid "Optional separate server address for the download direction. Empty reuses the main server; set it explicitly when the download direction uses a different endpoint."
+msgstr "Необязательный отдельный адрес сервера для входящего направления. Пустое поле означает тот же основной сервер; задавайте явно, если для приёма используется другая точка подключения."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:701
+msgid "Package installed but the sing-box binary is missing — retry the installation"
+msgstr "Пакет установлен, но исполняемого файла sing-box нет — повторите установку"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1434
+msgid "Packet down"
+msgstr "Пакетами вниз"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1433
+msgid "Packet up"
+msgstr "Пакетами вверх"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1264
+msgid "Post-quantum VLESS encryption (ML-KEM), as issued by the server. Leave empty for an unencrypted VLESS handshake. Xray also encodes padding parameters here; sing-box has no equivalent for them and they are dropped automatically, keeping suite, mode, 0-RTT flag and the key."
+msgstr "Постквантовое шифрование VLESS (ML-KEM) в том виде, в каком его выдал сервер. Оставьте пустым для нешифрованного рукопожатия VLESS. Xray кодирует здесь ещё и параметры заполнения; у sing-box для них нет соответствия, и они отбрасываются автоматически — остаются набор, режим, признак 0-RTT и ключ."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:361
+msgid "Radar secondary (10.202.10.11)"
+msgstr "Radar, запасной (10.202.10.11)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1260
+msgid "Redirect inbound"
+msgstr "inbound Redirect"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:987
+msgid "reload page to apply"
+msgstr "перезагрузите страницу, чтобы применить"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2665
+msgid "Requires curl. Install it on the Status page first."
+msgstr "Требуется curl. Сначала установите его на странице «Состояние»."
+
+#: htdocs/luci-static/resources/view/limcore/server.js:255
+msgid "Secrets"
+msgstr "Секреты"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:793
+msgid "Send proxied traffic through Cloudflare WARP <em>after</em> the main node, so it leaves from a Cloudflare address instead of your server's. Useful when a service blocks datacenter IPs — the proxy still hides you from the ISP, and the destination sees a consumer Cloudflare address.<br><br>WARP covers <strong>exactly the traffic the proxy already covers</strong>: in “Russia (bypass blocks)” mode that means blocked sites only. Anything the routing mode sends direct — vk.com, gosuslugi and the rest — stays direct and never touches WARP.<br><br>Nothing to configure: the core registers a free WARP account on its own."
+msgstr "Пропускать проксируемый трафик через Cloudflare WARP <em>после</em> основного узла, чтобы он выходил с адреса Cloudflare, а не с адреса вашего сервера. Полезно, когда служба блокирует адреса дата-центров: прокси по-прежнему скрывает вас от провайдера, а получатель видит обычный пользовательский адрес Cloudflare.<br><br>WARP охватывает <strong>ровно тот трафик, который уже охватывает прокси</strong>: в режиме «Россия (обход блокировок)» это только заблокированные сайты. Всё, что режим маршрутизации отправляет напрямую — vk.com, госуслуги и прочее, — так и идёт напрямую и WARP не касается.<br><br>Настраивать нечего: ядро само регистрирует бесплатную учётную запись WARP."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:354
+msgid "Shecan (178.22.122.100)"
+msgstr "Shecan (178.22.122.100)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:355
+msgid "Shecan secondary (185.51.200.2)"
+msgstr "Shecan, запасной (185.51.200.2)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:919
+msgid "Source"
+msgstr "Источник"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:869
+msgid "Starting LimCore update..."
+msgstr "Запускаю обновление LimCore..."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1436
+msgid "Stream down"
+msgstr "Потоком вниз"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1435
+msgid "Stream up"
+msgstr "Потоком вверх"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:267
+msgid "Target hostname for FakeTLS domain fronting. Clients will see TLS to this domain."
+msgstr "Имя хоста для подмены домена по FakeTLS. Клиенты будут видеть TLS-соединение с этим доменом."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:849
+msgid "Test WARP"
+msgstr "Проверить WARP"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:861
+msgid "Testing, this takes about half a minute…"
+msgstr "Проверяю, это занимает около полуминуты…"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:845
+msgid "The current main node (%s) uses the <code>xhttp</code> transport, which carries no UDP — WARP cannot establish its tunnel through it, and enabling WARP will stop proxied traffic. Choose a ws or tcp node."
+msgstr "Текущий основной узел (%s) использует транспорт <code>xhttp</code>, который не передаёт UDP: WARP не сможет построить через него туннель, и при включении WARP проксируемый трафик встанет. Выберите узел с ws или tcp."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:159
+msgid "The modern multi-core proxy platform. Created by l_limon_l."
+msgstr "Современная многоядерная прокси-платформа. Автор — l_limon_l."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:880
+msgid "The test did not finish in time."
+msgstr "Проверка не завершилась вовремя."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:500
+msgid "To enable Tun support, you need to install <code>kmod-tun</code>"
+msgstr "Чтобы включить поддержку Tun, установите <code>kmod-tun</code>"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1261
+msgid "TProxy inbound"
+msgstr "inbound TProxy"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1262
+msgid "TUN inbound"
+msgstr "inbound TUN"
+
+#: htdocs/luci-static/resources/view/limcore/diagnostics.js:390
+msgid "UDP TPROXY counters (UDP into LimCore)"
+msgstr "Счётчики UDP TPROXY (UDP в LimCore)"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2203
+msgid "Unique Hardware ID sent to the VPN provider for subscription updates. Generated from router hardware. Copy this value and send it to your VPN provider bot."
+msgstr "Уникальный идентификатор оборудования, который передаётся провайдеру VPN для обновления подписки. Формируется из данных роутера. Скопируйте это значение и отправьте боту вашего провайдера VPN."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:106
+msgid "unknown"
+msgstr "неизвестно"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1277
+msgid "Unsupported encryption scheme — sing-box only implements ML-KEM here."
+msgstr "Неподдерживаемая схема шифрования — sing-box реализует здесь только ML-KEM."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:832
+msgid "Up to date (%s)"
+msgstr "Установлена последняя версия (%s)"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:653
+msgid "Up to date (v%s)"
+msgstr "Установлена последняя версия (v%s)"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:828
+msgid "Update available: %s → %s"
+msgstr "Есть обновление: %s → %s"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:656
+msgid "Update available: v%s → v%s"
+msgstr "Есть обновление: v%s → v%s"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:903
+msgid "Update failed (exit code %d) — see /tmp/limcore-update.log"
+msgstr "Обновление не удалось (код выхода %d) — смотрите /tmp/limcore-update.log"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:912
+msgid "Update is still running after 5 minutes — check /tmp/limcore-update.log"
+msgstr "Обновление идёт уже больше 5 минут — проверьте /tmp/limcore-update.log"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:1059
+msgid "Update LimCore automatically"
+msgstr "Обновлять LimCore автоматически"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:908
+msgid "Update was interrupted before it finished — see /tmp/limcore-update.log"
+msgstr "Обновление прервалось, не завершившись — смотрите /tmp/limcore-update.log"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:883
+msgid "Updated"
+msgstr "Обновлено"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:906
+msgid "Updating LimCore & dependencies in background..."
+msgstr "Обновляю LimCore и зависимости в фоне..."
 
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "Updating subscriptions"
@@ -1006,6 +1433,10 @@ msgstr "Сгенерировать"
 #: htdocs/luci-static/resources/view/limcore/status.js:260
 msgid "GitHub token"
 msgstr "GitHub-токен"
+
+#: htdocs/luci-static/resources/view/limcore/status.js:867
+msgid "Updating..."
+msgstr "Обновляю..."
 
 #: htdocs/luci-static/resources/view/limcore/status.js:261
 msgid "Used to check for ByeDPI and Zapret updates. Without a token, GitHub limits anonymous requests to 60/hour. Create at github.com → Settings → Developer settings → Personal access tokens (no scopes needed)."
@@ -1878,6 +2309,22 @@ msgstr "Параметры плагина"
 #: htdocs/luci-static/resources/view/limcore/node.js:1126
 msgid "ShadowTLS transport"
 msgstr "Транспорт ShadowTLS"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:888
+msgid "WARP did not come up through this node."
+msgstr "WARP не поднялся через этот узел."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:886
+msgid "WARP works through this node. Exit address: %s"
+msgstr "WARP работает через этот узел. Адрес на выходе: %s"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:801
+msgid "What goes through WARP"
+msgstr "Что идёт через WARP"
+
+#: htdocs/luci-static/resources/view/limcore/server.js:291
+msgid "Worker pool size. Leave empty for default."
+msgstr "Размер пула рабочих процессов. Оставьте пустым для значения по умолчанию."
 
 #: htdocs/luci-static/resources/view/limcore/node.js:1127
 msgid "Wrap this Shadowsocks connection in ShadowTLS for TLS camouflage."
@@ -3231,6 +3678,10 @@ msgstr "WireGuard требует приватные ключи в кодиров
 msgid "Write proxy protocol in the connection header."
 msgstr "Записать протокол прокси в заголовок соединения."
 
+#: htdocs/luci-static/resources/view/limcore/node.js:1431
+msgid "XHTTP mode"
+msgstr "Режим XHTTP"
+
 #: htdocs/luci-static/resources/view/limcore/node.js:889
 #: htdocs/luci-static/resources/view/limcore/node.js:1392
 msgid "Xudp (Xray-core)"
@@ -3401,7 +3852,6 @@ msgstr "корректное значение порта"
 #: htdocs/luci-static/resources/limcore.js:328
 msgid "valid uuid"
 msgstr "корректный uuid"
-
 
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "Binded interface"
@@ -3634,7 +4084,6 @@ msgstr "Не проксировать торренты"
 #: htdocs/luci-static/resources/view/limcore/client.js
 msgid "Force torrent traffic (BitTorrent protocol + common ports) to bypass the proxy."
 msgstr "Направить торрент-трафик (протокол BitTorrent и стандартные порты) в обход прокси."
-
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "HomeProxy Diagnostics"
@@ -4426,4 +4875,3 @@ msgstr "Обновить LimCore"
 
 msgid "Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases."
 msgstr "Автоматическое обновление приложения LimCore LuCI, переводов и скриптов с GitHub."
-
