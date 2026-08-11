@@ -45,6 +45,17 @@ uci -q batch <<-EOF >"/dev/null"
 	commit firewall
 EOF
 
+# Keep the app updated unless someone has said otherwise. Only set when the option is
+# absent: once it exists it carries the user's answer, including a deliberate '0'.
+if [ -z "$(uci -q get limcore.config.app_auto_update)" ]; then
+	uci -q batch <<-EOF >"/dev/null"
+		set limcore.config.app_auto_update='1'
+		set limcore.config.app_auto_update_days='3'
+		set limcore.config.app_auto_update_hour='4'
+		commit limcore
+	EOF
+fi
+
 if [ -z "$(uci -q get limcore.config.hwid)" ]; then
 	MAC=$(cat /sys/class/net/br-lan/address 2>/dev/null || cat /sys/class/net/eth0/address 2>/dev/null || cat /etc/machine-id 2>/dev/null)
 	[ -n "$MAC" ] || MAC="limcore-default-hwid-key"
