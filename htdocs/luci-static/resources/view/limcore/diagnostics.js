@@ -81,6 +81,18 @@ const callActiveNode = rpc.declare({
 	expect: { '': {} }
 });
 
+const callWarpTest = rpc.declare({
+	object: 'luci.limcore',
+	method: 'warp_test',
+	expect: { '': {} }
+});
+
+const callWarpTestStatus = rpc.declare({
+	object: 'luci.limcore',
+	method: 'warp_test_status',
+	expect: { '': {} }
+});
+
 /* Resolve a sing-box outbound tag (cfg-<section>-out) to its UCI label. */
 function resolveTag(tag) {
 	const m = tag && tag.match(/^cfg-(.+)-out$/);
@@ -184,12 +196,58 @@ function buildConnectivitySection(view, coreType) {
 		return E('div', { 'class': 'diag-row' }, [ E('span', { 'class': 'diag-label' }, labelText), resultEl ]);
 	}
 
+	/* WARP capability probe. Deliberately kept out of `items`, so "Run All Tests" does not
+	   fire it: this one spins up a second core and takes ~25 s, while every other check
+	   here answers in about a second. Whether WARP comes up is a property of the node, not
+	   of the WARP switch, so the row shows regardless of whether WARP is enabled. */
+	function warpRow() {
+		const resultEl = E('strong', { 'class': 'diag-gray' }, _('unchecked'));
+		let btn = null, timer = null;
+
+		function finish(text, cls) {
+			if (timer) { clearInterval(timer); timer = null; }
+			btn.disabled = false;
+			dom.content(resultEl, E('strong', { 'class': cls }, text));
+		}
+
+		function run() {
+			btn.disabled = true;
+			dom.content(resultEl, E('em', { 'class': 'diag-gray' }, _('Testing, this takes about half a minute…')));
+
+			return L.resolveDefault(callWarpTest(), {}).then(function(res) {
+				if (!res || res.result === false)
+					return finish((res && res.error) || _('Could not start the test.'), 'diag-fail');
+
+				/* The probe is detached, so the verdict arrives by polling a result file. */
+				let tries = 0;
+				timer = setInterval(function() {
+					if (++tries > 20)
+						return finish(_('The test did not finish in time.'), 'diag-fail');
+					L.resolveDefault(callWarpTestStatus(), {}).then(function(st) {
+						if (!st || st.running) return;
+						if (st.result)
+							finish(_('WARP works through this node. Exit address: %s').format(st.ip), 'diag-ok');
+						else
+							finish(st.error || _('WARP did not come up through this node.'), 'diag-fail');
+					});
+				}, 3000);
+			});
+		}
+
+		btn = E('button', { 'class': 'btn cbi-button cbi-button-action diag-btn',
+			'click': ui.createHandlerFn(view, run) }, [ _('Check') ]);
+
+		return E('div', { 'class': 'diag-row' }, [
+			E('span', { 'class': 'diag-label' }, _('WARP through the node')), btn, resultEl ]);
+	}
+
 	const rows = [
 		siteRow(_('Baidu'),     'baidu'),
 		siteRow(_('Google'),    'google'),
 		siteRow(_('YouTube'),   'youtube'),
 		siteRow(_('Yandex'),    'yandex'),
-		siteRow(_('Speedtest'), 'speedtest')
+		siteRow(_('Speedtest'), 'speedtest'),
+		warpRow()
 	];
 
 	/* sing-box can't report an exit IP, so show the live Active Node instead. */

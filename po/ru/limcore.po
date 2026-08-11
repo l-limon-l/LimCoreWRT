@@ -2314,6 +2314,10 @@ msgstr "Транспорт ShadowTLS"
 msgid "WARP did not come up through this node."
 msgstr "WARP не поднялся через этот узел."
 
+#: htdocs/luci-static/resources/view/limcore/diagnostics.js:241
+msgid "WARP through the node"
+msgstr "WARP через узел"
+
 #: htdocs/luci-static/resources/view/limcore/client.js:886
 msgid "WARP works through this node. Exit address: %s"
 msgstr "WARP работает через этот узел. Адрес на выходе: %s"
