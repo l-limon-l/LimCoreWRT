@@ -1058,7 +1058,7 @@ return view.extend({
 
 		o = s.option(form.Flag, 'app_auto_update', _('Update LimCore automatically'),
 			_('Install new releases on a schedule, without opening this page. Uses the same updater as the button above.'));
-		o.default = o.disabled;
+		o.default = o.enabled;
 		o.rmempty = false;
 
 		o = s.option(form.ListValue, 'app_auto_update_days', _('How often'));
