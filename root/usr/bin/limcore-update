@@ -10,6 +10,13 @@
 # page tells a finished-and-failed update from a finished-and-succeeded one. The PID
 # file lets it tell "still working" from "died without finishing" without pattern
 # matching on process lists.
+#
+# With --if-newer the script first compares the installed release against the latest one
+# on GitHub and does nothing when they match. That mode is for the cron job: install.sh
+# re-downloads the ~24 MB core on every run, which is a lot of traffic to spend every
+# three days to arrive back at the version already installed. The button on the status
+# page stays unconditional on purpose — pressing it is also how a half-finished install
+# gets repaired, and that has to work when the version has not moved.
 
 G='\033[0;32m'; R='\033[0;31m'; C='\033[0;36m'; N='\033[0m'
 
@@ -35,6 +42,50 @@ TMP="/tmp/limcore-install.sh"
 fetch() {
 	wget -qO "$TMP" --timeout=20 "$1" 2>/dev/null && [ -s "$TMP" ]
 }
+
+installed_version() {
+	# apk prints "luci-app-limcore-<version> noarch {...}", opkg "luci-app-limcore - <version>".
+	apk list -I luci-app-limcore 2>/dev/null | head -1 | sed -n 's/^luci-app-limcore-\([^ ]*\).*/\1/p'
+	opkg list-installed luci-app-limcore 2>/dev/null | head -1 | sed -n 's/^luci-app-limcore *- *\([^ ]*\).*/\1/p'
+}
+
+latest_version() {
+	API="https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest"
+	# api.github.com goes out through the proxy and answers with an error or a rate limit
+	# often enough that a single attempt is not a verdict. Same one retry the backend does.
+	for _ in 1 2; do
+		BODY=$(wget -qO- --timeout=15 "$API" 2>/dev/null)
+		[ -n "$BODY" ] && break
+		if [ -n "$GH_MIRROR" ]; then
+			BODY=$(wget -qO- --timeout=15 "$(echo "$API" | sed "s#https://api.github.com#${GH_MIRROR%/}#")" 2>/dev/null)
+			[ -n "$BODY" ] && break
+		fi
+		sleep 3
+	done
+	echo "$BODY" | sed -n 's/.*"tag_name" *: *"\([^"]*\)".*/\1/p' | head -1
+}
+
+if [ "$1" = "--if-newer" ]; then
+	INSTALLED=$(installed_version | head -1)
+	LATEST=$(latest_version)
+
+	if [ -z "$INSTALLED" ] || [ -z "$LATEST" ]; then
+		# Not knowing is not a reason to reinstall. Skip and let the next run decide.
+		echo -e "${R}Не удалось сравнить версии (установлено: '${INSTALLED:-?}', доступно: '${LATEST:-?}') — пропускаю.${N}"
+		echo "LIMCORE_UPDATE_RC=0"
+		exit 0
+	fi
+
+	# Inequality, not ordering: tags are date-based (2026.08.11-r30) and a plain string
+	# comparison would rank r9 above r30.
+	if [ "$INSTALLED" = "$LATEST" ]; then
+		echo -e "${G}Установлена последняя версия ($INSTALLED) — обновлять нечего.${N}"
+		echo "LIMCORE_UPDATE_RC=0"
+		exit 0
+	fi
+
+	echo -e "${C}Установлено $INSTALLED, доступно $LATEST — обновляю.${N}"
+fi
 
 echo -e "${C}Скачиваю установщик...${N}"
 rm -f "$TMP"
