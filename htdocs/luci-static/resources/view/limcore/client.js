@@ -809,8 +809,23 @@ return view.extend({
 		o.rmempty = false;
 
 		o = s.taboption('warp', form.DynamicList, 'warp_domains', _('Domains via WARP'),
-			_('Matched by suffix, so <code>google.com</code> also covers <code>gemini.google.com</code>. Everything else keeps the plain proxy at full speed.'));
-		o.default = 'gemini.google.com';
+			_('Matched by whole labels, so <code>google.com</code> also covers <code>gemini.google.com</code> — but <code>cloudcode-pa.googleapis.com</code> does <em>not</em> cover <code>daily-cloudcode-pa.googleapis.com</code>, because the label differs. Write out each host you mean. Everything else keeps the plain proxy at full speed.'));
+		/* Antigravity talks to daily-cloudcode-pa, not to cloudaicompanion — the latter is
+		   only the internal service name that shows up in the X-Cloudaicompanion-Trace-Id
+		   header of its errors, and chasing that name costs an afternoon. oauth2 is here
+		   because Google decides the region from the identity, not from the address the
+		   request comes from: a token refreshed over the plain proxy carries whatever region
+		   that exit sits in, and the API then refuses with "User location is not supported"
+		   however the request itself was routed. */
+		o.default = [
+			'gemini.google.com',
+			'aistudio.google.com',
+			'generativelanguage.googleapis.com',
+			'cloudcode-pa.googleapis.com',
+			'daily-cloudcode-pa.googleapis.com',
+			'antigravity-unleash.goog',
+			'oauth2.googleapis.com'
+		];
 		o.depends({'warp_enabled': '1', 'warp_mode': 'domains'});
 
 		/* WARP rides on UDP, so it lives or dies by whether the node carries UDP — and that
