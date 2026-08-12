@@ -63,12 +63,26 @@ while true; do
 	[ -n "$DELAY" ] && DELAY="${DELAY}ms" || DELAY="DOWN"
 	[ -n "$WAN" ] && WAN="${WAN}ms" || WAN="DOWN"
 
-	printf '%s node=%s wan=%s dns=%sms/%s%s\n' \
-		"$TS" "$DELAY" "$WAN" "$DNS" "$DOK" "$RETRIED" >> "$LOG"
+	# Memory, and how much of it /tmp is holding. Both are here because of the outage on
+	# 12 Aug 2026: a log rotated by mv kept growing in tmpfs until the router had no memory
+	# left, and nothing running at the time recorded either number — so the diagnosis had to
+	# be reconstructed afterwards from a device that had already been rebooted clean. Two
+	# fields per sample make a repeat explain itself.
+	MEM=$(( $(sed -n 's/^MemAvailable: *\([0-9]*\).*/\1/p' /proc/meminfo) / 1024 ))
+	TMP=$(( $(df -k /tmp | awk 'NR==2{print $3}') / 1024 ))
+
+	printf '%s node=%s wan=%s dns=%sms/%s mem=%sM tmp=%sM%s\n' \
+		"$TS" "$DELAY" "$WAN" "$DNS" "$DOK" "$MEM" "$TMP" "$RETRIED" >> "$LOG"
 
 	# Keep it bounded, keeping one generation like the other logs here.
-	if [ -s "$LOG" ] && [ "$(( $(ls -l "$LOG" | awk '{print $5}') / 1024 ))" -ge "$MAX_KB" ]; then
-		mv -f "$LOG" "$LOG.1"
+	#
+	# cp rather than mv, matching clean_log.sh. This loop appends with >>, which reopens the
+	# file every time, so mv did work here — but only by that accident. The same mv in
+	# clean_log.sh met a writer that holds its log open, kept it writing into the rotated
+	# file, and cost a router. Leaving a second copy of that pattern around is a trap for
+	# whoever changes how this line is written.
+	if [ -s "$LOG" ] && [ "$(( $(wc -c < "$LOG") / 1024 ))" -ge "$MAX_KB" ]; then
+		cp -f "$LOG" "$LOG.1"
 		: > "$LOG"
 	fi
 
