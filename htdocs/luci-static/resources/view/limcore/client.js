@@ -822,7 +822,14 @@ return view.extend({
 		   grid behind the 3x3 button, and it decides by the address the request comes from,
 		   not by the account — routed through WARP the Gemini tile comes back, routed through
 		   the plain proxy it does not. www.google.com is deliberately absent: search runs
-		   through it, and WARP throttles hard after about a hundred megabytes. */
+		   through it, and WARP throttles hard after about a hundred megabytes.
+
+		   robinfrontend-pa is the Gemini app on Android, which never touches
+		   gemini.google.com at all — that host is the web client. With only the web host
+		   listed the phone kept getting "not available in your region" while the same
+		   account worked on a desktop through the same router, and nothing in the error
+		   said which host to look at. Read off the live connection list: the phone's
+		   traffic went to robinfrontend-pa.googleapis.com and left through main-out. */
 		o.default = [
 			'gemini.google.com',
 			'aistudio.google.com',
@@ -831,7 +838,8 @@ return view.extend({
 			'daily-cloudcode-pa.googleapis.com',
 			'antigravity-unleash.goog',
 			'oauth2.googleapis.com',
-			'ogs.google.com'
+			'ogs.google.com',
+			'robinfrontend-pa.googleapis.com'
 		];
 		o.depends({'warp_enabled': '1', 'warp_mode': 'domains'});
 
