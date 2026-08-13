@@ -49,6 +49,11 @@ const WARP_PORT   = 10899;
 const WARP_CFG    = '/tmp/limcore-warp-test.json';
 const WARP_LOG    = '/tmp/limcore-warp-test.log';
 const WARP_RESULT = '/tmp/limcore-warp-test.result';
+const NP_PORT   = 9092;
+const NP_CFG    = '/tmp/limcore-node-probe.json';
+const NP_LOG    = '/tmp/limcore-node-probe.log';
+const NP_RESULT = '/tmp/limcore-node-probe.result';
+const NP_DONE   = '/tmp/limcore-node-probe.done';
 
 function get_active_core() {
 	/* Mirror init.d / generate_client.uc precedence: the standard sing-box binary, else a
@@ -1423,6 +1428,94 @@ const methods = {
 			return { running: false, result: false,
 			         error: length(msg) ? msg
 			                : 'no response through WARP — this node does not carry the UDP that WARP needs' };
+		}
+	},
+
+	/* Reachability of every configured node, not just the selected one.
+	 *
+	 * clash_active_node can only report the node currently in use, because the running
+	 * config contains only that one. So the question people actually have — "which of
+	 * these still work?" — could only be answered by switching to each in turn and
+	 * watching, which is both slow and disruptive. Two of the subscription's nodes turned
+	 * out to be dead for a week before anyone established that.
+	 *
+	 * Same shape as warp_test: a throwaway core on a spare port, its own config, its own
+	 * Clash API, killed when finished — the running service is not touched. Split into
+	 * start + poll because the whole sweep outlasts a ubus call.
+	 *
+	 * The nodes are measured in parallel. Sequentially a dead node costs the full timeout
+	 * and twelve of them would take a minute and a half, which nobody waits for; in
+	 * parallel the sweep costs about as long as its slowest node. Each worker appends one
+	 * short line, and O_APPEND makes writes under a pipe buffer atomic, so they cannot
+	 * interleave. */
+	nodes_probe_start: {
+		call: function() {
+			const core = get_active_core();
+			if (!core)
+				return { result: false, error: 'no core installed' };
+
+			system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_LOG} ${NP_CFG}`);
+
+			if (system(`ucode ${HP_DIR}/scripts/generate_client.uc probe ${NP_PORT} >${NP_CFG} 2>/dev/null`, 20000) !== 0 || !access(NP_CFG))
+				return { result: false, error: 'could not build a probe config' };
+
+			const cfg = readfile(NP_CFG) || '';
+			const tags = [];
+			for (let m in match(cfg, /"tag": "(cfg-[^"]+-out)"/g))
+				push(tags, m[1]);
+			if (!length(tags))
+				return { result: false, error: 'no nodes configured' };
+
+			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
+			const script = `
+				kill $(ps w | grep '[-]c ${NP_CFG}' | awk '{print $1}') 2>/dev/null
+				${shellquote(core.path)} run -c ${NP_CFG} >${NP_LOG} 2>&1 &
+				CORE=$!
+				i=0
+				while [ $i -lt 30 ]; do
+					wget -qO- --timeout=2 http://127.0.0.1:${NP_PORT}/proxies >/dev/null 2>&1 && break
+					i=$((i+1)); sleep 1
+				done
+				WORKERS=""
+				for T in $(grep -o '"tag": "cfg-[^"]*"' ${NP_CFG} | sed 's/.*"cfg-/cfg-/;s/"$//'); do
+					(
+						D=$(wget -qO- --timeout=12 "http://127.0.0.1:${NP_PORT}/proxies/$T/delay?timeout=8000&url=${url}" 2>/dev/null | sed -n 's/.*"delay":\\([0-9]*\\).*/\\1/p')
+						if [ -n "$D" ]; then echo "$T $D" >> ${NP_RESULT}
+						else echo "$T FAIL" >> ${NP_RESULT}; fi
+					) &
+					WORKERS="$WORKERS $!"
+				done
+				# Only the workers. A bare wait also waits on the core, which is a server and
+				# never exits — the sweep then finished, the results were all there, and the
+				# poller kept reporting "running" forever with a stray core still up.
+				[ -n "$WORKERS" ] && wait $WORKERS
+				kill $CORE 2>/dev/null
+				rm -f ${NP_CFG}
+				: > ${NP_DONE}
+			`;
+
+			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
+			return { result: rc === 0, total: length(tags) };
+		}
+	},
+
+	nodes_probe_status: {
+		call: function() {
+			let results = [];
+			for (let line in split(trim(readfile(NP_RESULT) || ''), '\n')) {
+				const m = match(trim(line), /^cfg-(.+)-out (FAIL|[0-9]+)$/);
+				if (!m) continue;
+				push(results, {
+					section: m[1],
+					delay: (m[2] === 'FAIL') ? null : int(m[2])
+				});
+			}
+
+			const running = !access(NP_DONE);
+			if (!running)
+				system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_LOG} ${NP_CFG}`);
+
+			return { running, results };
 		}
 	},
 

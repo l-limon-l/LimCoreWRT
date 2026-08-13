@@ -870,6 +870,114 @@ function parseShareLink(uri, features) {
 	return config;
 }
 
+const callNodesProbeStart = rpc.declare({
+	object: 'luci.limcore',
+	method: 'nodes_probe_start',
+	expect: { '': {} }
+});
+
+const callNodesProbeStatus = rpc.declare({
+	object: 'luci.limcore',
+	method: 'nodes_probe_status',
+	expect: { '': {} }
+});
+
+/* Cells are addressed by id rather than re-rendered through the form, because the nodes
+ * are spread over several tabs (own nodes, then one tab per subscription) and a sweep
+ * covers all of them at once. Writing straight into the cells fills in the tabs the user
+ * is not looking at too, so switching to one afterwards shows results already there. */
+function delayCellId(section_id) {
+	return 'limcore-node-delay-' + section_id;
+}
+
+function paintDelay(section_id, delay) {
+	const el = document.getElementById(delayCellId(section_id));
+	if (!el)
+		return;
+
+	if (delay == null) {
+		el.textContent = _('no answer');
+		el.style.color = '#c00';
+		return;
+	}
+
+	el.textContent = '%d ms'.format(delay);
+	/* Three bands rather than a number alone: the useful question is "which of these
+	 * should I switch to", and a column of bare figures makes the reader do the sorting. */
+	el.style.color = (delay < 150) ? '#0a0' : (delay < 350) ? '#c80' : '#c00';
+}
+
+/* One sweep drives every rendered tab. Returns a promise so the button can stay disabled
+ * until it is over. */
+function runNodeSweep(msgEl) {
+	const sections = uci.sections('limcore', 'node');
+	for (const sec of sections) {
+		const el = document.getElementById(delayCellId(sec['.name']));
+		if (el) {
+			el.textContent = '…';
+			el.style.color = '';
+		}
+	}
+
+	msgEl.textContent = _('Testing…');
+
+	return callNodesProbeStart().then((res) => {
+		if (!res || res.result !== true)
+			return Promise.reject(new Error(res?.error || _('could not start the test')));
+
+		const total = res.total || sections.length;
+		const deadline = Date.now() + 90000;
+
+		const poll = () => new Promise((resolve) => window.setTimeout(resolve, 1500))
+			.then(callNodesProbeStatus)
+			.then((st) => {
+				for (const r of (st?.results || []))
+					paintDelay(r.section, r.delay);
+
+				if (!st || st.running !== true) {
+					const seen = (st?.results || []).length;
+					msgEl.textContent = _('Tested %d of %d nodes.').format(seen, total);
+					return;
+				}
+
+				msgEl.textContent = _('Testing… %d of %d').format((st.results || []).length, total);
+
+				/* A deadline, not an attempt count: the poll interval is the only thing
+				 * that would otherwise bound this, and a probe core that never came up
+				 * would leave the button disabled for as long as the page stayed open. */
+				if (Date.now() > deadline) {
+					msgEl.textContent = _('Test timed out.');
+					return;
+				}
+				return poll();
+			});
+
+		return poll();
+	}).catch((e) => {
+		msgEl.textContent = e.message || _('Test failed');
+	});
+}
+
+/* The button is repeated on every node tab. One sweep covers all of them whichever copy
+ * is pressed — the alternative, a single button on the first tab only, means anyone
+ * looking at a subscription tab has to go elsewhere to test what is in front of them. */
+function addSweepButton(s, tabname, key) {
+	const o = s.taboption(tabname, form.DummyValue, '_node_sweep_' + key, _('Check all nodes'));
+	o.cfgvalue = function() {
+		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
+		const btn = E('button', {
+			'class': 'btn cbi-button cbi-button-action',
+			'click': ui.createHandlerFn(this, function() {
+				return runNodeSweep(msgEl);
+			})
+		}, [ _('Check all nodes') ]);
+
+		return E('div', {}, [ btn, msgEl ]);
+	};
+	o.description = _('Measures every configured node at once through a temporary core on its own port. ' +
+		'The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly.');
+}
+
 function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	let s = section, o;
 	s.rowcolors = true;
@@ -883,6 +991,15 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.load = L.bind(hp.loadDefaultLabel, this, data[0]);
 	o.validate = L.bind(hp.validateUniqueValue, this, data[0], 'node', 'label');
 	o.modalonly = true;
+
+	/* Blank until a sweep runs. A remembered figure would be worse than none: node
+	 * latency is exactly the thing that changes between the measurement and the moment
+	 * someone reads it, and a stale green number invites switching to a dead node. */
+	o = s.option(form.DummyValue, '_delay', _('Delay'));
+	o.modalonly = false;
+	o.cfgvalue = function(section_id) {
+		return E('span', { 'id': delayCellId(section_id) }, '–');
+	};
 
 	o = s.option(form.ListValue, 'type', _('Type'));
 	o.value('direct', _('Direct'));
@@ -1968,6 +2085,7 @@ return view.extend({
 		/* Node settings start */
 		/* User nodes start */
 		s.tab('node', _('Nodes'));
+		addSweepButton(s, 'node', 'own');
 		o = s.taboption('node', form.SectionValue, '_node', form.GridSection, 'node');
 		ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 		ss.addremove = true;
@@ -2140,6 +2258,7 @@ return view.extend({
 		/* Subscription nodes start */
 		for (const info of subinfo) {
 			s.tab('sub_' + info.hash, _('Sub (%s)').format(info.title));
+			addSweepButton(s, 'sub_' + info.hash, info.hash);
 			o = s.taboption('sub_' + info.hash, form.SectionValue, '_sub_' + info.hash, form.GridSection, 'node');
 			ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 			ss.filter = function(section_id) {
