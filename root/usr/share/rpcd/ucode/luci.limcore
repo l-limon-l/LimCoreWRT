@@ -54,6 +54,12 @@ const NP_CFG    = '/tmp/limcore-node-probe.json';
 const NP_LOG    = '/tmp/limcore-node-probe.log';
 const NP_RESULT = '/tmp/limcore-node-probe.result';
 const NP_DONE   = '/tmp/limcore-node-probe.done';
+/* Absence of the done-marker cannot mean "running" on its own: before any sweep has been
+ * started, and again after the results have been collected and cleaned up, there is no
+ * done-marker either. Both were reported as a sweep in progress, so a failed start left
+ * the button spinning until the page was reloaded. Running is this marker present and the
+ * done-marker not. */
+const NP_RUNNING = '/tmp/limcore-node-probe.running';
 
 function get_active_core() {
 	/* Mirror init.d / generate_client.uc precedence: the standard sing-box binary, else a
@@ -1454,7 +1460,7 @@ const methods = {
 			if (!core)
 				return { result: false, error: 'no core installed' };
 
-			system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_LOG} ${NP_CFG}`);
+			system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_RUNNING} ${NP_LOG} ${NP_CFG}`);
 
 			if (system(`ucode ${HP_DIR}/scripts/generate_client.uc probe ${NP_PORT} >${NP_CFG} 2>/dev/null`, 20000) !== 0 || !access(NP_CFG))
 				return { result: false, error: 'could not build a probe config' };
@@ -1494,8 +1500,17 @@ const methods = {
 				: > ${NP_DONE}
 			`;
 
+			/* Set before the spawn, not after: the first poll can arrive while sh is still
+			 * starting, and a marker written afterwards would read as "already finished". */
+			writefile(NP_RUNNING, '');
+
 			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
-			return { result: rc === 0, total: length(tags) };
+			if (rc !== 0) {
+				system(`rm -f ${NP_RUNNING}`);
+				return { result: false, error: 'could not start the probe core' };
+			}
+
+			return { result: true, total: length(tags) };
 		}
 	},
 
@@ -1511,9 +1526,11 @@ const methods = {
 				});
 			}
 
-			const running = !access(NP_DONE);
+			/* access() answers true or null, and null travels over ubus as a JSON null that
+			 * reads as neither running nor finished. Force it to a boolean. */
+			const running = !!access(NP_RUNNING) && !access(NP_DONE);
 			if (!running)
-				system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_LOG} ${NP_CFG}`);
+				system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_RUNNING} ${NP_LOG} ${NP_CFG}`);
 
 			return { running, results };
 		}
