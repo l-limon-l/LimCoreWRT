@@ -85,8 +85,29 @@ if (routing_port === 'common')
  * BitTorrent and game traffic, which is the whole point of "common ports only (bypass
  * P2P)". 50000-50100 is narrow enough to miss the BitTorrent defaults (6881-6889, 51413)
  * and the Source-engine game ports. Pick "All ports" if you want everything proxied. */
-if (routing_port && uci.get(cfgname, 'config', 'proxy_calls') === '1')
+const proxy_calls = uci.get(cfgname, 'config', 'proxy_calls') === '1';
+
+if (routing_port && proxy_calls)
 	routing_port += ',19294-19344,50000-50100,3478-3497,16384-16387,16393-16402';
+
+/* Telegram is matched by address rather than by port, because its call reflectors do not
+ * sit on a fixed range the way Discord's do. Observed on a live group call: media went to
+ * 91.108.9.118:32000 and 91.108.9.131:32001, ports in none of the ranges above, and every
+ * one of those flows read [UNREPLIED] — 152 packets out, nothing back — because a dport
+ * filter kept them out of the tunnel and a Russian ISP drops Telegram voice sent in the
+ * clear. Signalling is TCP and was proxied all along, so the call negotiated its keys and
+ * then sat on "Connecting" forever.
+ *
+ * Widening the port list to cover 32000-32001 would fix this call and break on the next
+ * reflector; these are Telegram's published ranges, so any port they choose is covered.
+ * No routing rule is needed to go with it: the Re:filter IP set already sends these
+ * addresses to main-out, which is why Telegram's TCP was proxied without anyone adding a
+ * rule for it. Interception was the only missing half. */
+const telegram_addr_v4 = [
+	'91.108.4.0/22', '91.108.8.0/22', '91.108.12.0/22', '91.108.16.0/22',
+	'91.108.20.0/22', '91.108.56.0/22', '95.161.64.0/20', '149.154.160.0/20',
+	'185.76.151.0/24'
+];
 
 const proxy_mode = uci.get(cfgname, 'config', 'proxy_mode') || 'redirect_tproxy',
       ipv6_support = uci.get(cfgname, 'config', 'ipv6_support') || '0';
@@ -245,6 +266,15 @@ set limcore_routing_port {
 }
 {% endif %}
 
+{% if (routing_port && proxy_calls): %}
+set limcore_telegram_addr_v4 {
+	type ipv4_addr
+	flags interval
+	auto-merge
+	elements = { {{ join(', ', telegram_addr_v4) }} }
+}
+{% endif %}
+
 {# DNS hijack & TCP redirect #}
 chain dstnat {
 {% if ((dns_redirect === '1') && (dns_hijacked !== '1')): %}
@@ -387,6 +417,9 @@ chain limcore_mangle_tproxy {
 }
 
 chain limcore_mangle_tproxy_port {
+	{% if (routing_port && proxy_calls): %}
+	ip daddr @limcore_telegram_addr_v4 counter goto limcore_mangle_tproxy
+	{% endif %}
 	{% if (routing_port): %}
 	udp dport != @limcore_routing_port counter return
 	{% endif %}
@@ -394,6 +427,9 @@ chain limcore_mangle_tproxy_port {
 }
 
 chain limcore_mangle_mark {
+	{% if (routing_port && proxy_calls): %}
+	ip daddr @limcore_telegram_addr_v4 meta l4proto udp meta mark set {{ tproxy_mark }} counter accept
+	{% endif %}
 	{% if (routing_port): %}
 	udp dport != @limcore_routing_port counter return
 	{% endif %}
