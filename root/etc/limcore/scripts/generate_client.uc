@@ -97,7 +97,11 @@ let main_node, main_udp_node, dedicated_udp_node, default_outbound, default_outb
 
 if (routing_mode !== 'custom') {
 	main_node = uci.get(uciconfig, ucimain, 'main_node') || 'nil';
-	if (main_node === 'nil') {
+	/* The probe config carries every node and selects none, so it has no use for a
+	 * main_node — and bailing out here left the availability check answering "no nodes
+	 * configured" in the one situation it exists for: no node chosen yet, or the chosen
+	 * one dead and you are looking for a live replacement. */
+	if (main_node === 'nil' && ARGV[0] !== 'probe') {
 		warn('limcore: no main_node configured, skipping config generation.\n');
 		exit(0);
 	}
