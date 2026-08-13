@@ -71,8 +71,24 @@ while true; do
 	MEM=$(( $(sed -n 's/^MemAvailable: *\([0-9]*\).*/\1/p' /proc/meminfo) / 1024 ))
 	TMP=$(( $(df -k /tmp | awk 'NR==2{print $3}') / 1024 ))
 
-	printf '%s node=%s wan=%s dns=%sms/%s mem=%sM tmp=%sM%s\n' \
-		"$TS" "$DELAY" "$WAN" "$DNS" "$DOK" "$MEM" "$TMP" "$RETRIED" >> "$LOG"
+	# mem= alone says memory is going, not where. These two name the other two ways this
+	# router runs out: the core leaking, and the connection table filling. Without them a
+	# falling mem= is only enough to rule the log back in or out, and the investigation
+	# stalls exactly where it did last time.
+	#
+	# No pgrep on this device, hence ps + grep; the bracket keeps the grep out of its own
+	# match. RSS is the resident figure — sing-box is Go and reserves over a gigabyte of
+	# address space, so VSZ from ps is meaningless here and would read as a permanent leak.
+	CORE_PID=$(ps w | grep '[s]ing-box run' | awk '{print $1}' | head -1)
+	if [ -n "$CORE_PID" ]; then
+		RSS=$(( $(awk '/^VmRSS:/{print $2}' "/proc/$CORE_PID/status" 2>/dev/null || echo 0) / 1024 ))
+	else
+		RSS=0
+	fi
+	CT=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo 0)
+
+	printf '%s node=%s wan=%s dns=%sms/%s mem=%sM tmp=%sM rss=%sM ct=%s%s\n' \
+		"$TS" "$DELAY" "$WAN" "$DNS" "$DOK" "$MEM" "$TMP" "$RSS" "$CT" "$RETRIED" >> "$LOG"
 
 	# Keep it bounded, keeping one generation like the other logs here.
 	#

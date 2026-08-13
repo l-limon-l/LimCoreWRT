@@ -565,6 +565,54 @@ function push_outbound(list, node) {
 	push(list, generate_outbound(node));
 }
 
+/* Availability probe: emit, on stdout, a throwaway config carrying EVERY configured node
+ * as its own outbound and nothing else but a Clash API to interrogate them through. The
+ * runtime config holds only the selected node (as main-out), so short of switching to
+ * each node in turn there is otherwise no way to ask how the rest are doing — and
+ * switching is exactly what you cannot do while trying to find a node that works.
+ *
+ * This lives in the generator rather than in a probe script of its own so the nodes are
+ * assembled by the same generate_outbound() the service runs. A separate builder would
+ * measure a differently-built node and could report healthy for one that the service then
+ * fails to start on. warp_probe.uc takes the same care by lifting its outbound verbatim
+ * out of the generated config.
+ *
+ * default_mark matters as much as the outbounds do: without it this core's own dials to
+ * the node servers are caught by the redirect chain and sent through the running tunnel,
+ * so every measurement would silently include a second hop. The runtime config sets the
+ * same mark for the same reason.
+ *
+ * Usage: generate_client.uc probe [clash_api_port]
+ */
+if (ARGV[0] === 'probe') {
+	const probe_port = strToInt(ARGV[1]) || 9092;
+	let probe_outbounds = [], probe_endpoints = [];
+
+	uci.foreach(uciconfig, ucinode, (n) => {
+		if (n.type in ['wireguard', 'amneziawg'])
+			push(probe_endpoints, generate_endpoint(n));
+		else
+			push_outbound(probe_outbounds, n);
+	});
+
+	push(probe_outbounds, { type: 'direct', tag: 'direct-out' });
+
+	printf('%.J\n', removeBlankAttrs({
+		log: { level: 'error', timestamp: true },
+		outbounds: probe_outbounds,
+		endpoints: length(probe_endpoints) ? probe_endpoints : null,
+		route: {
+			final: 'direct-out',
+			auto_detect_interface: true,
+			default_mark: strToInt(self_mark)
+		},
+		experimental: {
+			clash_api: { external_controller: `127.0.0.1:${probe_port}` }
+		}
+	}));
+	exit(0);
+}
+
 function get_outbound(cfg) {
 	if (isEmpty(cfg))
 		return null;
