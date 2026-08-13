@@ -60,10 +60,6 @@ msgstr "<strong>Сохраните конфигурацию перед загр�
 msgid "403.online secondary (10.202.10.102)"
 msgstr "403.online, запасной (10.202.10.102)"
 
-#: htdocs/luci-static/resources/view/limcore/client.js:802
-msgid "A free WARP session is metered in practice: measured on a live link it starts around 5–9 MB/s and drops to roughly 0.9 MB/s after about a hundred megabytes, staying slow until the session is renewed (restarting LimCore renews it). Sending everything through WARP therefore spends that allowance on ordinary browsing and leaves the whole tunnel crawling. Pick the second option unless you have a reason not to."
-msgstr "Бесплатный сеанс WARP на деле ограничен по объёму: на живом канале он начинается примерно с 5–9 МБ/с и падает примерно до 0,9 МБ/с после сотни мегабайт, оставаясь медленным до обновления сеанса (перезапуск LimCore его обновляет). Поэтому если пустить через WARP всё, этот запас уйдёт на обычный веб-сёрфинг, а весь туннель будет еле ползти. Выбирайте второй вариант, если нет причин поступить иначе."
-
 #: htdocs/luci-static/resources/view/limcore/status.js:954
 msgid "Active core"
 msgstr "Активное ядро"
@@ -200,10 +196,6 @@ msgstr "Обновление приложения LimCore, переводов и
 msgid "Available: v%s"
 msgstr "Доступно: v%s"
 
-#: htdocs/luci-static/resources/view/limcore/client.js:850
-msgid "Chains WARP behind the selected node on a spare port and reports the address the internet would see. Changes nothing and does not disturb the running service."
-msgstr "Поднимает WARP за выбранным узлом на свободном порту и показывает адрес, который увидит интернет. Ничего не меняет и не мешает работающей службе."
-
 #: htdocs/luci-static/resources/view/limcore/status.js:823
 msgid "Check failed"
 msgstr "Проверка не удалась"
@@ -268,10 +260,6 @@ msgstr "Хост для подмены домена"
 msgid "Domain fronting port"
 msgstr "Порт для подмены домена"
 
-#: htdocs/luci-static/resources/view/limcore/client.js:811
-msgid "Domains via WARP"
-msgstr "Домены через WARP"
-
 #: htdocs/luci-static/resources/view/limcore/client.js:951
 msgid "Duplicate source — only the first rule will take effect"
 msgstr "Повтор источника — сработает только первое правило"
@@ -283,10 +271,6 @@ msgstr "Electro/Begzar (78.157.42.100)"
 #: htdocs/luci-static/resources/view/limcore/client.js:357
 msgid "Electro/Begzar secondary (78.157.42.101)"
 msgstr "Electro/Begzar, запасной (78.157.42.101)"
-
-#: htdocs/luci-static/resources/view/limcore/client.js:792
-msgid "Enable WARP"
-msgstr "Включить WARP"
 
 #: htdocs/luci-static/resources/view/limcore/node.js:1263
 msgid "Encryption"
@@ -497,10 +481,6 @@ msgstr "Требуется curl. Сначала установите его на
 msgid "Secrets"
 msgstr "Секреты"
 
-#: htdocs/luci-static/resources/view/limcore/client.js:793
-msgid "Send proxied traffic through Cloudflare WARP <em>after</em> the main node, so it leaves from a Cloudflare address instead of your server's. Useful when a service blocks datacenter IPs — the proxy still hides you from the ISP, and the destination sees a consumer Cloudflare address.<br><br>WARP covers <strong>exactly the traffic the proxy already covers</strong>: in “Russia (bypass blocks)” mode that means blocked sites only. Anything the routing mode sends direct — vk.com, gosuslugi and the rest — stays direct and never touches WARP.<br><br>Nothing to configure: the core registers a free WARP account on its own."
-msgstr "Пропускать проксируемый трафик через Cloudflare WARP <em>после</em> основного узла, чтобы он выходил с адреса Cloudflare, а не с адреса вашего сервера. Полезно, когда служба блокирует адреса дата-центров: прокси по-прежнему скрывает вас от провайдера, а получатель видит обычный пользовательский адрес Cloudflare.<br><br>WARP охватывает <strong>ровно тот трафик, который уже охватывает прокси</strong>: в режиме «Россия (обход блокировок)» это только заблокированные сайты. Всё, что режим маршрутизации отправляет напрямую — vk.com, госуслуги и прочее, — так и идёт напрямую и WARP не касается.<br><br>Настраивать нечего: ядро само регистрирует бесплатную учётную запись WARP."
-
 #: htdocs/luci-static/resources/view/limcore/client.js:354
 msgid "Shecan (178.22.122.100)"
 msgstr "Shecan (178.22.122.100)"
@@ -529,17 +509,9 @@ msgstr "Потоком вверх"
 msgid "Target hostname for FakeTLS domain fronting. Clients will see TLS to this domain."
 msgstr "Имя хоста для подмены домена по FakeTLS. Клиенты будут видеть TLS-соединение с этим доменом."
 
-#: htdocs/luci-static/resources/view/limcore/client.js:849
-msgid "Test WARP"
-msgstr "Проверить WARP"
-
 #: htdocs/luci-static/resources/view/limcore/client.js:861
 msgid "Testing, this takes about half a minute…"
 msgstr "Проверяю, это занимает около полуминуты…"
-
-#: htdocs/luci-static/resources/view/limcore/client.js:845
-msgid "The current main node (%s) uses the <code>xhttp</code> transport, which carries no UDP — WARP cannot establish its tunnel through it, and enabling WARP will stop proxied traffic. Choose a ws or tcp node."
-msgstr "Текущий основной узел (%s) использует транспорт <code>xhttp</code>, который не передаёт UDP: WARP не сможет построить через него туннель, и при включении WARP проксируемый трафик встанет. Выберите узел с ws или tcp."
 
 #: htdocs/luci-static/resources/view/limcore/client.js:159
 msgid "The modern multi-core proxy platform. Created by l_limon_l."
@@ -2309,22 +2281,6 @@ msgstr "Параметры плагина"
 #: htdocs/luci-static/resources/view/limcore/node.js:1126
 msgid "ShadowTLS transport"
 msgstr "Транспорт ShadowTLS"
-
-#: htdocs/luci-static/resources/view/limcore/client.js:888
-msgid "WARP did not come up through this node."
-msgstr "WARP не поднялся через этот узел."
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js:241
-msgid "WARP through the node"
-msgstr "WARP через узел"
-
-#: htdocs/luci-static/resources/view/limcore/client.js:886
-msgid "WARP works through this node. Exit address: %s"
-msgstr "WARP работает через этот узел. Адрес на выходе: %s"
-
-#: htdocs/luci-static/resources/view/limcore/client.js:801
-msgid "What goes through WARP"
-msgstr "Что идёт через WARP"
 
 #: htdocs/luci-static/resources/view/limcore/server.js:291
 msgid "Worker pool size. Leave empty for default."
@@ -4879,3 +4835,4 @@ msgstr "Обновить LimCore"
 
 msgid "Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases."
 msgstr "Автоматическое обновление приложения LimCore LuCI, переводов и скриптов с GitHub."
+
