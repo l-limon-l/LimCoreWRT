@@ -882,16 +882,23 @@ const callNodesProbeStatus = rpc.declare({
 	expect: { '': {} }
 });
 
-/* Cells are addressed by id rather than re-rendered through the form, because the nodes
- * are spread over several tabs (own nodes, then one tab per subscription) and a sweep
- * covers all of them at once. Writing straight into the cells fills in the tabs the user
- * is not looking at too, so switching to one afterwards shows results already there. */
-function delayCellId(section_id) {
-	return 'limcore-node-delay-' + section_id;
+/* Cells are written into directly rather than re-rendered through the form, because the
+ * nodes are spread over several tabs (own nodes, then one tab per subscription) and a
+ * sweep covers all of them at once. Writing straight into the cells fills in the tabs the
+ * user is not looking at too, so switching to one afterwards shows results already there.
+ *
+ * Addressed by the row's data-sid and the cell's data-name, both of which the table
+ * already carries. An id placed on a <span> returned from cfgvalue() looked like the
+ * obvious handle and silently never worked: a GridSection renders its rows through
+ * textvalue(), which stringifies whatever cfgvalue() returns, so the element never
+ * reached the DOM and every lookup for it came back empty. The sweep ran, reported all
+ * twelve nodes, and left the column blank. */
+function delayCell(section_id) {
+	return document.querySelector('tr[data-sid="%s"] [data-name="_delay"]'.format(section_id));
 }
 
 function paintDelay(section_id, delay) {
-	const el = document.getElementById(delayCellId(section_id));
+	const el = delayCell(section_id);
 	if (!el)
 		return;
 
@@ -912,7 +919,7 @@ function paintDelay(section_id, delay) {
 function runNodeSweep(msgEl) {
 	const sections = uci.sections('limcore', 'node');
 	for (const sec of sections) {
-		const el = document.getElementById(delayCellId(sec['.name']));
+		const el = delayCell(sec['.name']);
 		if (el) {
 			el.textContent = '…';
 			el.style.color = '';
@@ -997,8 +1004,9 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	 * someone reads it, and a stale green number invites switching to a dead node. */
 	o = s.option(form.DummyValue, '_delay', _('Delay'));
 	o.modalonly = false;
+	/* A plain string, because the grid stringifies this anyway. */
 	o.cfgvalue = function(section_id) {
-		return E('span', { 'id': delayCellId(section_id) }, '–');
+		return '–';
 	};
 
 	o = s.option(form.ListValue, 'type', _('Type'));
