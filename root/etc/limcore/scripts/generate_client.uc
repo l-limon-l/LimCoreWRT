@@ -747,10 +747,22 @@ if (!isEmpty(main_node)) {
 		/* ByeDPI and Zapret both egress direct (not a tunnel), so secure-dns must go
 		 * direct too — a DoH/DoT query can't ride a desync. */
 		const secure_dns_detour = (main_node === 'byedpi-out' || main_node === 'zapret-out') ? 'direct-out' : 'main-out';
+		/* A DoH/DoT address here is named, not numeric, and something has to resolve that
+		 * name before this server can answer anything — russia-dns is dns.final, so leaving
+		 * it to resolve itself is a loop that ends with no DNS at all. Bootstrap it off the
+		 * ISP's resolver, the same shape secure-dns already uses to bootstrap off russia-dns.
+		 * A plain IP needs none of this, so the field only appears for a hostname. */
+		const russia_dns = parse_dnsserver(russia_dns_server);
+		const russia_dns_named = russia_dns && russia_dns.server &&
+			!validation('ip4addr', russia_dns.server) && !validation('ip6addr', russia_dns.server);
 		push(config.dns.servers, {
 			tag: 'russia-dns',
+			domain_resolver: russia_dns_named ? {
+				server: 'default-dns',
+				strategy: (ipv6_support !== '1') ? 'ipv4_only' : null
+			} : null,
 			detour: self_mark ? 'direct-out' : null,
-			...parse_dnsserver(russia_dns_server)
+			...russia_dns
 		});
 		push(config.dns.servers, {
 			tag: 'secure-dns',

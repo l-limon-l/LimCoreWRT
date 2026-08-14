@@ -398,10 +398,11 @@ return view.extend({
 		   network makes, and can answer anything it likes for any name. Worth pointing only
 		   at an operator you are willing to trust with that. */
 		o = s.taboption('routing', form.Value, 'russia_dns_server', _('Russia DNS server') + ' 🔓',
-			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Xbox DNS, Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. Note that this server sees every direct lookup on your network.'));
+			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Xbox DNS, Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. Prefer the encrypted (DoH/DoT) entry where one exists: the plain form travels in the open, where the ISP can read it and substitute answers. Note that whichever server you pick sees every direct lookup on your network.'));
 		o.value('77.88.8.8', _('Yandex DNS (77.88.8.8)'));
-		o.value('111.88.96.50', _('Xbox DNS — unblocks AI services (111.88.96.50)'));
-		o.value('111.88.96.51', _('Xbox DNS, secondary (111.88.96.51)'));
+		o.value('https://xbox-dns.ru/dns-query', _('Xbox DNS — unblocks AI services, DoH (encrypted)'));
+		o.value('tls://xbox-dns.ru', _('Xbox DNS — unblocks AI services, DoT (encrypted)'));
+		o.value('111.88.96.50', _('Xbox DNS, plain (111.88.96.50)'));
 		o.value('193.58.251.251', _('SkyDNS (193.58.251.251)'));
 		o.value('83.220.169.155', _('Comss.one (83.220.169.155)'));
 		o.value('1.1.1.1', _('Cloudflare DNS UDP (1.1.1.1)'));
@@ -409,8 +410,20 @@ return view.extend({
 		o.depends('routing_mode', 'proxy_banned_ru');
 		o.default = '77.88.8.8';
 		o.rmempty = false;
+		/* Same shapes the generator accepts: a bare IP, or a URL naming the protocol.
+		   Listing only one address per operator is not an omission — a sing-box DNS server
+		   carries exactly one address and does not fail over between servers, so a second
+		   entry would be a choice, never a backup. The encrypted forms are the way to get
+		   both addresses at once: the hostname resolves to every address the operator runs,
+		   and the query is hidden from the ISP on top. */
 		o.validate = function(section_id, value) {
 			if (section_id && value) {
+				const url = value.match(/^(https|tls|quic|h3|udp|tcp):\/\/(.+)$/);
+				if (url) {
+					if (!url[2].replace(/\/.*$/, '').length)
+						return _('Expecting: %s').format(_('valid DNS server address'));
+					return true;
+				}
 				if (!stubValidator.apply('ip4addr', value) && !stubValidator.apply('ip6addr', value))
 					return _('Expecting: %s').format(_('valid DNS server address'));
 			}
