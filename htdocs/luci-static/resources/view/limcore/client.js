@@ -386,9 +386,22 @@ return view.extend({
 			return true;
 		}
 
+		/* This resolver answers for everything the routing mode sends direct, which makes it
+		   more than a speed choice: an unblocking ("smart") DNS returns its own proxy's
+		   addresses for the services it covers, so those services work without the tunnel at
+		   all — on every device in the LAN, phones included, and without the proxy's speed
+		   cost. That is how Gemini and Antigravity are usually made to work from a Russian
+		   address, since Google decides those by account and location rather than by the
+		   address the request came from, and a proxy alone does not settle it.
+
+		   The trade-off belongs next to the choice: this server sees every direct lookup the
+		   network makes, and can answer anything it likes for any name. Worth pointing only
+		   at an operator you are willing to trust with that. */
 		o = s.taboption('routing', form.Value, 'russia_dns_server', _('Russia DNS server') + ' 🔓',
-			_('Resolves Russian domains directly, without going through the proxy.'));
+			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Xbox DNS, Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. Note that this server sees every direct lookup on your network.'));
 		o.value('77.88.8.8', _('Yandex DNS (77.88.8.8)'));
+		o.value('111.88.96.50', _('Xbox DNS — unblocks AI services (111.88.96.50)'));
+		o.value('111.88.96.51', _('Xbox DNS, secondary (111.88.96.51)'));
 		o.value('193.58.251.251', _('SkyDNS (193.58.251.251)'));
 		o.value('83.220.169.155', _('Comss.one (83.220.169.155)'));
 		o.value('1.1.1.1', _('Cloudflare DNS UDP (1.1.1.1)'));
