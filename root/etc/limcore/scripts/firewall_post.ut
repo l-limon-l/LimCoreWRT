@@ -341,6 +341,21 @@ chain limcore_redirect {
 	meta mark and {{ zapret_desync_mark }} != 0 counter return
 	{% endif /* zapret_enabled */ %}
 
+	{# Never proxy traffic addressed to the router itself. The limcore_local_addr_v4 set
+	   below holds only reserved ranges, so it does not cover the router's own PUBLIC
+	   address; and limcore_redirect_lanac emits its iifname guard only when listen
+	   interfaces are configured, so with that setting empty a WAN-inbound connection
+	   reaches this chain. Those two gaps together formed a self-amplifying loop: a
+	   connection to <wan-addr>:5222 matched the port-based "proxy calls" rule, left
+	   through the proxy, and the proxy server dutifully connected back to <wan-addr>:5222
+	   — which arrived on WAN, was redirected here again, and repeated. Measured on a live
+	   router: 769 simultaneous connections, 45% of the entire conntrack table, every one
+	   of them riding the tunnel and starving Discord's screen share (error 2012).
+	   `fib daddr type local` matches any address belonging to this host whatever the
+	   interface, and keeps matching when the WAN address changes — neither of which a
+	   static address set can do. #}
+	fib daddr type local counter return
+
 	ip daddr @limcore_wan_proxy_addr_v4 counter goto limcore_redirect_proxy_port
 	{% if (ipv6_support === '1'): %}
 	ip6 daddr @limcore_wan_proxy_addr_v6 counter goto limcore_redirect_proxy_port
@@ -471,6 +486,11 @@ chain limcore_mangle_lanac {
 }
 
 chain limcore_mangle_prerouting {
+	{# Same guard as limcore_redirect, for the UDP side: the router's own addresses must
+	   never be tproxied, or the call-port rules can bounce traffic back through the
+	   tunnel to this host and loop. #}
+	fib daddr type local counter return
+
 	ip daddr @limcore_wan_proxy_addr_v4 counter goto limcore_mangle_tproxy_port
 	{% if (ipv6_support === '1'): %}
 	ip6 daddr @limcore_wan_proxy_addr_v6 counter goto limcore_mangle_tproxy_port
