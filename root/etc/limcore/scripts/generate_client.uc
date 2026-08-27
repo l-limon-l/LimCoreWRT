@@ -67,30 +67,6 @@ const REGION = {
 	}
 };
 const MODE_REGION = { bypass_cn: 'cn', bypass_ir: 'ir' };
-
-/* Service lists with no upstream .srs — shipped inline instead of downloaded.
- * itdoginfo/allow-domains publishes no Spotify list, and Re:filter carries the
- * spotify.com suffix but none of the CDNs around it, which is enough to play
- * audio and not enough for anything else: covers came up blank, and Discord's
- * "Listening to Spotify" card took one update at startup and then froze on it.
- *
- * Matched as keywords, not suffixes, on purpose. These CDNs name themselves
- * awkwardly — audio4-ak-spotify-com.akamaized.net, spotify.com.edgesuite.net,
- * pscdn.co — and a keyword covers each family in one line where a suffix list
- * would need every variant spelled out and would still miss the next one.
- * Verified on a live router: with these seven, covers load and the Discord card
- * follows track changes; without them it does neither. */
-const LOCAL_SOURCES = {
-	spotify: [
-		'scdn.co',			/* i.scdn.co (cover art), pscdn.co, *.scdn.co */
-		'spotifycdn.com',
-		'spotifycdn.net',
-		'spotify.com',			/* also spotify.com.edgesuite.net, byspotify.com */
-		'spotify-com.akamaized.net',	/* audio-ak-, audio4-ak-, heads-ak-, heads4-ak- */
-		'spotify.map.fastly',		/* .net and .fastlylb.net */
-		'spoti.fi'
-	]
-};
 function is_bypass_mode(m) { return m in ['bypass_cn', 'bypass_ir']; }
 function is_selective_mode(m) { return m === 'proxy_banned_ru' || is_bypass_mode(m); }
 function region_of(m) { return MODE_REGION[m]; }
@@ -1748,13 +1724,6 @@ if (!isEmpty(main_node)) {
 						url: 'https://github.com/1andrevich/Re-filter-lists/releases/latest/download/ruleset-ip-refilter_ipsum.srs',
 						download_detour: ruleset_detour,
 						update_interval: '1d'
-					});
-			} else if (LOCAL_SOURCES[cfg.source]) {
-				if (!has_ruleset('hp-ru-' + cfg.source))
-					push(config.route.rule_set, {
-						type: 'inline',
-						tag: 'hp-ru-' + cfg.source,
-						rules: [ { domain_keyword: LOCAL_SOURCES[cfg.source] } ]
 					});
 			} else {
 				if (!has_ruleset('hp-ru-' + cfg.source))
