@@ -850,6 +850,7 @@ return view.extend({
 		so.value('twitter', _('Twitter/X'));
 		so.value('tiktok', _('TikTok'));
 		so.value('telegram', _('Telegram'));
+		so.value('spotify', _('Spotify'));
 		so.value('roblox', _('Roblox'));
 		so.value('porn', _('Adult content'));
 		so.value('ovh', _('OVH (France cloud hosting)'));

@@ -1601,6 +1601,23 @@ if (!isEmpty(main_node)) {
 			});
 		}
 
+		/* Spotify pushes player-state changes over QUIC to its accesspoint block. Through
+		 * tproxy those UDP connections are torn down and re-created constantly, so Discord
+		 * gets one "now playing" and never an update: the presence sticks on a single track
+		 * until its duration runs out, then vanishes. Rejecting UDP to that block makes the
+		 * client fall back to TLS/TCP, which survives the tunnel. Must come before the
+		 * custom proxy list and the per-source route rules, or they'd claim the QUIC first. */
+		let spotify_rule_on = false;
+		uci.foreach(uciconfig, ucirurule, (cfg) => {
+			if (cfg.enabled === '1' && cfg.source === 'spotify') spotify_rule_on = true;
+		});
+		if (spotify_rule_on)
+			push(config.route.rules, {
+				network: 'udp',
+				rule_set: 'hp-ru-spotify-ip',
+				action: 'reject'
+			});
+
 		/* andrevi.ch always via proxy (hardcoded diagnostic anchor) */
 		push(config.route.rules, {
 			domain: ['andrevi.ch'],
@@ -1697,6 +1714,8 @@ if (!isEmpty(main_node)) {
 			/* Routing rules */
 			const rule_sets = (cfg.source === 'refilter')
 				? ['hp-ru-refilter-domain', 'hp-ru-refilter-ip']
+				: (cfg.source === 'spotify')
+				? ['hp-ru-spotify', 'hp-ru-spotify-ip']
 				: ['hp-ru-' + cfg.source];
 			push(config.route.rules, {
 				rule_set: rule_sets,
@@ -1722,6 +1741,26 @@ if (!isEmpty(main_node)) {
 						tag: 'hp-ru-refilter-ip',
 						format: 'binary',
 						url: 'https://github.com/1andrevich/Re-filter-lists/releases/latest/download/ruleset-ip-refilter_ipsum.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
+			} else if (cfg.source === 'spotify') {
+				/* itdoginfo ships no spotify.srs, so this pair comes from our own repo. */
+				if (!has_ruleset('hp-ru-spotify'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'hp-ru-spotify',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/spotify.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
+				if (!has_ruleset('hp-ru-spotify-ip'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'hp-ru-spotify-ip',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/spotify_ip.srs',
 						download_detour: ruleset_detour,
 						update_interval: '1d'
 					});
