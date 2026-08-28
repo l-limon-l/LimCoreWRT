@@ -859,6 +859,7 @@ return view.extend({
 		so.value('google_play', _('Google Play'));
 		so.value('geoblock', _('GeoBlock services'));
 		so.value('anime', _('Anime streaming'));
+		so.value('ai', _('AI services (ChatGPT, Claude)'));
 		so.value('cloudflare', _('Cloudflare CDN'));
 		so.value('cloudfront', _('CloudFront CDN'));
 		so.value('discord', _('Discord'));

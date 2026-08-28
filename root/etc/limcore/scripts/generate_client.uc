@@ -1742,6 +1742,8 @@ if (!isEmpty(main_node)) {
 				? ['hp-ru-refilter-domain', 'hp-ru-refilter-ip']
 				: (cfg.source === 'spotify')
 				? ['hp-ru-spotify', 'hp-ru-spotify-ip']
+				: (cfg.source === 'ai')
+				? ['hp-ru-ai', 'hp-ru-ai-ip']
 				: ['hp-ru-' + cfg.source];
 			push(config.route.rules, {
 				rule_set: rule_sets,
@@ -1787,6 +1789,30 @@ if (!isEmpty(main_node)) {
 						tag: 'hp-ru-spotify-ip',
 						format: 'binary',
 						url: 'https://github.com/l-limon-l/routing/releases/latest/download/spotify_ip.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
+			} else if (cfg.source === 'ai') {
+				/* Google's AI stack is itdoginfo's google_ai.srs; this pair is the rest of it
+				 * — ChatGPT and Claude. Re-filter carries no Anthropic domain at all, so
+				 * both sets come from our own repo. The IP half is Anthropic's own space,
+				 * which puts api.anthropic.com (Claude Code) through the proxy even when the
+				 * client skips DNS. */
+				if (!has_ruleset('hp-ru-ai'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'hp-ru-ai',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/ai.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
+				if (!has_ruleset('hp-ru-ai-ip'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'hp-ru-ai-ip',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/ai_ip.srs',
 						download_detour: ruleset_detour,
 						update_interval: '1d'
 					});
