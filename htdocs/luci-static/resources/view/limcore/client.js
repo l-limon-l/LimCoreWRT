@@ -398,7 +398,8 @@ return view.extend({
 		   network makes, and can answer anything it likes for any name. Worth pointing only
 		   at an operator you are willing to trust with that. */
 		o = s.taboption('routing', form.Value, 'russia_dns_server', _('Russia DNS server') + ' 🔓',
-			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. An encrypted address can be typed in as well (https:// for DoH, tls:// for DoT), which the plain entries are not. Note that whichever server you pick sees every direct lookup on your network.'));
+			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. WAN DNS hands this to whatever resolver the ISP handed the router — closest, fastest, and right about domestic CDNs, at the cost of the ISP seeing and being able to answer for every direct name. An encrypted address can be typed in as well (https:// for DoH, tls:// for DoT), which the plain entries are not. Note that whichever server you pick sees every direct lookup on your network.'));
+		o.value('wan', _('WAN DNS — the ISP resolver, read from the interface'));
 		o.value('77.88.8.8', _('Yandex DNS (77.88.8.8)'));
 		o.value('193.58.251.251', _('SkyDNS (193.58.251.251)'));
 		o.value('83.220.169.155', _('Comss.one (83.220.169.155)'));
@@ -414,7 +415,7 @@ return view.extend({
 		   both addresses at once: the hostname resolves to every address the operator runs,
 		   and the query is hidden from the ISP on top. */
 		o.validate = function(section_id, value) {
-			if (section_id && value) {
+			if (section_id && value && value !== 'wan') {
 				const url = value.match(/^(https|tls|quic|h3|udp|tcp):\/\/(.+)$/);
 				if (url) {
 					if (!url[2].replace(/\/.*$/, '').length)

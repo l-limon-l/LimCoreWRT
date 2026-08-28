@@ -134,8 +134,16 @@ if (routing_mode !== 'custom') {
 		no_proxy_torrents = uci.get(uciconfig, ucimain, 'no_proxy_torrents');
 		show_advanced_rules = uci.get(uciconfig, ucimain, 'show_advanced_rules');
 	}
-	if (routing_mode === 'proxy_banned_ru')
-		russia_dns_server = uci.get(uciconfig, ucimain, 'russia_dns_server') || '77.88.8.8';
+	/* Direct-traffic resolver. 'wan' means the resolver the ISP handed the router: closest
+	 * hop, and the one that answers domestic CDNs correctly. Empty falls back to the
+	 * long-standing default rather than to WAN, so an existing install keeps its behaviour. */
+	if (routing_mode === 'proxy_banned_ru') {
+		russia_dns_server = uci.get(uciconfig, ucimain, 'russia_dns_server');
+		if (isEmpty(russia_dns_server) || type(russia_dns_server) !== 'string')
+			russia_dns_server = '77.88.8.8';
+		else if (russia_dns_server === 'wan')
+			russia_dns_server = wan_dns;
+	}
 
 	dns_default_strategy = (ipv6_support !== '1') ? 'ipv4_only' : null;
 
