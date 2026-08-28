@@ -782,6 +782,16 @@ if (!isEmpty(main_node)) {
 			server: 'secure-dns'
 		});
 
+		/* Custom direct list → russia-dns. The route rules send these domains direct, so
+		 * resolving them over DoH-through-the-tunnel would hand the client a CDN edge picked
+		 * for the exit country and answer from an address the connection never uses. */
+		if (length(direct_domain_list))
+			push(config.dns.rules, {
+				rule_set: 'direct-domain',
+				action: 'route',
+				server: 'russia-dns'
+			});
+
 		/* Custom proxy list → secure-dns (before ru_domain_rulesets for explicit priority) */
 		if (length(proxy_domain_list))
 			push(config.dns.rules, {
@@ -1462,8 +1472,16 @@ if (!isEmpty(main_node)) {
 		strategy: (ipv6_support !== '1') ? 'prefer_ipv4' : null
 	};
 
-	/* Direct list (not needed in proxy_banned_ru — direct is the default) */
-	if (length(direct_domain_list) && routing_mode !== 'proxy_banned_ru')
+	/* Direct list — first rule, so it outranks every proxy decision below.
+	 * It used to be skipped in proxy_banned_ru on the grounds that direct is already the
+	 * default there. It isn't, once a rule source matches by IP: the CDN sources
+	 * (cloudflare, cloudfront) cover whole address blocks, so a service hosted on them is
+	 * proxied whatever its domain says, and the interface offered an exclusion list that
+	 * quietly did nothing. Epic Games is the case that surfaced it — its account service
+	 * sits on Akamai and went direct while the launcher and the Talon anti-bot check sat on
+	 * Cloudflare and went through Finland. One session from two countries: the launcher
+	 * could only offer offline mode. */
+	if (length(direct_domain_list))
 		push(config.route.rules, {
 			rule_set: 'direct-domain',
 			action: 'route',
@@ -1484,7 +1502,7 @@ if (!isEmpty(main_node)) {
 
 	/* Rule set */
 	/* Direct list */
-	if (length(direct_domain_list) && routing_mode !== 'proxy_banned_ru')
+	if (length(direct_domain_list))
 		push(config.route.rule_set, {
 			type: 'inline',
 			tag: 'direct-domain',
