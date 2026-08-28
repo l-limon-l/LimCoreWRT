@@ -398,15 +398,10 @@ return view.extend({
 		   network makes, and can answer anything it likes for any name. Worth pointing only
 		   at an operator you are willing to trust with that. */
 		o = s.taboption('routing', form.Value, 'russia_dns_server', _('Russia DNS server') + ' 🔓',
-			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Xbox DNS, Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. Prefer the encrypted (DoH/DoT) entry where one exists: the plain form travels in the open, where the ISP can read it and substitute answers. Note that whichever server you pick sees every direct lookup on your network.'));
+			_('Resolves domains that go direct, without the proxy. An unblocking DNS here (Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. An encrypted address can be typed in as well (https:// for DoH, tls:// for DoT), which the plain entries are not. Note that whichever server you pick sees every direct lookup on your network.'));
 		o.value('77.88.8.8', _('Yandex DNS (77.88.8.8)'));
-		o.value('https://xbox-dns.ru/dns-query', _('Xbox DNS — unblocks AI services, DoH (encrypted)'));
-		o.value('tls://xbox-dns.ru', _('Xbox DNS — unblocks AI services, DoT (encrypted)'));
-		o.value('111.88.96.50', _('Xbox DNS, plain (111.88.96.50)'));
 		o.value('193.58.251.251', _('SkyDNS (193.58.251.251)'));
-		o.value('https://dns.comss.one/dns-query', _('Comss.one — unblocks AI services, ads/trackers, DoH (encrypted)'));
-		o.value('tls://dns.comss.one', _('Comss.one — unblocks AI services, ads/trackers, DoT (encrypted)'));
-		o.value('83.220.169.155', _('Comss.one, plain (83.220.169.155)'));
+		o.value('83.220.169.155', _('Comss.one (83.220.169.155)'));
 		o.value('1.1.1.1', _('Cloudflare DNS UDP (1.1.1.1)'));
 		o.value('8.8.8.8', _('Google DNS UDP (8.8.8.8)'));
 		o.depends('routing_mode', 'proxy_banned_ru');
