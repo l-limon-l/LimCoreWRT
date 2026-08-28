@@ -811,7 +811,7 @@ if (!isEmpty(main_node)) {
 		/* Proxy-list domains → secure-dns (Cloudflare DoH via proxy) to prevent DNS leaks */
 		let ru_domain_rulesets = [];
 		uci.foreach(uciconfig, ucirurule, (cfg) => {
-			if (cfg.enabled !== '1') return;
+			if (cfg.enabled !== '1' || isEmpty(cfg.source)) return;
 			const tag = (cfg.source === 'refilter') ? 'hp-ru-refilter-domain' : ('hp-ru-' + cfg.source);
 			if (index(ru_domain_rulesets, tag) < 0)
 				push(ru_domain_rulesets, tag);
@@ -1663,7 +1663,11 @@ if (!isEmpty(main_node)) {
 		 * Priority order: specific services first → russia-inside → refilter (largest list last) */
 		const ru_source_priority = (s) => s === 'refilter' ? 2 : s === 'russia-inside' ? 1 : 0;
 		let ru_rules = [];
-		uci.foreach(uciconfig, ucirurule, (cfg) => { if (cfg.enabled === '1') push(ru_rules, cfg); });
+		/* A rule with no source is a leftover the UI staged and never filled in. Skipping it
+		 * here keeps a stale section from resolving to an 'hp-ru-' tag with nothing after it. */
+		uci.foreach(uciconfig, ucirurule, (cfg) => {
+			if (cfg.enabled === '1' && !isEmpty(cfg.source)) push(ru_rules, cfg);
+		});
 		ru_rules = sort(ru_rules, (a, b) => ru_source_priority(a.source) - ru_source_priority(b.source));
 
 		/* Use direct-out for rule set downloads when the main path isn't startup-safe:

@@ -836,6 +836,13 @@ return view.extend({
 		so.editable = true;
 
 		so = ss.option(form.ListValue, 'source', _('Source') + ' ⤵️');
+		/* "Add" stages a section with no options at all — LuCI writes the changeset before
+		 * anything is filled in — and a section outlives the tab that edits it: switch the
+		 * routing mode away and back and the empty row is still there. Without an empty
+		 * choice the select then shows whatever comes first and saving writes it as if it
+		 * had been picked. First here is Re-filter, so an untouched leftover row quietly
+		 * turned into the heaviest list in the app. */
+		so.value('', _('— not selected —'));
 		/* Russia bulk lists are RU-forward only; CN/IR get geosite/geoip baked into the
 		 * engine baseline, so here they only need per-service overrides. */
 		if (_rmode_rules === 'proxy_banned_ru') {
@@ -867,6 +874,8 @@ return view.extend({
 		so.rmempty = false;
 		so.editable = true;
 		so.validate = function(section_id, value) {
+			if (!value)
+				return _('Pick a service for this rule, or delete the rule');
 			for (const sid of this.section.cfgsections()) {
 				if (sid !== section_id && this.cfgvalue(sid) === value)
 					return _('Duplicate source — only the first rule will take effect');
