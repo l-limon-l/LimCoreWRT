@@ -1820,6 +1820,20 @@ if (!isEmpty(main_node)) {
 						download_detour: ruleset_detour,
 						update_interval: '1d'
 					});
+			} else if (cfg.source === 'google_ai') {
+				/* itdoginfo's google_ai.lst opens Antigravity but not the Cloud AI Companion
+				 * backend the agent calls, nor ogs.google.com, which decides whether Gemini
+				 * shows up in Google's app grid. Our repo rebuilds their list on every CI run
+				 * and merges those in, so this set is theirs plus what it was missing. */
+				if (!has_ruleset('hp-ru-google_ai'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'hp-ru-google_ai',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/google_ai.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
 			} else {
 				if (!has_ruleset('hp-ru-' + cfg.source))
 					push(config.route.rule_set, {
