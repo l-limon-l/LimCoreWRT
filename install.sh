@@ -130,6 +130,24 @@ case "$REPLY" in
 		info "  ставлю русский язык LuCI..."
 		# базовый перевод интерфейса LuCI (из фида, best-effort)
 		if [ "$PM" = apk ]; then apk add luci-i18n-base-ru >/dev/null 2>&1; else opkg install luci-i18n-base-ru >/dev/null 2>&1; fi
+		# Переводы страниц, которые LuCI держит отдельными пакетами. Без них русским
+		# оказывается только LimCore: базовый пакет не покрывает Software, Attended
+		# Sysupgrade и межсетевой экран, и половина панели остаётся английской.
+		# Берём по установленным luci-app-*, отсутствующие переводы просто пропускаем.
+		if [ "$PM" = apk ]; then
+			LUCI_APPS=$(apk list -I 2>/dev/null | sed -n 's/^\(luci-app-[a-z0-9-]*\)-[0-9~].*/\1/p' | sort -u)
+		else
+			LUCI_APPS=$(opkg list-installed 2>/dev/null | sed -n 's/^\(luci-app-[a-z0-9-]*\) .*/\1/p' | sort -u)
+		fi
+		LANG_N=0
+		for LUCI_APP in $LUCI_APPS; do
+			# перевод самого LimCore приезжает ниже из его релиза, не из фида
+			[ "$LUCI_APP" = luci-app-limcore ] && continue
+			LANG_PKG="luci-i18n-${LUCI_APP#luci-app-}-ru"
+			if [ "$PM" = apk ]; then apk add "$LANG_PKG" >/dev/null 2>&1; else opkg install "$LANG_PKG" >/dev/null 2>&1; fi
+			[ $? -eq 0 ] && LANG_N=$((LANG_N + 1))
+		done
+		[ "$LANG_N" -gt 0 ] && info "  переведено страниц LuCI: $LANG_N"
 		# перевод самого приложения (из релиза limcore)
 		# из того же релиза, что и приложение — иначе перевод разъедется с версией
 		LURL=$(printf '%s\n' "$RELJSON" \
