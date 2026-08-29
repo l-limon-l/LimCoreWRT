@@ -2622,7 +2622,7 @@ msgstr "Свободно overlay"
 
 #: htdocs/luci-static/resources/view/limcore/status.js
 msgid "none detected"
-msgstr "не обнаружен"
+msgstr "не обнаружено"
 
 #: htdocs/luci-static/resources/view/limcore/status.js
 msgid "Not installed"
@@ -2801,7 +2801,7 @@ msgstr "Salamander"
 
 #: htdocs/luci-static/resources/view/limcore/client.js:152
 msgid "Same as main node"
-msgstr "То же что и основной узел"
+msgstr "Как основной узел"
 
 #: htdocs/luci-static/resources/view/limcore/status.js:267
 #: htdocs/luci-static/resources/view/limcore/status.js:273
@@ -3443,7 +3443,7 @@ msgstr "Время истечения UDP NAT"
 
 #: htdocs/luci-static/resources/view/limcore/node.js:1171
 msgid "UDP over TCP"
-msgstr "UDP over TCP"
+msgstr "UDP через TCP"
 
 #: htdocs/luci-static/resources/view/limcore/node.js:716
 msgid "UDP over stream"
@@ -3718,7 +3718,7 @@ msgstr "packet addr (v2ray-core v5+)"
 
 #: htdocs/luci-static/resources/view/limcore/status.js:50
 msgid "passed"
-msgstr "пройдено"
+msgstr "выполнено"
 
 #: htdocs/luci-static/resources/view/limcore/server.js:791
 msgid "private key"
@@ -3824,10 +3824,6 @@ msgstr "IP провайдера"
 #: htdocs/luci-static/resources/view/limcore/status.js
 msgid "Proxy IP"
 msgstr "IP прокси"
-
-#: htdocs/luci-static/resources/view/limcore/status.js
-msgid "Node"
-msgstr "Узел"
 
 #: htdocs/luci-static/resources/view/limcore/status.js
 msgid "No data"
@@ -4018,10 +4014,6 @@ msgid "DigitalOcean cloud hosting"
 msgstr "DigitalOcean (облачный хостинг)"
 
 #: htdocs/luci-static/resources/view/limcore/client.js
-msgid "Same as main node"
-msgstr "Как основной узел"
-
-#: htdocs/luci-static/resources/view/limcore/client.js
 msgid "Advanced custom rules"
 msgstr "Расширенные правила"
 
@@ -4070,10 +4062,6 @@ msgid "RPC error"
 msgstr "Ошибка RPC"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
-msgid "none detected"
-msgstr "не обнаружено"
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Hiddify-core"
 msgstr "Hiddify-core"
 
@@ -4116,10 +4104,6 @@ msgstr "Служба перезапущена"
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Restart failed"
 msgstr "Ошибка перезапуска"
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js
-msgid "Check"
-msgstr "Проверить"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Restart Service"
@@ -4179,10 +4163,6 @@ msgstr "Российский DNS"
 
 msgid "DNS (direct)"
 msgstr "DNS (прямой)"
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js
-msgid "Server"
-msgstr "Сервер"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Status"
@@ -4337,20 +4317,12 @@ msgid "Collecting diagnostics — this may take a few seconds…"
 msgstr "Сбор диагностики — это может занять несколько секунд…"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
-msgid "Generate"
-msgstr "Сформировать"
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Copy"
 msgstr "Копировать"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Sensitive values (passwords, keys, UUIDs) are redacted."
 msgstr "Чувствительные данные (пароли, ключи, UUID) скрыты."
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js
-msgid "Testing…"
-msgstr "Тестирование…"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "(empty)"
@@ -4371,10 +4343,6 @@ msgstr "Разрешено через прокси"
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "No answer — check proxy and proxy list"
 msgstr "Нет ответа — проверьте прокси и список проксируемых доменов"
-
-#: htdocs/luci-static/resources/view/limcore/diagnostics.js
-msgid "Bootstrap"
-msgstr "Бутстрап"
 
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "OK"
@@ -4444,10 +4412,6 @@ msgstr "Бесплатный способ разблокировать заме�
 #: htdocs/luci-static/resources/view/limcore/client.js
 msgid "ByeDPI (local DPI bypass)"
 msgstr "ByeDPI (локальный обход DPI)"
-
-#: htdocs/luci-static/resources/view/limcore/client.js
-msgid "UDP over TCP"
-msgstr "UDP через TCP"
 
 #: htdocs/luci-static/resources/view/limcore/client.js
 msgid "Wrap UDP traffic in TCP when routing to ciadpi."
@@ -4542,10 +4506,6 @@ msgid "Test failed"
 msgstr "Проверка не пройдена"
 
 #: htdocs/luci-static/resources/view/limcore/client.js
-msgid "Test"
-msgstr "Проверить"
-
-#: htdocs/luci-static/resources/view/limcore/client.js
 msgid "Test all strategies"
 msgstr "Проверить все стратегии"
 
@@ -4564,10 +4524,6 @@ msgstr "Подготовка..."
 #: htdocs/luci-static/resources/view/limcore/client.js
 msgid "Done"
 msgstr "Готово"
-
-#: htdocs/luci-static/resources/view/limcore/client.js
-msgid "passed"
-msgstr "успешно"
 
 #: htdocs/luci-static/resources/view/limcore/client.js
 msgid "click Apply next to any working strategy"
@@ -4836,3 +4792,138 @@ msgstr "Обновить LimCore"
 msgid "Automated one-click updater for LimCore LuCI application, translations, and core scripts from GitHub releases."
 msgstr "Автоматическое обновление приложения LimCore LuCI, переводов и скриптов с GitHub."
 
+#: htdocs/luci-static/resources/view/limcore/client.js:1136 htdocs/luci-static/resources/view/limcore/client.js:1658
+msgid "The default rule uses the following matching logic:<br/>"
+msgstr "Правило по умолчанию использует следующую логику сопоставления:<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1373 htdocs/luci-static/resources/view/limcore/client.js:1491
+msgid "Append a <code>edns0-subnet</code> OPT extra record with the specified IP prefix to every query by default.<br/>"
+msgstr "По умолчанию добавлять к каждому запросу дополнительную запись OPT <code>edns0-subnet</code> с указанным префиксом IP.<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:1496
+msgid "Store rejected DNS response cache.<br/>"
+msgstr "Хранить кэш отклонённых DNS-ответов.<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:401
+msgid "Resolves domains that go direct, without the proxy. An unblocking DNS here (Comss) also makes services that refuse Russian addresses work — on every device, without the tunnel. WAN DNS hands this to whatever resolver the ISP handed the router — closest, fastest, and right about domestic CDNs, at the cost of the ISP seeing and being able to answer for every direct name. An encrypted address can be typed in as well (https:// for DoH, tls:// for DoT), which the plain entries are not. Note that whichever server you pick sees every direct lookup on your network."
+msgstr "Разрешает домены, которые идут напрямую, минуя прокси. Разблокирующий DNS (Comss) здесь заодно заставляет работать сервисы, отказывающие российским адресам, — на всех устройствах и без туннеля. WAN DNS передаёт это тому резолверу, который выдал роутеру провайдер: он ближе всех, быстрее всех и правильно отвечает про домашние CDN — ценой того, что провайдер видит каждое прямое имя и может на него ответить. Можно вписать и зашифрованный адрес (https:// для DoH, tls:// для DoT) — обычные записи в списке таковыми не являются. Учтите: какой бы сервер вы ни выбрали, он видит все прямые запросы в вашей сети."
+
+#: htdocs/luci-static/resources/view/limcore/client.js:402
+msgid "WAN DNS — the ISP resolver, read from the interface"
+msgstr "WAN DNS — резолвер провайдера, взятый с интерфейса"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:639
+msgid "A free way to unblock throttled sites (e.g. YouTube) without a VPN subscription. "
+msgstr "Бесплатный способ открыть замедленные сайты (например, YouTube) без подписки на VPN. "
+
+#: htdocs/luci-static/resources/view/limcore/client.js:722
+msgid "An alternative to ByeDPI: another free way to unblock throttled or blocked sites (YouTube, Discord…) without a VPN subscription. "
+msgstr "Альтернатива ByeDPI: ещё один бесплатный способ открыть замедленные или заблокированные сайты (YouTube, Discord…) без подписки на VPN. "
+
+#: htdocs/luci-static/resources/view/limcore/client.js:845
+msgid "— not selected —"
+msgstr "— не выбрано —"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:869
+msgid "AI services (ChatGPT, Claude)"
+msgstr "ИИ-сервисы (ChatGPT, Claude)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js:878
+msgid "Pick a service for this rule, or delete the rule"
+msgstr "Выберите сервис для этого правила или удалите правило"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1005
+msgid "Delay"
+msgstr "Задержка"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1368 htdocs/luci-static/resources/view/limcore/server.js:419
+msgid "Enable 0-RTT QUIC connection handshake on the client side. This is not impacting much on the performance, as the protocol is fully multiplexed.<br/>"
+msgstr "Включить рукопожатие QUIC-соединения 0-RTT на стороне клиента. На скорость влияет мало, так как протокол полностью мультиплексирован.<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1389
+msgid "Post-quantum VLESS encryption (ML-KEM), as issued by the server. "
+msgstr "Постквантовое шифрование VLESS (ML-KEM) в том виде, в каком его выдал сервер. "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1463 htdocs/luci-static/resources/view/limcore/node.js:1517
+msgid "Specifies the period of time (in seconds) after which a health check will be performed using a ping frame if no frames have been received on the connection.<br/>"
+msgstr "Задаёт промежуток времени (в секундах), после которого выполняется проверка связи ping-кадром, если по соединению не приходило ни одного кадра.<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1467 htdocs/luci-static/resources/view/limcore/node.js:1525
+msgid "Specifies the timeout duration (in seconds) after sending a PING frame, within which a response must be received.<br/>"
+msgstr "Задаёт время ожидания (в секундах) после отправки кадра PING, в течение которого должен прийти ответ.<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:1830
+msgid "Maximum multiplexed streams in a connection before opening a new connection.<br/>"
+msgstr "Максимальное число мультиплексированных потоков в соединении, прежде чем будет открыто новое соединение.<br/>"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2607
+msgid "Starts ByeDPI with the current options on a temporary port and probes 4 sites — "
+msgstr "Запускает ByeDPI с текущими параметрами на временном порту и проверяет 4 сайта — "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2784
+msgid "Probes each preset against 4 sites (YouTube video CDN, Telegram, Discord, Speedtest). "
+msgstr "Проверяет каждый набор настроек на 4 сайтах (видео-CDN YouTube, Telegram, Discord, Speedtest). "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2813
+msgid "This nftables rule drops all outgoing UDP port 443 packets to external addresses, "
+msgstr "Это правило nftables отбрасывает все исходящие пакеты UDP на порт 443 к внешним адресам, "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2921
+msgid "Fills the strategy below. Use the tester to find one that works on your ISP. "
+msgstr "Заполняет стратегию ниже. Найдите подходящую для вашего провайдера с помощью проверки. "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2930
+msgid "nfqws2 options applied to every flow routed to Zapret. No hostlists — the routing rules already select what is sent here. "
+msgstr "Параметры nfqws2, применяемые к каждому потоку, направленному в Zapret. Списков хостов нет — что сюда попадёт, уже решают правила маршрутизации. "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:2939
+msgid "Runs the current strategy on a temporary NFQUEUE scoped to 4 test sites — "
+msgstr "Запускает текущую стратегию на временной NFQUEUE, ограниченной 4 тестовыми сайтами — "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:3011
+msgid "Tries every strategy in the list one by one on a temporary NFQUEUE — your live connection is untouched — "
+msgstr "Перебирает все стратегии из списка по очереди на временной NFQUEUE — рабочее соединение при этом не затрагивается — "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:3094
+msgid "Route Discord's voice UDP ports (19294–19344, 50000–50100) through Zapret. "
+msgstr "Направлять голосовые UDP-порты Discord (19294–19344, 50000–50100) через Zapret. "
+
+#: htdocs/luci-static/resources/view/limcore/node.js:906
+msgid "no answer"
+msgstr "нет ответа"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:933
+msgid "could not start the test"
+msgstr "не удалось запустить проверку"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:946
+msgid "Tested %d of %d nodes."
+msgstr "Проверено узлов: %d из %d."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:950
+msgid "Testing… %d of %d"
+msgstr "Проверка… %d из %d"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:956
+msgid "Test timed out."
+msgstr "Время проверки истекло."
+
+#: htdocs/luci-static/resources/view/limcore/node.js:972 htdocs/luci-static/resources/view/limcore/node.js:980
+msgid "Check all nodes"
+msgstr "Проверить все узлы"
+
+#: htdocs/luci-static/resources/view/limcore/node.js:984
+msgid "Measures every configured node at once through a temporary core on its own port. "
+msgstr "Замеряет сразу все настроенные узлы через временное ядро на отдельном порту. "
+
+#: htdocs/luci-static/resources/view/limcore/server.js:739
+msgid "EAB (External Account Binding) contains information necessary to bind or map an ACME account to some other account known by the CA."
+msgstr "EAB (External Account Binding) содержит сведения, необходимые для привязки учётной записи ACME к другой учётной записи, известной удостоверяющему центру."
+
+#: htdocs/luci-static/resources/view/limcore/status.js:390
+msgid "Local SOCKS5 DPI bypass proxy by <a href=\"https://github.com/hufrea/byedpi\" target=\"_blank\">hufrea</a>. "
+msgstr "Локальный SOCKS5-прокси для обхода DPI от <a href=\"https://github.com/hufrea/byedpi\" target=\"_blank\">hufrea</a>. "
+
+#: htdocs/luci-static/resources/view/limcore/status.js:504
+msgid "Packet-level (NFQUEUE) DPI bypass by <a href=\"https://github.com/bol-van/zapret2\" target=\"_blank\">bol-van</a> (nfqws2). "
+msgstr "Обход DPI на уровне пакетов (NFQUEUE) от <a href=\"https://github.com/bol-van/zapret2\" target=\"_blank\">bol-van</a> (nfqws2). "
