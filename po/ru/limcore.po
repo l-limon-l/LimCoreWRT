@@ -842,6 +842,10 @@ msgstr "Сбор данных..."
 msgid "Common ports only (bypass P2P traffic)"
 msgstr "Только общие порты (обходить P2P-трафик)"
 
+#: htdocs/luci-static/resources/view/limcore/client.js:498
+msgid "Common ports + media on Cloudflare (2053, 2083, 2087, 2096)"
+msgstr "Общие порты + медиа на Cloudflare (2053, 2083, 2087, 2096)"
+
 #: htdocs/luci-static/resources/view/limcore/node.js:698
 #: htdocs/luci-static/resources/view/limcore/server.js:354
 msgid "Congestion control algorithm"

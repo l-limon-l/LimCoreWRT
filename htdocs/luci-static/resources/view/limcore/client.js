@@ -496,8 +496,13 @@ return view.extend({
 			_('Specify target ports to be proxied. Multiple ports must be separated by commas.'));
 		o.value('', _('All ports'));
 		o.value('common', _('Common ports only (bypass P2P traffic)'));
+		/* Same list as "common" plus Cloudflare's alternate HTTPS ports. Kept as a named
+		 * preset rather than something to paste in by hand: typing the ports into the field
+		 * works, but the next visit to this dropdown silently replaces them, and the media
+		 * that stops loading afterwards is nowhere near this setting. */
+		o.value('common_media', _('Common ports + media on Cloudflare (2053, 2083, 2087, 2096)'));
 		o.validate = function(section_id, value) {
-			if (section_id && value && value !== 'common') {
+			if (section_id && value && value !== 'common' && value !== 'common_media') {
 
 				let ports = [];
 				for (let i of value.split(',')) {

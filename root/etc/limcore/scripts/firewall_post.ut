@@ -67,8 +67,16 @@ if (routing_mode !== 'custom') {
 }
 
 let routing_port = uci.get(cfgname, 'config', 'routing_port');
-if (routing_port === 'common')
+if (routing_port === 'common' || routing_port === 'common_media')
 	routing_port = uci.get(cfgname, 'infra', 'common_port') || '22,53,80,143,443,465,587,853,873,993,995,8080,8443,9418';
+
+/* "common_media" = the common list plus Cloudflare's alternate HTTPS ports. Discord serves
+ * attachments, embeds and stream thumbnails from discord.media and CDNs that sit behind
+ * Cloudflare on 2053/2083/2087/2096, so on the plain common list those requests never reach
+ * the proxy and load at whatever speed the ISP allows — while the page around them is fine,
+ * which makes it look like Discord's problem rather than a port list's. */
+if (uci.get(cfgname, 'config', 'routing_port') === 'common_media')
+	routing_port += ',2053,2083,2087,2096';
 
 /* "Proxy calls" routes voice UDP to the proxy, but that rule lives inside the core and is
  * unreachable unless the packets are intercepted first — and the common-port list holds
