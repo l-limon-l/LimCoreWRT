@@ -77,18 +77,25 @@ if (routing_port === 'common')
  * ISP, Discord voice kept going direct and lost half its return packets, showing 5000 ms.
  *
  * Discord needs BOTH of its ranges: 19294-19344 carries voice, while screen share and the
- * newer RTC media servers use 50000-50100 (observed live: voice on 19340 healthy at
+ * newer RTC media servers use the 50000+ block (observed live: voice on 19340 healthy at
  * 103/92 packets while 50001, 50002 and 50006 sent 3 packets each and got nothing back,
  * leaving Discord stuck on "Connecting to RTC").
  *
- * The full 50000-65530 from the routing rule is still NOT added: it would swallow
- * BitTorrent and game traffic, which is the whole point of "common ports only (bypass
- * P2P)". 50000-50100 is narrow enough to miss the BitTorrent defaults (6881-6889, 51413)
- * and the Source-engine game ports. Pick "All ports" if you want everything proxied. */
+ * That 50000+ block is the FULL 50000-65530, matching the core's proxy_calls rule. It used
+ * to be capped at 50000-50100 here to keep BitTorrent out, which left the two halves
+ * disagreeing: the core routed the whole range to the proxy while this gate only let the
+ * first hundred ports through, so a screen share landed in the tunnel or went direct
+ * depending on which port the RTC server handed out. Symptom: the stream loads instantly
+ * for some viewers and stalls for the rest, on the same call.
+ *
+ * P2P stays out by other means, so "common ports only (bypass P2P)" still holds: the core
+ * sends the bittorrent protocol and ports 6881-6889/51413 straight to direct-out ahead of
+ * the call rules, and 51413 is punched out of the range below so it is never intercepted
+ * even when that toggle is off. Pick "All ports" if you want everything proxied. */
 const proxy_calls = uci.get(cfgname, 'config', 'proxy_calls') === '1';
 
 if (routing_port && proxy_calls)
-	routing_port += ',19294-19344,50000-50100,3478-3497,16384-16387,16393-16402';
+	routing_port += ',19294-19344,50000-51412,51414-65530,3478-3497,16384-16387,16393-16402';
 
 /* Telegram is matched by address rather than by port, because its call reflectors do not
  * sit on a fixed range the way Discord's do. Observed on a live group call: media went to

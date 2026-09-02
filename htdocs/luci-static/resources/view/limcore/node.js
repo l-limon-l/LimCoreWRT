@@ -3088,10 +3088,10 @@ return view.extend({
 
 			/* Discord voice opt-in: Discord voice is raw RTP/STUN UDP to bare IPs with no
 			 * sniffable domain, so the hostlist/routing can't catch it. This adds a port-based
-			 * rule (UDP 19294-19344, 50000-50100) sending it to Zapret. Only emitted when both
+			 * rule (UDP 19294-19344, 50000-65530) sending it to Zapret. Only emitted when both
 			 * Zapret and this switch are on; off = those ports follow the normal call rules. */
 			o = ss.option(form.Flag, 'zapret_voice', _('Discord calls via Zapret'),
-				_('Route Discord\'s voice UDP ports (19294–19344, 50000–50100) through Zapret. ' +
+				_('Route Discord\'s voice UDP ports (19294–19344, 50000–65530) through Zapret. ' +
 				  'Discord voice has no domain to match, so it can only be selected by port. ' +
 				  'Leave off if your VPN already handles calls.'));
 			o.default = '0';

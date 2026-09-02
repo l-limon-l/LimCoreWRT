@@ -4703,8 +4703,8 @@ msgstr "%d/%d пройдено"
 msgid "Discord calls via Zapret"
 msgstr "Звонки Discord через Zapret"
 
-msgid "Route Discord's voice UDP ports (19294–19344, 50000–50100) through Zapret. Discord voice has no domain to match, so it can only be selected by port. Leave off if your VPN already handles calls."
-msgstr "Направлять голосовые UDP-порты Discord (19294–19344, 50000–50100) через Zapret. У голоса Discord нет домена для сопоставления, поэтому его можно выбрать только по порту. Оставьте выключенным, если звонки и так работают через VPN."
+msgid "Route Discord's voice UDP ports (19294–19344, 50000–65530) through Zapret. Discord voice has no domain to match, so it can only be selected by port. Leave off if your VPN already handles calls."
+msgstr "Направлять голосовые UDP-порты Discord (19294–19344, 50000–65530) через Zapret. У голоса Discord нет домена для сопоставления, поэтому его можно выбрать только по порту. Оставьте выключенным, если звонки и так работают через VPN."
 
 msgid "Enable Zapret"
 msgstr "Включить Zapret"
@@ -4885,8 +4885,8 @@ msgid "Tries every strategy in the list one by one on a temporary NFQUEUE — yo
 msgstr "Перебирает все стратегии из списка по очереди на временной NFQUEUE — рабочее соединение при этом не затрагивается — "
 
 #: htdocs/luci-static/resources/view/limcore/node.js:3094
-msgid "Route Discord's voice UDP ports (19294–19344, 50000–50100) through Zapret. "
-msgstr "Направлять голосовые UDP-порты Discord (19294–19344, 50000–50100) через Zapret. "
+msgid "Route Discord's voice UDP ports (19294–19344, 50000–65530) through Zapret. "
+msgstr "Направлять голосовые UDP-порты Discord (19294–19344, 50000–65530) через Zapret. "
 
 #: htdocs/luci-static/resources/view/limcore/node.js:906
 msgid "no answer"

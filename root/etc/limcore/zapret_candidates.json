@@ -28,12 +28,12 @@
     },
     {
       "name": "Discord (TLS seqovl + STUN voice)",
-      "args": "--blob=tls_google:@/opt/zapret2/files/fake/tls_clienthello_www_google_com.bin --blob=stun_fake:@/opt/zapret2/files/fake/stun.bin --filter-tcp=80 --filter-l7=http --payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5 --lua-desync=multisplit:pos=method+2 --new --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multidisorder:pos=1,sniext+1:seqovl=336:seqovl_pattern=tls_google --new --filter-udp=443 --filter-l7=stun,discord --lua-desync=fake:blob=stun_fake:repeats=6",
+      "args": "--blob=tls_google:@/opt/zapret2/files/fake/tls_clienthello_www_google_com.bin --blob=stun_fake:@/opt/zapret2/files/fake/stun.bin --filter-tcp=80 --filter-l7=http --payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5 --lua-desync=multisplit:pos=method+2 --new --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multidisorder:pos=1,sniext+1:seqovl=336:seqovl_pattern=tls_google --new --filter-udp=19294-19344,50000-65530 --filter-l7=stun,discord --lua-desync=fake:blob=stun_fake:repeats=6",
       "group": "recommended"
     },
     {
       "name": "YouTube + Discord (combined)",
-      "args": "--blob=tls_google:@/opt/zapret2/files/fake/tls_clienthello_www_google_com.bin --blob=quic_google:@/opt/zapret2/files/fake/quic_initial_www_google_com.bin --blob=stun_fake:@/opt/zapret2/files/fake/stun.bin --filter-tcp=80 --filter-l7=http --payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5 --lua-desync=multisplit:pos=method+2 --new --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multisplit:pos=2,sniext+1:seqovl=679:seqovl_pattern=tls_google --new --filter-udp=443 --filter-l7=quic --payload=quic_initial --lua-desync=fake:blob=quic_google:repeats=6 --new --filter-udp=443 --filter-l7=stun,discord --lua-desync=fake:blob=stun_fake:repeats=6",
+      "args": "--blob=tls_google:@/opt/zapret2/files/fake/tls_clienthello_www_google_com.bin --blob=quic_google:@/opt/zapret2/files/fake/quic_initial_www_google_com.bin --blob=stun_fake:@/opt/zapret2/files/fake/stun.bin --filter-tcp=80 --filter-l7=http --payload=http_req --lua-desync=fake:blob=fake_default_http:tcp_md5 --lua-desync=multisplit:pos=method+2 --new --filter-tcp=443 --filter-l7=tls --payload=tls_client_hello --lua-desync=multisplit:pos=2,sniext+1:seqovl=679:seqovl_pattern=tls_google --new --filter-udp=443 --filter-l7=quic --payload=quic_initial --lua-desync=fake:blob=quic_google:repeats=6 --new --filter-udp=19294-19344,50000-65530 --filter-l7=stun,discord --lua-desync=fake:blob=stun_fake:repeats=6",
       "group": "recommended"
     },
     {

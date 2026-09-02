@@ -85,7 +85,7 @@ const byedpi_enabled = uci.get(uciconfig, ucimain, 'byedpi_enabled');
  * sends the handshake to NFQUEUE where nfqws desyncs it. Separate from byedpi. */
 const zapret_enabled = uci.get(uciconfig, ucimain, 'zapret_enabled');
 const zapret_mark = uci.get(uciconfig, ucimain, 'zapret_mark') || '110';
-/* Opt-in: route call/voice UDP ports (50000-65530) to zapret-out instead of the proxy.
+/* Opt-in: route call/voice UDP ports (19294-19344, 50000-65530) to zapret-out instead of the proxy.
  * Only honored when zapret_enabled === '1' (zapret-out exists). */
 const zapret_voice = uci.get(uciconfig, ucimain, 'zapret_voice') || '0';
 
@@ -1595,14 +1595,19 @@ if (!isEmpty(main_node)) {
 		}
 
 		/* Zapret Discord voice (opt-in): send Discord's voice-server UDP ranges
-		 * (19294-19344, 50000-50100 — from flowseal/zapret-discord-youtube) to zapret-out
-		 * BEFORE proxy_calls, so Discord voice is desynced via Zapret instead of proxied.
-		 * Emitted ONLY when Zapret is on (so zapret-out exists) — when Zapret is off this
-		 * rule disappears and proxy_calls handles these ports as before. Works on either core. */
+		 * (19294-19344 plus the 50000+ media block — from flowseal/zapret-discord-youtube)
+		 * to zapret-out BEFORE proxy_calls, so Discord voice is desynced via Zapret instead
+		 * of proxied. Emitted ONLY when Zapret is on (so zapret-out exists) — when Zapret is
+		 * off this rule disappears and proxy_calls handles these ports as before.
+		 *
+		 * The media block is the full 50000:65530, not the old 50000:50100 slice: RTC servers
+		 * hand out ports across the whole range, so the narrow version desynced a fraction of
+		 * screen shares and let the rest go direct into the ISP's throttling. Torrents are
+		 * unaffected — the no_proxy_torrents rules above already claim them. Works on either core. */
 		if (zapret_enabled === '1' && zapret_voice === '1')
 			push(config.route.rules, {
 				network: 'udp',
-				port_range: ['19294:19344', '50000:50100'],
+				port_range: ['19294:19344', '50000:65530'],
 				action: 'route',
 				outbound: 'zapret-out'
 			});
