@@ -2,10 +2,10 @@
 # Установщик LimCore для OpenWrt (в одном скрипте: APK / opkg / 23.05 legacy)
 # https://github.com/l-limon-l/LimCoreWRT
 #
-# Вручную ставится только LuCI-приложение + ключ подписи, а ядро, ByeDPI и Zapret
+# Вручную ставится только LuCI-приложение, а ядро, ByeDPI и Zapret
 # устанавливаются через собственный бэкенд приложения (core_mgmt.uc + rpcd-объект
 # luci.limcore) — поэтому определение архитектуры, компактные сборки под малую
-# флеш-память, проверка подписи и резерв через зеркало GitHub работают той же
+# флеш-память и резерв через зеркало GitHub работают той же
 # проверенной логикой, что и графический интерфейс.
 #
 # Установка (одной строкой — ввод читается из /dev/tty, пайп остаётся интерактивным):
@@ -83,15 +83,8 @@ esac
 SUFFIX="_all"; [ "$LEGACY" = 1 ] && SUFFIX="_all-legacy"
 info "Версия: OpenWrt $VER  |  Архитектура: $ARCH  |  Менеджер пакетов: $PM  |  legacy=$LEGACY"
 
-# ----------------------------------------------------------- 1. LuCI-приложение + ключ
+# ----------------------------------------------------------------- 1. LuCI-приложение
 ok "[1/5] Устанавливаю LuCI-приложение LimCore..."
-if [ "$PM" = apk ]; then
-	if [ ! -f /etc/apk/keys/LimCoreWRT.pub ]; then
-		dl "https://github.com/l-limon-l/LimCoreWRT/releases/latest/download/LimCoreWRT.pub" /tmp/LimCoreWRT.pub \
-			&& cp /tmp/LimCoreWRT.pub /etc/apk/keys/ && rm -f /tmp/LimCoreWRT.pub && ok "  ключ подписи добавлен в доверенные" \
-			|| warn "  не удалось скачать ключ подписи — поставлю без проверки подписи"
-	fi
-fi
 # ВАЖНО: берём именно /releases/latest, а не первый попавшийся ассет из /releases.
 # Список релизов приходит НЕ в порядке версий (наблюдалось r8, r6, r10), поэтому
 # `... /releases | head -1` мог поставить пользователю версию СТАРШЕ установленной —
@@ -105,17 +98,11 @@ APPURL=$(printf '%s\n' "$RELJSON" \
 [ -n "$APPURL" ] || die "Не нашёл пакет luci-app-limcore${SUFFIX}.${EXT} (GitHub заблокирован? попробуйте GH_MIRROR=...)."
 dl "$APPURL" /tmp/app.$EXT || die "Не удалось скачать приложение (попробуйте GH_MIRROR=...)."
 if [ "$PM" = apk ]; then
-	# Сначала пробуем с проверкой подписи, и только потом без неё — но об этом СООБЩАЕМ.
-	# Молчаливый откат означал, что сломанная или неподходящая подпись выглядит ровно как
-	# успешная установка, и подписывание не даёт ничего, а никто этого не замечает.
-	if apk add /tmp/app.$EXT 2>/dev/null; then
-		:
-	elif apk add --allow-untrusted /tmp/app.$EXT; then
-		warn "  подпись не проверена — пакет установлен как недоверенный."
-		warn "  (нет /etc/apk/keys/LimCoreWRT.pub, либо пакет не подписан, либо ключ не тот)"
-	else
-		die "apk add завершился ошибкой."
-	fi
+	# Без проверки подписи сознательно. Раньше установщик сам клал публичный ключ в
+	# /etc/apk/keys/ и сначала пробовал с проверкой — но ключ есть только на apk-пути, на opkg его
+	# нет вовсе, и разное поведение двух веток стоило больше, чем давало. Пакеты в релизах
+	# по-прежнему подписываются в CI, так что проверку можно вернуть, не пересобирая их.
+	apk add --allow-untrusted /tmp/app.$EXT || die "apk add завершился ошибкой."
 else
 	opkg update >/dev/null 2>&1; opkg install /tmp/app.$EXT || die "opkg install завершился ошибкой."
 fi
@@ -155,7 +142,7 @@ case "$REPLY" in
 		[ -n "$LURL" ] || LURL=$(api 'https://api.github.com/repos/l-limon-l/LimCoreWRT/releases' \
 			| grep -o "https://github\.com/[^\"]*luci-i18n-limcore-ru[^\"]*\.${EXT}" | head -1)
 		if [ -n "$LURL" ] && dl "$LURL" /tmp/i18n.$EXT; then
-			if [ "$PM" = apk ]; then apk add /tmp/i18n.$EXT 2>/dev/null || apk add --allow-untrusted /tmp/i18n.$EXT; \
+			if [ "$PM" = apk ]; then apk add --allow-untrusted /tmp/i18n.$EXT; \
 			else opkg install /tmp/i18n.$EXT; fi
 		else warn "  перевод приложения не найден — пропускаю"; fi
 		rm -f /tmp/i18n.$EXT
