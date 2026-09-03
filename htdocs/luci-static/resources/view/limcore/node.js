@@ -927,12 +927,23 @@ function paintSpeed(section_id, row) {
 
 	el.title = '';
 
-	if (row.state !== 'done') {
-		const failed = (row.state === 'error');
-		el.textContent = failed ? '–' : speedtestStageText(row.state);
-		el.style.color = failed ? '#c00' : 'gray';
-		if (failed && row.error)
+	if (row.state === 'error') {
+		el.textContent = '–';
+		el.style.color = '#c00';
+		if (row.error)
 			el.title = row.error;
+		return;
+	}
+
+	/* A running transfer reports what it has averaged so far, and that figure climbs as the
+	 * streams reach their ceiling. Showing it beats showing the word "download…" for the
+	 * length of the test: the number people trust is the one they watched settle, and on a
+	 * serial sweep there is a lot of waiting to fill. Grey until it is final, so a figure
+	 * still on its way up is not read as the answer. */
+	const running = (row.state !== 'done');
+	if (running && row.download == null) {
+		el.textContent = speedtestStageText(row.state);
+		el.style.color = 'gray';
 		return;
 	}
 
@@ -941,6 +952,10 @@ function paintSpeed(section_id, row) {
 
 	el.textContent = '%s / %s'.format(fmtMbit(dl), fmtMbit(up));
 	el.title = _('%s down, %s up, measured against %s').format(fmtMbit(dl), fmtMbit(up), row.server || row.host || '?');
+	if (running) {
+		el.style.color = 'gray';
+		return;
+	}
 	/* Same shape of banding as the delay column, on the figure that decides whether media
 	 * loads: below 10 Mbit/s a node is why video buffers, however well it pings. */
 	el.style.color = (dl == null) ? '#c00' : (dl >= 50) ? '#0a0' : (dl >= 10) ? '#c80' : '#c00';
