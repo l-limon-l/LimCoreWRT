@@ -1000,7 +1000,7 @@ function runNodeSweep(msgEl) {
 const callSpeedtestStart = rpc.declare({
 	object: 'luci.limcore',
 	method: 'speedtest_start',
-	params: ['target'],
+	params: ['targets'],
 	expect: { '': {} }
 });
 
@@ -1042,23 +1042,35 @@ function speedtestStageText(state) {
  *
  * Results are written straight into the grid's speed column, the same way the delay sweep
  * writes into its own, so nodes on the tabs the user is not looking at are filled in too. */
-function runSpeedtestSweep(msgEl) {
-	const sections = uci.sections('limcore', 'node');
-	for (const sec of sections) {
-		const el = speedCell(sec['.name']);
-		if (el) {
-			el.textContent = '…';
-			el.style.color = '';
-			el.title = '';
-		}
-	}
-
+function runSpeedtestSweep(msgEl, sections) {
 	msgEl.style.color = '';
 	msgEl.textContent = _('Starting…');
 
-	return callSpeedtestStart('').then((res) => {
-		if (!res || res.result !== true)
+	const targets = sections.map((sec) => sec['.name']).join(' ');
+
+	return callSpeedtestStart(targets).then((res) => {
+		/* A sweep outlives the page: it runs on the router, and reloading mid-run used to
+		 * leave it there with the button answering "already running" and no way to see how
+		 * far it had got. A run in flight is something to join, not an error — so poll it
+		 * and paint what it reports, rather than starting a second one on top. */
+		const attached = (res && res.result !== true && res.running === true);
+
+		if (!res || (res.result !== true && !attached))
 			return Promise.reject(new Error(res?.error || _('could not start the test')));
+
+		if (attached)
+			msgEl.textContent = _('A test was already running — showing it.');
+		else
+			/* Primed only for a run we started: on a run we joined, the cells the earlier
+			 * page filled in are results, not leftovers, and blanking them loses them. */
+			for (const sec of sections) {
+				const el = speedCell(sec['.name']);
+				if (el) {
+					el.textContent = '…';
+					el.style.color = '';
+					el.title = '';
+				}
+			}
 
 		const total = sections.length;
 		/* A minute a node, and never less than two: a deadline tied to the node count is
@@ -1112,20 +1124,34 @@ function runSpeedtestSweep(msgEl) {
 	});
 }
 
-function addSpeedtestButton(s, tabname, key) {
+/* Unlike the reachability sweep, this one measures only the tab it was pressed on. That
+ * sweep tests every node in parallel and is over in seconds, so covering all the tabs at
+ * once costs nothing; here each node holds the uplink to itself for half a minute, and
+ * "check this subscription" turning into twelve minutes of everything is not what anyone
+ * pressed the button for. */
+function addSpeedtestButton(s, tabname, key, belongs) {
 	const o = s.taboption(tabname, form.DummyValue, '_node_speed_' + key, _('Check speed'));
 	o.cfgvalue = function() {
 		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
 		const btn = E('button', {
 			'class': 'btn cbi-button cbi-button-action',
 			'click': ui.createHandlerFn(this, function() {
-				return runSpeedtestSweep(msgEl);
+				const sections = uci.sections('limcore', 'node')
+					.filter((sec) => belongs(sec['.name']));
+
+				if (!sections.length) {
+					msgEl.style.color = '';
+					msgEl.textContent = _('No nodes on this tab.');
+					return;
+				}
+
+				return runSpeedtestSweep(msgEl, sections);
 			})
 		}, [ _('Check speed') ]);
 
 		return E('div', {}, [ btn, msgEl ]);
 	};
-	o.description = _('Measures every node in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. ' +
+	o.description = _('Measures the nodes on this tab in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. ' +
 		'Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched.');
 }
 
@@ -2268,7 +2294,13 @@ return view.extend({
 		/* User nodes start */
 		s.tab('node', _('Nodes'));
 		addSweepButton(s, 'node', 'own');
-		addSpeedtestButton(s, 'node', 'own');
+		addSpeedtestButton(s, 'node', 'own', function(section_id) {
+			for (let info of subinfo)
+				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
+					return false;
+
+			return true;
+		});
 		o = s.taboption('node', form.SectionValue, '_node', form.GridSection, 'node');
 		ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 		ss.addremove = true;
@@ -2442,7 +2474,11 @@ return view.extend({
 		for (const info of subinfo) {
 			s.tab('sub_' + info.hash, _('Sub (%s)').format(info.title));
 			addSweepButton(s, 'sub_' + info.hash, info.hash);
-			addSpeedtestButton(s, 'sub_' + info.hash, info.hash);
+			addSpeedtestButton(s, 'sub_' + info.hash, info.hash, (function(hash) {
+				return function(section_id) {
+					return uci.get(data[0], section_id, 'grouphash') === hash;
+				};
+			})(info.hash));
 			o = s.taboption('sub_' + info.hash, form.SectionValue, '_sub_' + info.hash, form.GridSection, 'node');
 			ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 			ss.filter = function(section_id) {

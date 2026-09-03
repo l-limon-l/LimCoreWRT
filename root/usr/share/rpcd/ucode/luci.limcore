@@ -1751,7 +1751,7 @@ const methods = {
 	/* Throughput, as opposed to the reachability the node sweep reports. Same start+poll
 	 * split and for the same reason: a run takes half a minute, a ubus call does not. */
 	speedtest_start: {
-		args: { target: 'target' },
+		args: { targets: 'targets' },
 		call: function(req) {
 			const core = get_active_core();
 			if (!core)
@@ -1759,9 +1759,16 @@ const methods = {
 			if (!access('/usr/bin/curl'))
 				return { result: false, error: 'curl is not installed' };
 
-			let target = req?.args?.target || '';
-			if (length(target) && !match(target, /^[A-Za-z0-9_-]+$/))
-				return { result: false, error: 'bad target' };
+			/* A space-separated list, because the caller is a tab and a tab is a set of
+			 * nodes: the page asks for the subscription in front of it rather than for
+			 * everything configured, which on a long list is the difference between half a
+			 * minute and a quarter of an hour. Empty still means every node. */
+			let target = trim(req?.args?.targets || '');
+			for (let t in split(target, ' ')) {
+				if (!length(t)) continue;
+				if (!match(t, /^[A-Za-z0-9_-]+$/))
+					return { result: false, error: 'bad target' };
+			}
 
 			if (!!access(ST_RUNNING)) {
 				/* A stale marker outlives a reboot and would lock the button out for good;
@@ -1769,8 +1776,11 @@ const methods = {
 				 * The window has to cover every node in turn, not one test: half a minute
 				 * a node, and nobody's node list is longer than this allows for. */
 				const st = lstat(ST_RUNNING);
+				/* Flagged, not just worded: a sweep outlives the page that started it, so
+				 * the caller wants to attach to it rather than be told off, and it can only
+				 * tell this refusal apart from a real failure if we say so in a field. */
 				if (st && (time() - st.mtime) < ST_MAX_RUN)
-					return { result: false, error: 'a speed test is already running' };
+					return { result: false, running: true, error: 'a speed test is already running' };
 			}
 
 			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG}`);
@@ -1786,7 +1796,7 @@ const methods = {
 				return { result: false, error: 'could not start the speed test' };
 			}
 
-			return { result: true, target };
+			return { result: true, targets: target };
 		}
 	},
 
