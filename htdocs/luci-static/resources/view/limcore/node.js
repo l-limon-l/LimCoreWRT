@@ -965,6 +965,153 @@ function runNodeSweep(msgEl) {
 	});
 }
 
+const callSpeedtestStart = rpc.declare({
+	object: 'luci.limcore',
+	method: 'speedtest_start',
+	params: ['target'],
+	expect: { '': {} }
+});
+
+const callSpeedtestStatus = rpc.declare({
+	object: 'luci.limcore',
+	method: 'speedtest_status',
+	expect: { '': {} }
+});
+
+/* Speedtest reports bytes per second and everybody reads their line in megabits, so the
+ * conversion belongs here rather than in the reader's head. */
+function fmtSpeed(bytes_per_sec) {
+	if (bytes_per_sec == null)
+		return '–';
+	const mbit = (bytes_per_sec * 8) / 1000000;
+	return _('%s Mbit/s').format(mbit >= 100 ? mbit.toFixed(0) : mbit.toFixed(1));
+}
+
+function speedtestStageText(state) {
+	switch (state) {
+		case 'core':      return _('bringing the core up…');
+		case 'servers':   return _('choosing a server…');
+		case 'measuring': return _('response time…');
+		case 'download':  return _('download…');
+		case 'upload':    return _('upload…');
+		default:          return _('testing…');
+	}
+}
+
+/* One row per node, filled in as the sweep reaches it. The whole table is re-rendered on
+ * every poll rather than patched cell by cell: rows arrive in order and the only one that
+ * changes is the last, so there is nothing to save by being cleverer, and a full render
+ * cannot leave a stale figure behind from the node before. */
+function renderSpeedtestTable(results) {
+	const rows = [ E('tr', { 'class': 'tr table-titles' }, [
+		E('th', { 'class': 'th' }, _('Node')),
+		E('th', { 'class': 'th' }, _('Response time')),
+		E('th', { 'class': 'th' }, _('Download speed')),
+		E('th', { 'class': 'th' }, _('Upload speed'))
+	]) ];
+
+	for (const r of results) {
+		/* A node that is still being measured, or one that failed, has no numbers to show,
+		 * so its own row says what happened to it instead of leaving three empty cells. */
+		if (r.state !== 'done') {
+			const failed = (r.state === 'error');
+			rows.push(E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td' }, r.label || r.section || '–'),
+				E('td', { 'class': 'td', 'colspan': '3', 'style': failed ? 'color:#c00' : 'color:gray' },
+					failed ? (r.error || _('failed')) : speedtestStageText(r.state))
+			]));
+			continue;
+		}
+
+		rows.push(E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td' }, r.label || r.section || '–'),
+			/* Rounded here, not at the source: the shell hands over a float and a raw one
+			 * renders as 168.90000000000001. */
+			E('td', { 'class': 'td' }, (r.ping == null) ? '–' : _('%s ms').format(Number(r.ping).toFixed(1))),
+			E('td', { 'class': 'td' }, fmtSpeed(r.download)),
+			E('td', { 'class': 'td' }, fmtSpeed(r.upload))
+		]));
+	}
+
+	return E('table', { 'class': 'table', 'style': 'margin-top:.5em' }, rows);
+}
+
+/* A speed test, next to the reachability sweep, because latency alone answers the wrong
+ * question. A node fronted by a CDN pings from the nearest edge and can still stall real
+ * transfers — which is how a pool ends up parked on its "fastest" node while media loads
+ * badly on it. This is the measurement that tells those apart.
+ *
+ * Every node in turn, one at a time: two transfers sharing the uplink measure each other,
+ * so the sweep is necessarily serial and is worth watching while it runs. Everything goes
+ * through a node — there is no direct run to choose, because Ookla is unreachable from
+ * Russia without one and a direct attempt reports a blank rather than a baseline. */
+function runSpeedtestSweep(msgEl, outEl) {
+	msgEl.style.color = '';
+	msgEl.textContent = _('Starting…');
+	outEl.innerHTML = '';
+
+	return callSpeedtestStart('').then((res) => {
+		if (!res || res.result !== true)
+			return Promise.reject(new Error(res?.error || _('could not start the test')));
+
+		const total = uci.sections('limcore', 'node').length;
+		/* Half a minute a node, doubled, and never less than two minutes: a deadline tied
+		 * to the node count is the only one that does not either cut a long list off part
+		 * way or leave the button dead for ten minutes over a list of two. */
+		const deadline = Date.now() + Math.max(120000, total * 60000);
+
+		const poll = () => new Promise((resolve) => window.setTimeout(resolve, 1500))
+			.then(callSpeedtestStatus)
+			.then((st) => {
+				const results = st?.results || [];
+
+				if (results.length) {
+					outEl.innerHTML = '';
+					outEl.appendChild(renderSpeedtestTable(results));
+				}
+
+				if (!st || st.running !== true) {
+					const done = results.filter((r) => r.state === 'done').length;
+					msgEl.textContent = _('Tested %d of %d nodes.').format(done, total);
+					return;
+				}
+
+				msgEl.textContent = _('Testing… %d of %d').format(results.length, total);
+
+				if (Date.now() > deadline) {
+					msgEl.style.color = '#c00';
+					msgEl.textContent = _('Test timed out.');
+					return;
+				}
+				return poll();
+			});
+
+		return poll();
+	}).catch((e) => {
+		msgEl.style.color = '#c00';
+		msgEl.textContent = e.message || _('Test failed');
+	});
+}
+
+function addSpeedtestButton(s, tabname, key) {
+	const o = s.taboption(tabname, form.DummyValue, '_node_speed_' + key, _('Check speed'));
+	o.cfgvalue = function() {
+		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
+		const outEl = E('div', {}, '');
+
+		const btn = E('button', {
+			'class': 'btn cbi-button cbi-button-action',
+			'click': ui.createHandlerFn(this, function() {
+				return runSpeedtestSweep(msgEl, outEl);
+			})
+		}, [ _('Check speed') ]);
+
+		return E('div', {}, [ E('div', {}, [ btn, msgEl ]), outEl ]);
+	};
+	o.description = _('Measures every node in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. ' +
+		'One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched.');
+}
+
 /* The button is repeated on every node tab. One sweep covers all of them whichever copy
  * is pressed — the alternative, a single button on the first tab only, means anyone
  * looking at a subscription tab has to go elsewhere to test what is in front of them. */
@@ -2094,6 +2241,7 @@ return view.extend({
 		/* User nodes start */
 		s.tab('node', _('Nodes'));
 		addSweepButton(s, 'node', 'own');
+		addSpeedtestButton(s, 'node', 'own');
 		o = s.taboption('node', form.SectionValue, '_node', form.GridSection, 'node');
 		ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 		ss.addremove = true;
@@ -2267,6 +2415,7 @@ return view.extend({
 		for (const info of subinfo) {
 			s.tab('sub_' + info.hash, _('Sub (%s)').format(info.title));
 			addSweepButton(s, 'sub_' + info.hash, info.hash);
+			addSpeedtestButton(s, 'sub_' + info.hash, info.hash);
 			o = s.taboption('sub_' + info.hash, form.SectionValue, '_sub_' + info.hash, form.GridSection, 'node');
 			ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 			ss.filter = function(section_id) {

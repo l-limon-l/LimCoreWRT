@@ -4379,11 +4379,11 @@ msgid "How often each node is tested (seconds). Lower = faster failover, higher 
 msgstr "Время в секундах: меньше = узлы тестируются чаще, больше = реже тесты - меньше нагрузки."
 
 #: htdocs/luci-static/resources/view/limcore/client.js
-msgid "Automatically picks the fastest node by periodically measuring latency. Traffic is always sent through the lowest-latency node in the pool.<br>If you have connection problems and a node stays orange/grey for a long time, try removing it from the URLTest pool."
-msgstr "Автоматически выбирает самый быстрый узел, периодически измеряя задержку. Трафик всегда идёт через узел с наименьшей задержкой в пуле.<br>Если вы испытываете проблемы с подключением, а узел остаётся оранжевым/серым продолжительное время — попробуйте удалить его из списка URLTest."
+msgid "Automatically picks the fastest node by periodically measuring latency. Traffic is sent through the lowest-latency node in the pool, as long as it beats the node in use by more than the test tolerance below.<br>Latency is all this measures: a node can answer quickly and still carry traffic badly, so if one keeps stalling, test its speed on the Nodes page and take it out of the pool.<br>If you have connection problems and a node stays orange/grey for a long time, try removing it from the URLTest pool."
+msgstr "Автоматически выбирает самый быстрый узел, периодически измеряя задержку. Трафик идёт через узел с наименьшей задержкой в пуле — но только если он выигрывает у текущего узла больше, чем на «допуск теста» ниже.<br>Измеряется только задержка: узел может быстро отвечать и при этом плохо тянуть трафик, поэтому если какой-то узел постоянно подвисает — проверьте его скорость на странице «Узлы» и уберите из пула.<br>Если вы испытываете проблемы с подключением, а узел остаётся оранжевым/серым продолжительное время — попробуйте удалить его из списка URLTest."
 
-msgid "Minimum latency gap (ms) required to switch to a faster node — prevents flapping between nodes with close latency values."
-msgstr "Минимальная разница задержек (мс) для переключения на более быстрый узел — предотвращает постоянное переключение между узлами с близкой задержкой."
+msgid "Minimum latency gap (ms) a faster node must win by before traffic is moved to it. This is a head start for the node already in use, not a neutral rule: at 150 ms a 90 ms node does not take over from a 200 ms one. Leave it empty to switch on any improvement; raise it only if the pool flaps between nodes that are equally good."
+msgstr "Насколько (в мс) более быстрый узел должен выигрывать, прежде чем трафик перейдёт на него. Это фора для узла, который уже используется, а не нейтральное правило: при 150 мс узел с 90 мс не отберёт трафик у узла с 200 мс. Оставьте поле пустым, чтобы переключаться на любое улучшение; повышайте значение только если пул мечется между одинаково хорошими узлами."
 
 #: htdocs/luci-static/resources/view/limcore/client.js
 msgid "In this mode: only blocked domains are routed through this node — all other traffic goes direct."
@@ -5047,3 +5047,79 @@ msgstr "неизвестная ошибка"
 #: htdocs/luci-static/resources/view/limcore/devices.js
 msgid "randomised MAC"
 msgstr "случайный MAC"
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Re-test the pool"
+msgstr "Перепроверить пул"
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Measures every node in the pool one after another and lets URLTest pick again on the fresh numbers."
+msgstr "Измеряет каждый узел пула подряд и даёт URLTest выбрать заново по свежим числам."
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Test now"
+msgstr "Проверить сейчас"
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "in use"
+msgstr "используется"
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "The pool reported no nodes."
+msgstr "Пул не вернул ни одного узла."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Check speed"
+msgstr "Проверить скорость"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Measures every node in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched."
+msgstr "Измеряет каждый узел по очереди на одном и том же сервере Ookla Speedtest, каждый — через своё временное ядро, поэтому числа относятся именно к узлам и сравнимы между собой. По одному узлу за раз, потому что две передачи по одному каналу мешают друг другу — ждите около полуминуты на узел. Текущее подключение не трогается."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Response time"
+msgstr "Время отклика"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Download speed"
+msgstr "Скорость скачивания"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Upload speed"
+msgstr "Скорость отдачи"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Starting…"
+msgstr "Запускаю…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "bringing the core up…"
+msgstr "поднимаю ядро…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "choosing a server…"
+msgstr "выбираю сервер…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "response time…"
+msgstr "время отклика…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "download…"
+msgstr "скачивание…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "upload…"
+msgstr "отдача…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "testing…"
+msgstr "проверяю…"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "%s Mbit/s"
+msgstr "%s Мбит/с"
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "%s ms"
+msgstr "%s мс"

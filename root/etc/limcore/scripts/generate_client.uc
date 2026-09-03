@@ -79,6 +79,20 @@ const dns_port = uci.get(uciconfig, uciinfra, 'dns_port') || '5333';
 
 const ntp_server = uci.get(uciconfig, uciinfra, 'ntp_server') || 'time.apple.com';
 
+/* URLTest does not simply pick the lowest delay, which is what everyone reads it as.
+ * sing-box seeds the comparison with the node already in use and then walks the pool in
+ * order, replacing the incumbent only when a rival beats it by MORE than `tolerance` --
+ * and an unset tolerance is not zero, it is sing-box's own 50 ms default. So a pool whose
+ * members sit within 50 ms of each other never moves off whichever node won first, which
+ * is the one listed first: measured live, the pool sat on a 111 ms node while a 91 ms one
+ * right below it was never taken, because 20 ms is not more than 50.
+ *
+ * 1 ms is the smallest tolerance that is still a tolerance -- 0 would be read as "unset"
+ * and put the 50 back. With it the lowest measured delay actually wins, which is what the
+ * setting is picked for. Anyone who wants hysteresis can still ask for it in the field;
+ * this is only what happens when nobody said. */
+const URLTEST_TOLERANCE = 1;
+
 const ipv6_support = uci.get(uciconfig, ucimain, 'ipv6_support') || '0';
 const byedpi_enabled = uci.get(uciconfig, ucimain, 'byedpi_enabled');
 /* zapret: a `direct` outbound stamped with routing_mark; nft catches the mark and
@@ -101,7 +115,7 @@ if (routing_mode !== 'custom') {
 	 * main_node — and bailing out here left the availability check answering "no nodes
 	 * configured" in the one situation it exists for: no node chosen yet, or the chosen
 	 * one dead and you are looking for a live replacement. */
-	if (main_node === 'nil' && ARGV[0] !== 'probe') {
+	if (main_node === 'nil' && !(ARGV[0] in ['probe', 'speedtest'])) {
 		warn('limcore: no main_node configured, skipping config generation.\n');
 		exit(0);
 	}
@@ -619,6 +633,77 @@ if (ARGV[0] === 'probe') {
 		},
 		experimental: {
 			clash_api: { external_controller: `127.0.0.1:${probe_port}` }
+		}
+	}));
+	exit(0);
+}
+
+/* Throughput probe: emit, on stdout, a throwaway config whose only inbound is a SOCKS/HTTP
+ * port wired straight to one outbound, so a speed test can be pointed at it and be certain
+ * which path it measured.
+ *
+ * The running config's mixed inbound would have been the obvious thing to reuse and is the
+ * wrong tool: it goes through the routing rules, so in a selective mode (proxy only what is
+ * blocked) a speed test to an Ookla server is very likely to be sent direct — measuring the
+ * ISP and reporting it as the tunnel's speed. Here the outbound is the whole route, and the
+ * caller says which one it wants, so "through the node" and "without the node" are two runs
+ * of the same test rather than two different things.
+ *
+ * default_mark for the same reason as the availability probe: without it this core's dial
+ * to the node is caught by the redirect chain and measured through a second hop.
+ *
+ * Usage: generate_client.uc speedtest <socks_port> [node_section|direct]
+ *        no third argument = whatever the service is currently routing through.
+ */
+if (ARGV[0] === 'speedtest') {
+	const st_port = strToInt(ARGV[1]) || 5340;
+	const st_target = ARGV[2] || main_node;
+	let st_outbounds = [], st_endpoints = [], st_final = 'direct-out';
+
+	const st_push = (n) => {
+		if (n.type in ['wireguard', 'amneziawg'])
+			push(st_endpoints, generate_endpoint(n));
+		else
+			push_outbound(st_outbounds, n);
+	};
+
+	if (st_target === 'urltest') {
+		/* The pool, not the node URLTest happens to be on: asking for a fresh delay per
+		 * node here would double the wait before a single byte is transferred, and the
+		 * point of the test is the path in use. sing-box picks within the group itself. */
+		const st_nodes = filter(uci.get(uciconfig, ucimain, 'main_urltest_nodes') || [],
+			(k) => uci.get_all(uciconfig, k) != null);
+		for (let k in st_nodes)
+			st_push(uci.get_all(uciconfig, k));
+		if (length(st_nodes)) {
+			push(st_outbounds, {
+				type: 'urltest',
+				tag: 'st-out',
+				outbounds: map(st_nodes, (k) => `cfg-${k}-out`),
+				tolerance: URLTEST_TOLERANCE
+			});
+			st_final = 'st-out';
+		}
+	} else if (st_target !== 'direct' && st_target !== 'nil') {
+		const st_node = uci.get_all(uciconfig, st_target);
+		if (st_node) {
+			st_push(st_node);
+			st_final = `cfg-${st_target}-out`;
+		}
+	}
+
+	push(st_outbounds, { type: 'direct', tag: 'direct-out' });
+
+	printf('%.J
+', removeBlankAttrs({
+		log: { level: 'error', timestamp: true },
+		inbounds: [ { type: 'mixed', tag: 'st-in', listen: '127.0.0.1', listen_port: st_port } ],
+		outbounds: st_outbounds,
+		endpoints: length(st_endpoints) ? st_endpoints : null,
+		route: {
+			final: st_final,
+			auto_detect_interface: true,
+			default_mark: strToInt(self_mark)
 		}
 	}));
 	exit(0);
@@ -1229,7 +1314,7 @@ if (!isEmpty(main_node)) {
 			tag: 'main-out',
 			outbounds: map(main_urltest_nodes, (k) => `cfg-${k}-out`),
 			interval: strToTime(main_urltest_interval),
-			tolerance: strToInt(main_urltest_tolerance),
+			tolerance: strToInt(main_urltest_tolerance) || URLTEST_TOLERANCE,
 			idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
 		});
 		urltest_nodes = main_urltest_nodes;
@@ -1281,7 +1366,7 @@ if (!isEmpty(main_node)) {
 			tag: 'main-udp-out',
 			outbounds: map(main_udp_urltest_nodes, (k) => `cfg-${k}-out`),
 			interval: strToTime(main_udp_urltest_interval),
-			tolerance: strToInt(main_udp_urltest_tolerance),
+			tolerance: strToInt(main_udp_urltest_tolerance) || URLTEST_TOLERANCE,
 			idle_timeout: (strToInt(main_udp_urltest_interval) > 1800) ? `${main_udp_urltest_interval * 2}s` : null,
 		});
 		urltest_nodes = [...urltest_nodes, ...filter(main_udp_urltest_nodes, (l) => !~index(urltest_nodes, l))];
@@ -1347,7 +1432,7 @@ if (!isEmpty(main_node)) {
 					outbounds: map(existing_urltest_nodes, (k) => `cfg-${k}-out`),
 					url: cfg.urltest_url,
 					interval: strToTime(cfg.urltest_interval),
-					tolerance: strToInt(cfg.urltest_tolerance),
+					tolerance: strToInt(cfg.urltest_tolerance) || URLTEST_TOLERANCE,
 					idle_timeout: strToTime(cfg.urltest_idle_timeout),
 					interrupt_exist_connections: strToBool(cfg.urltest_interrupt_exist_connections)
 				});
@@ -1399,7 +1484,7 @@ if (!isEmpty(main_node)) {
 				outbounds: map(existing_urltest_nodes, (k) => `cfg-${k}-out`),
 				url: cfg.urltest_url,
 				interval: strToTime(cfg.urltest_interval),
-				tolerance: strToInt(cfg.urltest_tolerance),
+				tolerance: strToInt(cfg.urltest_tolerance) || URLTEST_TOLERANCE,
 				idle_timeout: strToTime(cfg.urltest_idle_timeout),
 				interrupt_exist_connections: strToBool(cfg.urltest_interrupt_exist_connections)
 			});
@@ -1718,7 +1803,7 @@ if (!isEmpty(main_node)) {
 						tag: effective_outbound,
 						outbounds: map(ut_nodes, (k) => `cfg-${k}-out`),
 						interval: strToTime(cfg.urltest_interval || '180'),
-						tolerance: strToInt(cfg.urltest_tolerance || '150'),
+						tolerance: strToInt(cfg.urltest_tolerance) || URLTEST_TOLERANCE,
 						idle_timeout: '1800s'
 					});
 					/* Generate underlying node outbounds, skipping already-generated tags */

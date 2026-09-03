@@ -33,6 +33,13 @@ const callActiveNode = rpc.declare({
 	expect: { '': {} }
 });
 
+const callGroupTest = rpc.declare({
+	object: 'luci.limcore',
+	method: 'clash_group_test',
+	params: ['tag'],
+	expect: { '': {} }
+});
+
 const callReadDomainList = rpc.declare({
 	object: 'luci.limcore',
 	method: 'acllist_read',
@@ -220,8 +227,57 @@ return view.extend({
 			return el;
 		};
 
+		/* The pool's own numbers, taken in one pass, next to the node it settled on.
+		 * Without this the page showed a single delay for the selected node and the Nodes
+		 * page showed a different figure for another one, measured minutes apart by a
+		 * different probe — from which nobody could tell whether URLTest was choosing
+		 * badly or the two numbers simply did not compare. Re-testing is also what makes
+		 * the group re-choose, so the button answers the question and settles it. */
+		o = s.taboption('routing', form.DummyValue, '_urltest_recheck', _('Re-test the pool'),
+			_('Measures every node in the pool one after another and lets URLTest pick again on the fresh numbers.'));
+		o.depends('main_node', 'urltest');
+		o.cfgvalue = function() {
+			const out = E('div', { 'style': 'margin-top:.5em' }, '');
+			const btn = E('button', {
+				'class': 'btn cbi-button cbi-button-action',
+				'click': ui.createHandlerFn(this, function() {
+					out.style.color = '';
+					out.textContent = _('Testing…');
+					return L.resolveDefault(callGroupTest('main-out'), {}).then(function(ret) {
+						if (!ret || ret.result !== true) {
+							out.style.color = 'red';
+							out.textContent = ret?.error || _('Test failed');
+							return;
+						}
+
+						const rows = (ret.results || []).map(function(r) {
+							const name = (r.section && proxy_nodes[r.section]) ? proxy_nodes[r.section] : r.outbound;
+							let color, text;
+							if (r.delay == null) { color = 'red'; text = _('no answer'); }
+							else if (r.delay >= 3000) { color = 'orange'; text = r.delay + ' ms'; }
+							else { color = 'green'; text = r.delay + ' ms'; }
+
+							return E('tr', { 'class': 'tr' }, [
+								E('td', { 'class': 'td' }, r.selected ? E('b', {}, name) : name),
+								E('td', { 'class': 'td', 'style': 'color:' + color }, text),
+								E('td', { 'class': 'td' }, r.selected ? _('in use') : '')
+							]);
+						});
+
+						if (!rows.length) {
+							out.textContent = _('The pool reported no nodes.');
+							return;
+						}
+						dom.content(out, E('table', { 'class': 'table' }, rows));
+					});
+				})
+			}, [ _('Test now') ]);
+
+			return E('div', {}, [ btn, out ]);
+		};
+
 		o = s.taboption('routing', form.DummyValue, '_urltest_info', _('URLTest'),
-			_('Automatically picks the fastest node by periodically measuring latency. Traffic is always sent through the lowest-latency node in the pool.<br>If you have connection problems and a node stays orange/grey for a long time, try removing it from the URLTest pool.'));
+			_('Automatically picks the fastest node by periodically measuring latency. Traffic is sent through the lowest-latency node in the pool, as long as it beats the node in use by more than the test tolerance below.<br>Latency is all this measures: a node can answer quickly and still carry traffic badly, so if one keeps stalling, test its speed on the Nodes page and take it out of the pool.<br>If you have connection problems and a node stays orange/grey for a long time, try removing it from the URLTest pool.'));
 		o.depends('main_node', 'urltest');
 		o.rawhtml = true;
 		o.cfgvalue = function() { return ''; };
@@ -240,9 +296,9 @@ return view.extend({
 		o.depends('main_node', 'urltest');
 
 		o = s.taboption('routing', form.Value, 'main_urltest_tolerance', _('Test tolerance'),
-			_('Minimum latency gap (ms) required to switch to a faster node — prevents flapping between nodes with close latency values.'));
+			_('Minimum latency gap (ms) a faster node must win by before traffic is moved to it. This is a head start for the node already in use, not a neutral rule: at 150 ms a 90 ms node does not take over from a 200 ms one. Leave it empty to switch on any improvement; raise it only if the pool flaps between nodes that are equally good.'));
 		o.datatype = 'uinteger';
-		o.placeholder = '150';
+		o.placeholder = '1';
 		o.depends('main_node', 'urltest');
 
 		o = s.taboption('routing', form.ListValue, 'main_udp_node', _('Main UDP node'));

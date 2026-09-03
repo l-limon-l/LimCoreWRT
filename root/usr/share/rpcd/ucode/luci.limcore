@@ -57,6 +57,12 @@ const NP_DONE   = '/tmp/limcore-node-probe.done';
  * the button spinning until the page was reloaded. Running is this marker present and the
  * done-marker not. */
 const NP_RUNNING = '/tmp/limcore-node-probe.running';
+const ST_PORT    = 5340;
+const ST_CFG     = '/tmp/limcore-speedtest.json';
+const ST_LOG     = '/tmp/limcore-speedtest.log';
+const ST_RESULT  = '/tmp/limcore-speedtest.result';
+const ST_RUNNING = '/tmp/limcore-speedtest.running';
+const ST_MAX_RUN = 1800;
 
 function get_active_core() {
 	/* Mirror init.d / generate_client.uc precedence: the standard sing-box binary, else a
@@ -1673,6 +1679,138 @@ const methods = {
 				system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_RUNNING} ${NP_LOG} ${NP_CFG}`);
 
 			return { running, results };
+		}
+	},
+
+	/* Re-measure a URLTest group now, and let it re-choose on the result.
+	 *
+	 * The pool tests itself on its own interval, which is fine until someone is standing
+	 * in front of the page asking why it is on the node it is on: the delays on show can
+	 * be minutes old and were taken at different moments, so they do not even compare with
+	 * each other. Hitting the group's delay endpoint tests every member back to back and
+	 * hands the group a fresh set of numbers, which is also what makes it reconsider —
+	 * sing-box re-selects off the history this writes, so this is both the explanation and
+	 * the fix for "it is sitting on the wrong node".
+	 *
+	 * Long timeout on our side: the endpoint answers only when the slowest member has
+	 * finished or timed out. */
+	clash_group_test: {
+		args: { tag: 'tag' },
+		call: function(req) {
+			const tag = req?.args?.tag || 'main-out';
+			if (!match(tag, /^[A-Za-z0-9_-]+$/))
+				return { result: false, error: 'bad group tag' };
+
+			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
+			const fd = popen(`wget -qO- --timeout=25 "http://127.0.0.1:9090/group/${tag}/delay?timeout=8000&url=${url}" 2>/dev/null`);
+			if (!fd)
+				return { result: false, error: 'failed to run wget' };
+			const raw = trim(fd.read('all'));
+			fd.close();
+			if (!length(raw))
+				return { result: false, error: 'Clash API not reachable' };
+
+			let data;
+			try { data = json(raw); } catch(e) { return { result: false, error: 'invalid JSON from Clash API' }; }
+			if (data?.message)
+				return { result: false, error: data.message };
+
+			/* Nodes that failed the test are simply absent from the answer, and "absent"
+			 * reads as "not tested" unless it is spelled out — so the group membership is
+			 * read back and anything missing is reported as a failure, which is what it is. */
+			let delays = {};
+			for (let k in data)
+				delays[k] = data[k];
+
+			let now = null, all = [];
+			const gfd = popen('wget -qO- --timeout=5 http://127.0.0.1:9090/proxies 2>/dev/null');
+			if (gfd) {
+				const graw = trim(gfd.read('all'));
+				gfd.close();
+				let gdata;
+				try { gdata = json(graw); } catch(e) { gdata = null; }
+				const g = gdata?.proxies?.[tag];
+				if (g) { now = g.now; all = g.all || []; }
+			}
+
+			let results = [];
+			for (let name in all) {
+				const m = match(name, /^cfg-(.+)-out$/);
+				push(results, {
+					outbound: name,
+					section: m ? m[1] : null,
+					delay: (name in delays) ? delays[name] : null,
+					selected: (name === now)
+				});
+			}
+
+			return { result: true, now, results };
+		}
+	},
+
+	/* Throughput, as opposed to the reachability the node sweep reports. Same start+poll
+	 * split and for the same reason: a run takes half a minute, a ubus call does not. */
+	speedtest_start: {
+		args: { target: 'target' },
+		call: function(req) {
+			const core = get_active_core();
+			if (!core)
+				return { result: false, error: 'no core installed' };
+			if (!access('/usr/bin/curl'))
+				return { result: false, error: 'curl is not installed' };
+
+			let target = req?.args?.target || '';
+			if (length(target) && !match(target, /^[A-Za-z0-9_-]+$/))
+				return { result: false, error: 'bad target' };
+
+			if (!!access(ST_RUNNING)) {
+				/* A stale marker outlives a reboot and would lock the button out for good;
+				 * anything older than a sweep could possibly take is not a running test.
+				 * The window has to cover every node in turn, not one test: half a minute
+				 * a node, and nobody's node list is longer than this allows for. */
+				const st = lstat(ST_RUNNING);
+				if (st && (time() - st.mtime) < ST_MAX_RUN)
+					return { result: false, error: 'a speed test is already running' };
+			}
+
+			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG}`);
+			writefile(ST_RUNNING, '');
+
+			const script = `
+				sh ${HP_DIR}/scripts/speedtest.sh ${shellquote(core.path)} ${ST_PORT} ${shellquote(target)} ${ST_RESULT} ${ST_CFG} ${ST_LOG}
+				rm -f ${ST_RUNNING}
+			`;
+			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
+			if (rc !== 0) {
+				system(`rm -f ${ST_RUNNING}`);
+				return { result: false, error: 'could not start the speed test' };
+			}
+
+			return { result: true, target };
+		}
+	},
+
+	speedtest_status: {
+		call: function() {
+			/* NDJSON, one object per node, because the sweep publishes each node as it
+			 * finishes rather than the lot at the end — a table that fills in is the whole
+			 * point of measuring them one at a time. The last line is the node in hand and
+			 * carries a stage word instead of numbers. */
+			let results = [];
+			for (let line in split(trim(readfile(ST_RESULT) || ''), '
+')) {
+				if (!length(trim(line))) continue;
+				let row;
+				try { row = json(line); } catch(e) { continue; }
+				if (row) push(results, row);
+			}
+
+			const st = lstat(ST_RUNNING);
+			const running = !!access(ST_RUNNING) && st && (time() - st.mtime) < ST_MAX_RUN;
+			if (!running)
+				system(`rm -f ${ST_RUNNING}`);
+
+			return { running: !!running, results };
 		}
 	},
 
