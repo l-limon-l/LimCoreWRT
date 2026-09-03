@@ -70,4 +70,36 @@ if [ -z "$(uci -q get limcore.config.hwid)" ]; then
 	uci commit limcore
 fi
 
+# Device Control. Set the modes explicitly rather than trusting the ones the package
+# carried: git on Windows does not record the executable bit, and luci.mk copies root/
+# preserving whatever modes it finds — so a package built from a Windows checkout can
+# ship an init script that will not run.
+chmod 0755 /etc/init.d/limcore-netpause /usr/share/limcore/scripts/netpause_apply.uc 2>/dev/null
+
+# Adopt the devices from a standalone netpause install, if one is present, so moving to
+# the built-in page keeps the names and the paused state instead of starting empty. Only
+# runs while LimCore itself has no devices yet, since this file runs again on upgrades.
+if [ -f /etc/config/netpause ] && ! uci -q show limcore | grep -q '=device$'; then
+	idx=0
+	while mac=$(uci -q get "netpause.@device[$idx].mac"); do
+		[ -n "$mac" ] || break
+
+		label=$(uci -q get "netpause.@device[$idx].label")
+		note=$(uci -q get "netpause.@device[$idx].note")
+		paused=$(uci -q get "netpause.@device[$idx].paused")
+
+		sid=$(uci add limcore device)
+		uci set "limcore.$sid.mac=$mac"
+		[ -n "$label" ] && uci set "limcore.$sid.label=$label"
+		[ -n "$note" ] && uci set "limcore.$sid.note=$note"
+		[ "$paused" = "1" ] && uci set "limcore.$sid.paused=1"
+
+		idx=$((idx + 1))
+	done
+	[ "$idx" -gt 0 ] && uci commit limcore
+fi
+
+/etc/init.d/limcore-netpause enable >/dev/null 2>&1
+/etc/init.d/limcore-netpause start  >/dev/null 2>&1
+
 exit 0

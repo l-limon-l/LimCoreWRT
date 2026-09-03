@@ -3642,3 +3642,115 @@ msgstr ""
 #: htdocs/luci-static/resources/view/limcore/node.js:2907
 msgid "Resolving test hosts…"
 msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "account, owner, specs…"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Allowed"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Could not change %s: %s"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Could not save: %s"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Device"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Device Control"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Display name"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Internet"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Internet paused for %s."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Internet restored for %s."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "IP address"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Leave empty to fall back to the name the router sees."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "MAC address"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "No devices seen yet."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Note"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Offline"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Online"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Pause"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Pause or restore internet access for any device on the network. A paused device stays connected and can still reach the router itself, but no traffic leaves for the internet."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Paused"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Rename"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Rename device"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Request failed: %s"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Resume"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Resume all"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Resumed %d device(s)."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Shown in brackets after the name — an account, an owner, a spec."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "unknown error"
+msgstr ""

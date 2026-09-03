@@ -8,6 +8,7 @@
 'use strict';
 
 import { access, basename, error, lstat, popen, readfile, writefile } from 'fs';
+import { cursor } from 'uci';
 
 /* Kanged from ucode/luci */
 function shellquote(s) {
@@ -75,6 +76,125 @@ function get_active_core() {
 			custom:    true
 		};
 	return null;
+}
+
+/* Device Control helpers.
+ *
+ * Ported into LimCore from Device-Control (luci-app-netpause) by Yany1944:
+ * https://github.com/Yany1944/Device-Control
+ * The devices are stored as 'device' sections in LimCore's own UCI file rather
+ * than in a config of their own. */
+
+const NP_CONFIG = 'limcore';
+const NP_APPLY = '/usr/share/limcore/scripts/netpause_apply.uc';
+const NP_MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
+
+/* Counted in BYTES: ucode's length() is byte-based, so Cyrillic costs two per
+   character. Over-long input is refused rather than truncated — cutting a byte
+   string mid-character would leave broken UTF-8 in the config file. The limit is
+   set well above what the input fields accept (48 and 64 characters). */
+const NP_TEXT_MAX = 256;
+
+function np_normalise_mac(value) {
+	return lc(trim(value ?? ''));
+}
+
+function np_valid_mac(value) {
+	return !!match(value, NP_MAC_RE);
+}
+
+/* Labels never reach the ruleset — only the MAC does, and that is validated
+   against NP_MAC_RE — and uci writes through libuci rather than through a shell,
+   so the only real hazard is a line break landing inside the config file.
+   Note the character class: ucode's regex engine rejects \x escapes with
+   "Missing ']'", so the control characters are spelled with the escapes it does
+   understand rather than as a \x00-\x1f range. */
+function np_clean_text(value) {
+	const text = trim(value ?? '');
+	if (!length(text))
+		return null;
+
+	const safe = trim(replace(text, /[\n\r\t]/g, ' '));
+	return length(safe) ? safe : null;
+}
+
+function np_read_leases() {
+	let out = {};
+	for (let line in split(readfile('/tmp/dhcp.leases') ?? '', '\n')) {
+		const f = split(trim(line), /\s+/);
+		if (length(f) < 4)
+			continue;
+
+		const mac = np_normalise_mac(f[1]);
+		if (!np_valid_mac(mac))
+			continue;
+
+		out[mac] = { ip: f[2], name: (f[3] !== '*') ? f[3] : null };
+	}
+	return out;
+}
+
+/* ARP proves presence. Flags 0x0 means an incomplete entry: the neighbour is
+   gone but its lease has not expired yet. */
+function np_read_arp() {
+	let out = {};
+	let header = true;
+	for (let line in split(readfile('/proc/net/arp') ?? '', '\n')) {
+		if (header) { header = false; continue; }
+
+		const f = split(trim(line), /\s+/);
+		if (length(f) < 6)
+			continue;
+
+		const mac = np_normalise_mac(f[3]);
+		if (!np_valid_mac(mac))
+			continue;
+
+		out[mac] = { ip: f[0], online: (f[2] !== '0x0') };
+	}
+	return out;
+}
+
+function np_read_config() {
+	let out = {};
+	const uci = cursor();
+	uci.load(NP_CONFIG);
+	uci.foreach(NP_CONFIG, 'device', (d) => {
+		const mac = np_normalise_mac(d.mac);
+		if (np_valid_mac(mac))
+			out[mac] = {
+				section: d['.name'],
+				label: d.label,
+				note: d.note,
+				paused: (d.paused === '1')
+			};
+	});
+	return out;
+}
+
+/* A section is worth keeping only while it still carries something. Resuming a
+   device the user never renamed leaves nothing behind, so the config lists only
+   what has actually been customised or paused. */
+function np_prune(uci, section) {
+	const label = uci.get(NP_CONFIG, section, 'label');
+	const note = uci.get(NP_CONFIG, section, 'note');
+	const paused = uci.get(NP_CONFIG, section, 'paused');
+
+	if (!length(label ?? '') && !length(note ?? '') && paused !== '1')
+		uci.delete(NP_CONFIG, section);
+}
+
+function np_find_section(uci, mac) {
+	let section = null;
+	uci.foreach(NP_CONFIG, 'device', (d) => {
+		if (np_normalise_mac(d.mac) === mac)
+			section = d['.name'];
+	});
+	return section;
+}
+
+function np_apply_ruleset() {
+	return system('/usr/bin/ucode ' + NP_APPLY + ' >/dev/null 2>&1');
 }
 
 const methods = {
@@ -1696,6 +1816,150 @@ const methods = {
 				interrupted: (!running && length(log) > 0 && !finished),
 				log
 			};
+		}
+	},
+
+	/* Device Control — see the np_* helpers above. */
+
+	devices: {
+		call: function() {
+			const leases = np_read_leases();
+			const arp = np_read_arp();
+			const cfg = np_read_config();
+
+			/* Union of all three: a paused or renamed device that has gone offline
+			   must stay listed, or there is no way to reach it from the page. */
+			let seen = {};
+			for (let mac in leases) seen[mac] = true;
+			for (let mac in arp) seen[mac] = true;
+			for (let mac in cfg) seen[mac] = true;
+
+			let devices = [];
+			for (let mac in seen) {
+				const hostname = leases[mac]?.name;
+				const label = cfg[mac]?.label;
+
+				push(devices, {
+					mac: mac,
+					/* What the router calls it, kept separate from what the user
+					   calls it so the page can show both. */
+					hostname: hostname,
+					label: label,
+					note: cfg[mac]?.note,
+					display: label ?? hostname ?? mac,
+					ip: arp[mac]?.ip ?? leases[mac]?.ip ?? null,
+					online: arp[mac]?.online ?? false,
+					paused: cfg[mac]?.paused ?? false
+				});
+			}
+
+			sort(devices, (a, b) => {
+				if (a.paused != b.paused) return a.paused ? -1 : 1;
+				if (a.online != b.online) return a.online ? -1 : 1;
+				return (lc(a.display) < lc(b.display)) ? -1 : 1;
+			});
+
+			return { devices: devices };
+		}
+	},
+
+	set_paused: {
+		args: { mac: 'mac', paused: true },
+		call: function(req) {
+			const mac = np_normalise_mac(req.args?.mac);
+			if (!np_valid_mac(mac))
+				return { success: false, error: 'invalid mac address' };
+
+			const want = (req.args?.paused === true);
+
+			const uci = cursor();
+			uci.load(NP_CONFIG);
+
+			let section = np_find_section(uci, mac);
+
+			if (want) {
+				if (!section) {
+					section = uci.add(NP_CONFIG, 'device');
+					uci.set(NP_CONFIG, section, 'mac', mac);
+				}
+				uci.set(NP_CONFIG, section, 'paused', '1');
+			}
+			else if (section) {
+				uci.set(NP_CONFIG, section, 'paused', '0');
+				np_prune(uci, section);
+			}
+
+			uci.commit(NP_CONFIG);
+
+			return { success: (np_apply_ruleset() === 0), mac: mac, paused: want };
+		}
+	},
+
+	set_info: {
+		args: { mac: 'mac', label: 'label', note: 'note' },
+		call: function(req) {
+			const mac = np_normalise_mac(req.args?.mac);
+			if (!np_valid_mac(mac))
+				return { success: false, error: 'invalid mac address' };
+
+			if (length(req.args?.label ?? '') > NP_TEXT_MAX || length(req.args?.note ?? '') > NP_TEXT_MAX)
+				return { success: false, error: 'label or note too long' };
+
+			const label = np_clean_text(req.args?.label);
+			const note = np_clean_text(req.args?.note);
+
+			const uci = cursor();
+			uci.load(NP_CONFIG);
+
+			let section = np_find_section(uci, mac);
+
+			/* Clearing both fields on a device that is not paused should not
+			   create a section just to hold nothing. */
+			if (!section) {
+				if (!label && !note)
+					return { success: true, mac: mac, label: null, note: null };
+
+				section = uci.add(NP_CONFIG, 'device');
+				uci.set(NP_CONFIG, section, 'mac', mac);
+			}
+
+			if (label)
+				uci.set(NP_CONFIG, section, 'label', label);
+			else
+				uci.delete(NP_CONFIG, section, 'label');
+
+			if (note)
+				uci.set(NP_CONFIG, section, 'note', note);
+			else
+				uci.delete(NP_CONFIG, section, 'note');
+
+			np_prune(uci, section);
+			uci.commit(NP_CONFIG);
+
+			/* Labels never enter the ruleset, so nothing needs reloading here. */
+			return { success: true, mac: mac, label: label, note: note };
+		}
+	},
+
+	resume_all: {
+		call: function() {
+			const uci = cursor();
+			uci.load(NP_CONFIG);
+
+			let sections = [];
+			uci.foreach(NP_CONFIG, 'device', (d) => {
+				if (d.paused === '1')
+					push(sections, d['.name']);
+			});
+
+			for (let s in sections) {
+				uci.set(NP_CONFIG, s, 'paused', '0');
+				np_prune(uci, s);
+			}
+
+			uci.commit(NP_CONFIG);
+
+			return { success: (np_apply_ruleset() === 0), resumed: length(sections) };
 		}
 	}
 };

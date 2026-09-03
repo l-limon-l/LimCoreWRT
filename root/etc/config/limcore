@@ -64,3 +64,15 @@ config limcore 'server'
 	option enabled '0'
 	option log_level 'warn'
 
+config limcore 'netpause'
+	option enabled '1'
+
+# Device Control stores the devices it has paused or renamed as anonymous
+# sections written by the LuCI page:
+#
+# config device
+#	option mac 'aa:bb:cc:dd:ee:ff'
+#	option label 'Pixel-7-Pro'
+#	option note 'Leonid'
+#	option paused '1'
+

@@ -26,6 +26,14 @@
 			"path": "limcore/node"
 		}
 	},
+	"admin/services/limcore/devices": {
+		"title": "Device Control",
+		"order": 25,
+		"action": {
+			"type": "view",
+			"path": "limcore/devices"
+		}
+	},
 	"admin/services/limcore/server": {
 		"title": "Server Settings",
 		"order": 30,

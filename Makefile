@@ -9,6 +9,7 @@ LUCI_TITLE:=LimCore - multi-core proxy platform
 LUCI_PKGARCH:=all
 LUCI_DEPENDS:= \
 	+firewall4 \
+	+nftables \
 	+ucode-mod-digest
 
 PKG_NAME:=luci-app-limcore

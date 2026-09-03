@@ -16,6 +16,7 @@
 - **Russia Routing Rules**: One-click RU Proxy Rules (Russia Inside, Re:Filter) for targeted domain/IP routing.
 - **Subscription Support**: Import nodes from VLESS, VMess, Trojan, Shadowsocks, WireGuard, AmneziaWG, and Xray/Hiddify subscriptions.
 - **Integrated Diagnostics**: Built-in LuCI tools for port testing, core status inspection, log viewing, and one-click diagnostic reporting.
+- **Per-Device Internet Pause**: Cut or restore internet access for any device on the network, and give it a name of your own. Ported from **Device Control** ([Yany1944/Device-Control](https://github.com/Yany1944/Device-Control)): its rules hook prerouting ahead of the proxy, so a paused device is actually blocked instead of slipping through the transparent proxy the way an ordinary firewall rule does.
 
 ### 📦 Installation & Usage
 
@@ -42,6 +43,7 @@ wget -qO- https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh
 - **Правила для РФ**: Готовые списки маршрутизации (Russia Inside, Re:Filter) для выборочной проксификации.
 - **Поддержка подписок**: Импорт VLESS, VMess, Trojan, Shadowsocks, WireGuard, AmneziaWG и подписок Hiddify/Xray.
 - **Диагностика и управление**: Встроенный контроль портов, логирование, отчёты и управление ядрами из веб-интерфейса LuCI.
+- **Пауза интернета по устройствам**: Отключение и возврат интернета любому устройству в сети, со своими названиями. Перенесено из **Device Control** ([Yany1944/Device-Control](https://github.com/Yany1944/Device-Control)): правила вешаются на prerouting раньше прокси, поэтому остановленное устройство действительно блокируется, а не проскакивает через прозрачный прокси, как это происходит с обычным правилом межсетевого экрана.
 
 ### 📦 Установка и использование
 

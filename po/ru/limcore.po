@@ -4931,3 +4931,115 @@ msgstr "Локальный SOCKS5-прокси для обхода DPI от <a h
 #: htdocs/luci-static/resources/view/limcore/status.js:504
 msgid "Packet-level (NFQUEUE) DPI bypass by <a href=\"https://github.com/bol-van/zapret2\" target=\"_blank\">bol-van</a> (nfqws2). "
 msgstr "Обход DPI на уровне пакетов (NFQUEUE) от <a href=\"https://github.com/bol-van/zapret2\" target=\"_blank\">bol-van</a> (nfqws2). "
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "account, owner, specs…"
+msgstr "учётка, владелец, характеристики…"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Allowed"
+msgstr "Разрешён"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Could not change %s: %s"
+msgstr "Не удалось изменить %s: %s"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Could not save: %s"
+msgstr "Не удалось сохранить: %s"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Device"
+msgstr "Устройство"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Device Control"
+msgstr "Управление устройствами"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Display name"
+msgstr "Своё название"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Internet"
+msgstr "Интернет"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Internet paused for %s."
+msgstr "Интернет для %s остановлен."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Internet restored for %s."
+msgstr "Интернет для %s возобновлён."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "IP address"
+msgstr "IP-адрес"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Leave empty to fall back to the name the router sees."
+msgstr "Оставьте пустым, чтобы показывалось имя, которое видит роутер."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "MAC address"
+msgstr "MAC-адрес"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "No devices seen yet."
+msgstr "Устройств пока не видно."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Note"
+msgstr "Пометка"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Offline"
+msgstr "Не в сети"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Online"
+msgstr "В сети"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Pause"
+msgstr "Остановить"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Pause or restore internet access for any device on the network. A paused device stays connected and can still reach the router itself, but no traffic leaves for the internet."
+msgstr "Остановка и возобновление доступа в интернет для любого устройства в сети. Остановленное устройство остаётся подключённым и по-прежнему видит сам роутер, но наружу его трафик не уходит."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Paused"
+msgstr "Остановлен"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Rename"
+msgstr "Переименовать"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Rename device"
+msgstr "Переименование устройства"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Request failed: %s"
+msgstr "Запрос не выполнен: %s"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Resume"
+msgstr "Возобновить"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Resume all"
+msgstr "Возобновить все"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Resumed %d device(s)."
+msgstr "Возобновлено устройств: %d."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "Shown in brackets after the name — an account, an owner, a spec."
+msgstr "Показывается в скобках после названия — учётная запись, владелец, характеристика."
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "unknown error"
+msgstr "неизвестная ошибка"
