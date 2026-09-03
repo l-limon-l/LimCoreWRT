@@ -914,6 +914,38 @@ function paintDelay(section_id, delay) {
 	el.style.color = (delay < 150) ? '#0a0' : (delay < 350) ? '#c80' : '#c00';
 }
 
+function speedCell(section_id) {
+	return document.querySelector('tr[data-sid="%s"] [data-name="_speed"]'.format(section_id));
+}
+
+/* Down and up in one cell, in that order: a column each would push the address and port
+ * off the visible width, and the pair is read as one figure anyway. */
+function paintSpeed(section_id, row) {
+	const el = speedCell(section_id);
+	if (!el)
+		return;
+
+	el.title = '';
+
+	if (row.state !== 'done') {
+		const failed = (row.state === 'error');
+		el.textContent = failed ? '–' : speedtestStageText(row.state);
+		el.style.color = failed ? '#c00' : 'gray';
+		if (failed && row.error)
+			el.title = row.error;
+		return;
+	}
+
+	const dl = (row.download == null) ? null : (row.download * 8) / 1000000;
+	const up = (row.upload == null) ? null : (row.upload * 8) / 1000000;
+
+	el.textContent = '%s / %s'.format(fmtMbit(dl), fmtMbit(up));
+	el.title = _('%s down, %s up, measured against %s').format(fmtMbit(dl), fmtMbit(up), row.server || row.host || '?');
+	/* Same shape of banding as the delay column, on the figure that decides whether media
+	 * loads: below 10 Mbit/s a node is why video buffers, however well it pings. */
+	el.style.color = (dl == null) ? '#c00' : (dl >= 50) ? '#0a0' : (dl >= 10) ? '#c80' : '#c00';
+}
+
 /* One sweep drives every rendered tab. Returns a promise so the button can stay disabled
  * until it is over. */
 function runNodeSweep(msgEl) {
@@ -979,61 +1011,23 @@ const callSpeedtestStatus = rpc.declare({
 });
 
 /* Speedtest reports bytes per second and everybody reads their line in megabits, so the
- * conversion belongs here rather than in the reader's head. */
-function fmtSpeed(bytes_per_sec) {
-	if (bytes_per_sec == null)
+ * conversion happens before this and what is left is the rounding: three digits of Mbit/s
+ * in a grid cell is noise, and a node doing 278 does not need the .3. */
+function fmtMbit(mbit) {
+	if (mbit == null)
 		return '–';
-	const mbit = (bytes_per_sec * 8) / 1000000;
-	return _('%s Mbit/s').format(mbit >= 100 ? mbit.toFixed(0) : mbit.toFixed(1));
+	return (mbit >= 100) ? mbit.toFixed(0) : mbit.toFixed(1);
 }
 
 function speedtestStageText(state) {
 	switch (state) {
-		case 'core':      return _('bringing the core up…');
-		case 'servers':   return _('choosing a server…');
-		case 'measuring': return _('response time…');
+		case 'core':      return _('starting…');
+		case 'servers':   return _('server…');
+		case 'measuring': return _('response…');
 		case 'download':  return _('download…');
 		case 'upload':    return _('upload…');
 		default:          return _('testing…');
 	}
-}
-
-/* One row per node, filled in as the sweep reaches it. The whole table is re-rendered on
- * every poll rather than patched cell by cell: rows arrive in order and the only one that
- * changes is the last, so there is nothing to save by being cleverer, and a full render
- * cannot leave a stale figure behind from the node before. */
-function renderSpeedtestTable(results) {
-	const rows = [ E('tr', { 'class': 'tr table-titles' }, [
-		E('th', { 'class': 'th' }, _('Node')),
-		E('th', { 'class': 'th' }, _('Response time')),
-		E('th', { 'class': 'th' }, _('Download speed')),
-		E('th', { 'class': 'th' }, _('Upload speed'))
-	]) ];
-
-	for (const r of results) {
-		/* A node that is still being measured, or one that failed, has no numbers to show,
-		 * so its own row says what happened to it instead of leaving three empty cells. */
-		if (r.state !== 'done') {
-			const failed = (r.state === 'error');
-			rows.push(E('tr', { 'class': 'tr' }, [
-				E('td', { 'class': 'td' }, r.label || r.section || '–'),
-				E('td', { 'class': 'td', 'colspan': '3', 'style': failed ? 'color:#c00' : 'color:gray' },
-					failed ? (r.error || _('failed')) : speedtestStageText(r.state))
-			]));
-			continue;
-		}
-
-		rows.push(E('tr', { 'class': 'tr' }, [
-			E('td', { 'class': 'td' }, r.label || r.section || '–'),
-			/* Rounded here, not at the source: the shell hands over a float and a raw one
-			 * renders as 168.90000000000001. */
-			E('td', { 'class': 'td' }, (r.ping == null) ? '–' : _('%s ms').format(Number(r.ping).toFixed(1))),
-			E('td', { 'class': 'td' }, fmtSpeed(r.download)),
-			E('td', { 'class': 'td' }, fmtSpeed(r.upload))
-		]));
-	}
-
-	return E('table', { 'class': 'table', 'style': 'margin-top:.5em' }, rows);
 }
 
 /* A speed test, next to the reachability sweep, because latency alone answers the wrong
@@ -1044,20 +1038,32 @@ function renderSpeedtestTable(results) {
  * Every node in turn, one at a time: two transfers sharing the uplink measure each other,
  * so the sweep is necessarily serial and is worth watching while it runs. Everything goes
  * through a node — there is no direct run to choose, because Ookla is unreachable from
- * Russia without one and a direct attempt reports a blank rather than a baseline. */
-function runSpeedtestSweep(msgEl, outEl) {
+ * Russia without one and a direct attempt reports a blank rather than a baseline.
+ *
+ * Results are written straight into the grid's speed column, the same way the delay sweep
+ * writes into its own, so nodes on the tabs the user is not looking at are filled in too. */
+function runSpeedtestSweep(msgEl) {
+	const sections = uci.sections('limcore', 'node');
+	for (const sec of sections) {
+		const el = speedCell(sec['.name']);
+		if (el) {
+			el.textContent = '…';
+			el.style.color = '';
+			el.title = '';
+		}
+	}
+
 	msgEl.style.color = '';
 	msgEl.textContent = _('Starting…');
-	outEl.innerHTML = '';
 
 	return callSpeedtestStart('').then((res) => {
 		if (!res || res.result !== true)
 			return Promise.reject(new Error(res?.error || _('could not start the test')));
 
-		const total = uci.sections('limcore', 'node').length;
-		/* Half a minute a node, doubled, and never less than two minutes: a deadline tied
-		 * to the node count is the only one that does not either cut a long list off part
-		 * way or leave the button dead for ten minutes over a list of two. */
+		const total = sections.length;
+		/* A minute a node, and never less than two: a deadline tied to the node count is
+		 * the only one that neither cuts a long list off part way nor leaves the button
+		 * dead for ten minutes over a list of two. */
 		const deadline = Date.now() + Math.max(120000, total * 60000);
 
 		const poll = () => new Promise((resolve) => window.setTimeout(resolve, 1500))
@@ -1065,13 +1071,26 @@ function runSpeedtestSweep(msgEl, outEl) {
 			.then((st) => {
 				const results = st?.results || [];
 
-				if (results.length) {
-					outEl.innerHTML = '';
-					outEl.appendChild(renderSpeedtestTable(results));
-				}
+				for (const r of results)
+					paintSpeed(r.section, r);
 
 				if (!st || st.running !== true) {
 					const done = results.filter((r) => r.state === 'done').length;
+					/* Anything the sweep never reached keeps the '…' it was primed with,
+					 * which would read as still running long after it stopped. */
+					const seen = {};
+					for (const r of results)
+						seen[r.section] = true;
+					for (const sec of sections) {
+						if (seen[sec['.name']])
+							continue;
+						const el = speedCell(sec['.name']);
+						if (el) {
+							el.textContent = '–';
+							el.style.color = '';
+						}
+					}
+
 					msgEl.textContent = _('Tested %d of %d nodes.').format(done, total);
 					return;
 				}
@@ -1097,19 +1116,17 @@ function addSpeedtestButton(s, tabname, key) {
 	const o = s.taboption(tabname, form.DummyValue, '_node_speed_' + key, _('Check speed'));
 	o.cfgvalue = function() {
 		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
-		const outEl = E('div', {}, '');
-
 		const btn = E('button', {
 			'class': 'btn cbi-button cbi-button-action',
 			'click': ui.createHandlerFn(this, function() {
-				return runSpeedtestSweep(msgEl, outEl);
+				return runSpeedtestSweep(msgEl);
 			})
 		}, [ _('Check speed') ]);
 
-		return E('div', {}, [ E('div', {}, [ btn, msgEl ]), outEl ]);
+		return E('div', {}, [ btn, msgEl ]);
 	};
 	o.description = _('Measures every node in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. ' +
-		'One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched.');
+		'Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched.');
 }
 
 /* The button is repeated on every node tab. One sweep covers all of them whichever copy
@@ -1152,6 +1169,16 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o = s.option(form.DummyValue, '_delay', _('Delay'));
 	o.modalonly = false;
 	/* A plain string, because the grid stringifies this anyway. */
+	o.cfgvalue = function(section_id) {
+		return '–';
+	};
+
+	/* Next to the delay rather than in a table of its own below the button: the two are
+	 * read together — the whole point is that a node can be quick to answer and slow to
+	 * carry — and a second table repeated the node names for no gain. Blank until a sweep
+	 * runs, for the same reason the delay is. */
+	o = s.option(form.DummyValue, '_speed', _('Speed, Mbit/s'));
+	o.modalonly = false;
 	o.cfgvalue = function(section_id) {
 		return '–';
 	};

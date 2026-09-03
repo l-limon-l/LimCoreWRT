@@ -5073,36 +5073,24 @@ msgid "Check speed"
 msgstr "Проверить скорость"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "Measures every node in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched."
-msgstr "Измеряет каждый узел по очереди на одном и том же сервере Ookla Speedtest, каждый — через своё временное ядро, поэтому числа относятся именно к узлам и сравнимы между собой. По одному узлу за раз, потому что две передачи по одному каналу мешают друг другу — ждите около полуминуты на узел. Текущее подключение не трогается."
-
-#: htdocs/luci-static/resources/view/limcore/node.js
-msgid "Response time"
-msgstr "Время отклика"
-
-#: htdocs/luci-static/resources/view/limcore/node.js
-msgid "Download speed"
-msgstr "Скорость скачивания"
-
-#: htdocs/luci-static/resources/view/limcore/node.js
-msgid "Upload speed"
-msgstr "Скорость отдачи"
+msgid "Measures every node in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched."
+msgstr "Измеряет каждый узел по очереди на одном и том же сервере Ookla Speedtest, каждый — через своё временное ядро, поэтому числа относятся именно к узлам и сравнимы между собой. Результаты появляются в колонке скорости по мере готовности каждого узла. По одному узлу за раз, потому что две передачи по одному каналу мешают друг другу — ждите около полуминуты на узел. Текущее подключение не трогается."
 
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "Starting…"
 msgstr "Запускаю…"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "bringing the core up…"
-msgstr "поднимаю ядро…"
+msgid "starting…"
+msgstr "запуск…"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "choosing a server…"
-msgstr "выбираю сервер…"
+msgid "server…"
+msgstr "сервер…"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "response time…"
-msgstr "время отклика…"
+msgid "response…"
+msgstr "отклик…"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "download…"
@@ -5117,9 +5105,9 @@ msgid "testing…"
 msgstr "проверяю…"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "%s Mbit/s"
-msgstr "%s Мбит/с"
+msgid "Speed, Mbit/s"
+msgstr "Скорость, Мбит/с"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "%s ms"
-msgstr "%s мс"
+msgid "%s down, %s up, measured against %s"
+msgstr "%s вниз, %s вверх, замер на %s"
