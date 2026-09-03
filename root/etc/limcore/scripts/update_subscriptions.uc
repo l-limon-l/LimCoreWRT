@@ -65,6 +65,21 @@ function filter_check(name) {
 }
 /* String helper end */
 
+/* Node helper start */
+/* Nodes eligible to refill an emptied urltest pool: only nodes that came from a
+ * subscription - nodes created by the user have no grouphash - and never a direct
+ * node, which would always win the test and silently route everything unproxied. */
+function subscription_nodes() {
+	let nodes = [];
+	uci.foreach(uciconfig, ucinode, (cfg) => {
+		if (cfg.grouphash && cfg.type !== 'direct')
+			push(nodes, cfg['.name']);
+	});
+
+	return nodes;
+}
+/* Node helper end */
+
 /* Common var start */
 const node_cache = {},
       node_result = [];
@@ -1255,6 +1270,8 @@ function main() {
 	if (!isEmpty(main_node)) {
 		const first_server = uci.get_first(uciconfig, ucinode);
 		if (first_server) {
+			const sub_nodes = subscription_nodes();
+
 			let main_urltest_nodes;
 			if (main_node === 'urltest') {
 				main_urltest_nodes = filter(uci.get(uciconfig, ucimain, 'main_urltest_nodes'), (v) => {
@@ -1266,7 +1283,13 @@ function main() {
 				});
 			}
 
-			if ((main_node === 'urltest') ? !length(main_urltest_nodes) : !uci.get(uciconfig, main_node)) {
+			if (main_node === 'urltest' && !length(main_urltest_nodes) && length(sub_nodes)) {
+				uci.set(uciconfig, ucimain, 'main_urltest_nodes', sub_nodes);
+				uci.commit(uciconfig);
+				need_restart = true;
+
+				log('URLTest pool is empty, repopulating with all subscription nodes.');
+			} else if ((main_node === 'urltest') ? !length(main_urltest_nodes) : !uci.get(uciconfig, main_node)) {
 				uci.set(uciconfig, ucimain, 'main_node', first_server);
 				uci.commit(uciconfig);
 				need_restart = true;
@@ -1286,7 +1309,13 @@ function main() {
 					});
 				}
 
-				if ((main_udp_node === 'urltest') ? !length(main_udp_urltest_nodes) : !uci.get(uciconfig, main_udp_node)) {
+				if (main_udp_node === 'urltest' && !length(main_udp_urltest_nodes) && length(sub_nodes)) {
+					uci.set(uciconfig, ucimain, 'main_udp_urltest_nodes', sub_nodes);
+					uci.commit(uciconfig);
+					need_restart = true;
+
+					log('UDP URLTest pool is empty, repopulating with all subscription nodes.');
+				} else if ((main_udp_node === 'urltest') ? !length(main_udp_urltest_nodes) : !uci.get(uciconfig, main_udp_node)) {
 					uci.set(uciconfig, ucimain, 'main_udp_node', first_server);
 					uci.commit(uciconfig);
 					need_restart = true;
