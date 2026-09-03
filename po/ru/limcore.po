@@ -5119,3 +5119,7 @@ msgstr "Проверка уже шла — показываю её."
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "No nodes on this tab."
 msgstr "На этой вкладке нет узлов."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Measures the nodes on this tab at once through a temporary core on its own port. The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly."
+msgstr "Измеряет узлы этой вкладки разом через временное ядро на отдельном порту. Текущее подключение не трогается и ничего не переключается — проверка только показывает, какие узлы отвечают и насколько быстро."

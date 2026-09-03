@@ -1601,7 +1601,8 @@ const methods = {
 	 * short line, and O_APPEND makes writes under a pipe buffer atomic, so they cannot
 	 * interleave. */
 	nodes_probe_start: {
-		call: function() {
+		args: { targets: 'targets' },
+		call: function(req) {
 			const core = get_active_core();
 			if (!core)
 				return { result: false, error: 'no core installed' };
@@ -1612,9 +1613,26 @@ const methods = {
 				return { result: false, error: 'could not build a probe config' };
 
 			const cfg = readfile(NP_CFG) || '';
-			const tags = [];
+			let tags = [];
 			for (let m in match(cfg, /"tag": "(cfg-[^"]+-out)"/g))
 				push(tags, m[1]);
+
+			/* The probe config carries every node either way — building one per tab would
+			 * cost more than it saves, and an outbound nobody dials is free. What the tab
+			 * decides is which of them get measured, so the caller's list is intersected
+			 * with what the config actually holds rather than trusted on its own. */
+			const want = trim(req?.args?.targets || '');
+			if (length(want)) {
+				let wanted = [];
+				for (let t in split(want, ' ')) {
+					if (!length(t)) continue;
+					if (!match(t, /^[A-Za-z0-9_-]+$/))
+						return { result: false, error: 'bad target' };
+					push(wanted, `cfg-${t}-out`);
+				}
+				tags = filter(tags, (t) => !!(t in wanted));
+			}
+
 			if (!length(tags))
 				return { result: false, error: 'no nodes configured' };
 
@@ -1629,7 +1647,7 @@ const methods = {
 					i=$((i+1)); sleep 1
 				done
 				WORKERS=""
-				for T in $(grep -o '"tag": "cfg-[^"]*"' ${NP_CFG} | sed 's/.*"cfg-/cfg-/;s/"$//'); do
+				for T in ${join(' ', tags)}; do
 					(
 						D=$(wget -qO- --timeout=12 "http://127.0.0.1:${NP_PORT}/proxies/$T/delay?timeout=8000&url=${url}" 2>/dev/null | sed -n 's/.*"delay":\\([0-9]*\\).*/\\1/p')
 						if [ -n "$D" ]; then echo "$T $D" >> ${NP_RESULT}

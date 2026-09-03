@@ -873,6 +873,7 @@ function parseShareLink(uri, features) {
 const callNodesProbeStart = rpc.declare({
 	object: 'luci.limcore',
 	method: 'nodes_probe_start',
+	params: ['targets'],
 	expect: { '': {} }
 });
 
@@ -963,8 +964,7 @@ function paintSpeed(section_id, row) {
 
 /* One sweep drives every rendered tab. Returns a promise so the button can stay disabled
  * until it is over. */
-function runNodeSweep(msgEl) {
-	const sections = uci.sections('limcore', 'node');
+function runNodeSweep(msgEl, sections) {
 	for (const sec of sections) {
 		const el = delayCell(sec['.name']);
 		if (el) {
@@ -975,7 +975,7 @@ function runNodeSweep(msgEl) {
 
 	msgEl.textContent = _('Testing…');
 
-	return callNodesProbeStart().then((res) => {
+	return callNodesProbeStart(sections.map((sec) => sec['.name']).join(' ')).then((res) => {
 		if (!res || res.result !== true)
 			return Promise.reject(new Error(res?.error || _('could not start the test')));
 
@@ -1170,23 +1170,34 @@ function addSpeedtestButton(s, tabname, key, belongs) {
 		'Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched.');
 }
 
-/* The button is repeated on every node tab. One sweep covers all of them whichever copy
- * is pressed — the alternative, a single button on the first tab only, means anyone
- * looking at a subscription tab has to go elsewhere to test what is in front of them. */
-function addSweepButton(s, tabname, key) {
+/* The button is repeated on every node tab and measures the tab it was pressed on. It
+ * used to sweep everything from wherever it was pressed, on the reasoning that the sweep
+ * is parallel and costs the same either way — but "check all nodes" on a subscription tab
+ * reading as every node on the router is not what it looks like it does, and the results
+ * landed on tabs nobody was looking at. */
+function addSweepButton(s, tabname, key, belongs) {
 	const o = s.taboption(tabname, form.DummyValue, '_node_sweep_' + key, _('Check all nodes'));
 	o.cfgvalue = function() {
 		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
 		const btn = E('button', {
 			'class': 'btn cbi-button cbi-button-action',
 			'click': ui.createHandlerFn(this, function() {
-				return runNodeSweep(msgEl);
+				const sections = uci.sections('limcore', 'node')
+					.filter((sec) => belongs(sec['.name']));
+
+				if (!sections.length) {
+					msgEl.style.color = '';
+					msgEl.textContent = _('No nodes on this tab.');
+					return;
+				}
+
+				return runNodeSweep(msgEl, sections);
 			})
 		}, [ _('Check all nodes') ]);
 
 		return E('div', {}, [ btn, msgEl ]);
 	};
-	o.description = _('Measures every configured node at once through a temporary core on its own port. ' +
+	o.description = _('Measures the nodes on this tab at once through a temporary core on its own port. ' +
 		'The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly.');
 }
 
@@ -2308,7 +2319,14 @@ return view.extend({
 		/* Node settings start */
 		/* User nodes start */
 		s.tab('node', _('Nodes'));
-		addSweepButton(s, 'node', 'own');
+		const ownNode = function(section_id) {
+			for (let info of subinfo)
+				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
+					return false;
+
+			return true;
+		};
+		addSweepButton(s, 'node', 'own', ownNode);
 		addSpeedtestButton(s, 'node', 'own', function(section_id) {
 			for (let info of subinfo)
 				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
@@ -2488,7 +2506,12 @@ return view.extend({
 		/* Subscription nodes start */
 		for (const info of subinfo) {
 			s.tab('sub_' + info.hash, _('Sub (%s)').format(info.title));
-			addSweepButton(s, 'sub_' + info.hash, info.hash);
+			const subNode = (function(hash) {
+				return function(section_id) {
+					return uci.get(data[0], section_id, 'grouphash') === hash;
+				};
+			})(info.hash);
+			addSweepButton(s, 'sub_' + info.hash, info.hash, subNode);
 			addSpeedtestButton(s, 'sub_' + info.hash, info.hash, (function(hash) {
 				return function(section_id) {
 					return uci.get(data[0], section_id, 'grouphash') === hash;

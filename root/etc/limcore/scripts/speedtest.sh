@@ -182,18 +182,52 @@ measure_ping() {
 	done
 }
 
-# curl's own progress meter, summed over the running streams. Nothing else on the box could
-# report a transfer in flight: this kernel has no per-process IO accounting, and the bytes
-# cannot be counted by writing them to a file first — 300 Mbit/s for eight seconds is
-# 300 MB and /tmp is RAM. The meter writes a carriage-return-separated line to stderr about
-# once a second; the last one holds the average so far, which is what a speed test shows
-# while it climbs.
+# What the running streams have actually pulled, divided by how long they have been at it.
+#
+# The obvious source, the average speed curl prints in its own meter, could not be summed:
+# each stream averages from its own start, the streams' stderr reaches their files in
+# bursts rather than in step, and a stream that ends on a timeout replaces its last
+# progress line with an error message. Summing four "last lines" therefore mixed figures
+# from different moments with parsed nonsense, and the total jumped around instead of
+# climbing — it looked made up because it was.
+#
+# Bytes received do not have those problems: the count only ever grows, a finished stream
+# has its exact total in its result file, and a stream still running has it in the meter's
+# fourth column. Elapsed time comes from the caller, so every stream is divided by the same
+# clock.
+#
+# Nothing else on the box could report a transfer in flight: this kernel has no per-process
+# IO accounting, and the bytes cannot be counted by writing them to a file first -- eight
+# seconds at 300 Mbit/s is 300 MB and /tmp is RAM.
 running_speed() {
-	for f in "$TMPD"/$1.*.prog; do
+	pfx="$1"
+	started="$2"
+	# Which column carries the bytes: curl's meter counts a download under "Received" and an
+	# upload under "Xferd", and reading the download column during an upload reports a
+	# confident zero for the whole transfer.
+	col="$3"
+
+	elapsed=$(( $(date +%s) - started ))
+	# Under two seconds there is nothing worth showing: an upload of a few megabytes can be
+	# over inside the first tick, and dividing it by a one-second clock printed the size of
+	# the payload as if it were a speed.
+	[ "$elapsed" -lt 2 ] && return
+
+	for f in "$TMPD"/$pfx.*.prog; do
 		[ -f "$f" ] || continue
-		tr '\r' '\n' < "$f" | tail -1
-	done | awk '{
-		v = $7
+		res="${f%.prog}.res"
+		if [ -s "$res" ]; then
+			# Finished: the exact byte count, rather than a meter line that may have been
+			# overwritten by curl's parting error message.
+			awk '{ print $2 }' "$res"
+		else
+			# Still running: the last line that is actually a progress line. Anything else
+			# in this file is curl telling us why it stopped.
+			tr '' '
+' < "$f" | grep -E '^ *[0-9]' | tail -1 | awk -v c="$col" '{ print $c }'
+		fi
+	done | awk -v el="$elapsed" '{
+		v = $1
 		if (v ~ /^[0-9]+$/)
 			n = v + 0
 		else if (v ~ /^[0-9.]+[kMG]$/) {
@@ -205,7 +239,11 @@ running_speed() {
 		} else
 			n = 0
 		s += n
-	} END { if (s > 0) printf "%d", s }'
+	} END {
+		# Under a few hundred kilobytes the streams are still opening and the quotient is
+		# noise, which is the one thing this must not print.
+		if (s > 200000) printf "%d", s / el
+	}'
 }
 
 # Report the climb while it happens rather than one number at the end: the figure people
@@ -214,6 +252,7 @@ running_speed() {
 watch_streams() {
 	pfx="$1"
 	stage="$2"
+	started="$3"
 	while :; do
 		alive=0
 		for pid in $PIDS; do
@@ -221,7 +260,8 @@ watch_streams() {
 		done
 		[ "$alive" = 1 ] || break
 
-		cur=$(running_speed "$pfx")
+		if [ "$stage" = download ]; then col=4; else col=6; fi
+		cur=$(running_speed "$pfx" "$started" "$col")
 		if [ -n "$cur" ]; then
 			if [ "$stage" = download ]; then DL="$cur"; else UP="$cur"; fi
 			flush "$stage"
@@ -259,8 +299,9 @@ start_streams() {
 # in under a second on a fast node and measures the ramp-up rather than the ceiling.
 measure_download() {
 	for U in "http://$HOST/download?nocache=$NONCE&size=100000000" "$BASE/random4000x4000.jpg?nocache=$NONCE"; do
+		STARTED=$(date +%s)
 		start_streams "$U" dl "$DL_TIME"
-		watch_streams dl download
+		watch_streams dl download "$STARTED"
 		wait $PIDS 2>/dev/null
 
 		set -- $(total_speed dl)
@@ -278,6 +319,7 @@ measure_download() {
 measure_upload() {
 	for U in "http://$HOST/upload?nocache=$NONCE" "$BASE/upload.php?nocache=$NONCE"; do
 		rm -f "$TMPD"/ul.*
+		STARTED=$(date +%s)
 		PIDS=''
 		i=0
 		while [ $i -lt $PAR ]; do
@@ -288,7 +330,7 @@ measure_upload() {
 			PIDS="$PIDS $!"
 			i=$((i+1))
 		done
-		watch_streams ul upload
+		watch_streams ul upload "$STARTED"
 		wait $PIDS 2>/dev/null
 
 		set -- $(total_speed ul)
