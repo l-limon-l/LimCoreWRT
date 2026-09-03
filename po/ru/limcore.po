@@ -5043,3 +5043,7 @@ msgstr "Показывается в скобках после названия �
 #: htdocs/luci-static/resources/view/limcore/devices.js
 msgid "unknown error"
 msgstr "неизвестная ошибка"
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "randomised MAC"
+msgstr "случайный MAC"

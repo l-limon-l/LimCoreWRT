@@ -85,10 +85,17 @@ return view.extend({
 
 			/* The name the router itself saw stays in view once a custom label
 			   hides it — otherwise a renamed device is hard to match against the
-			   DHCP list. */
-			var secondary = (dev.label && dev.hostname && dev.hostname != dev.label)
-				? dev.hostname + ' · ' + dev.mac
-				: dev.mac;
+			   DHCP list. Anything already used as the title is left out, so a
+			   device with no name at all does not print its MAC twice. */
+			var parts = [];
+			if (dev.hostname && dev.hostname != dev.display)
+				parts.push(dev.hostname);
+			if (dev.mac != dev.display)
+				parts.push(dev.mac);
+			if (dev.randomised && !dev.hostname)
+				parts.push(_('randomised MAC'));
+
+			var secondary = parts.join(' · ');
 
 			var title = [ E('strong', {}, dev.display) ];
 			if (dev.note)

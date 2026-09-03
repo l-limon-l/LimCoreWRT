@@ -3754,3 +3754,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/limcore/devices.js
 msgid "unknown error"
 msgstr ""
+
+#: htdocs/luci-static/resources/view/limcore/devices.js
+msgid "randomised MAC"
+msgstr ""

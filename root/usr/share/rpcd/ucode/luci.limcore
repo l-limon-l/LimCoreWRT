@@ -134,9 +134,47 @@ function np_read_leases() {
 	return out;
 }
 
+/* A MAC that cannot belong to a real neighbour: the all-zero placeholder the
+   kernel leaves behind, and anything with the multicast bit set (which covers
+   the broadcast address too). Listing those as devices to pause is noise. */
+function np_usable_mac(mac) {
+	if (mac === '00:00:00:00:00:00')
+		return false;
+
+	return !(hex(substr(mac, 0, 2)) & 0x01);
+}
+
+/* Locally administered, i.e. the phone is rotating a private MAC rather than
+   showing its real one. Such a device has no vendor to look up and usually no
+   DHCP hostname either, so the page says so instead of looking broken. */
+function np_randomised_mac(mac) {
+	return !!(hex(substr(mac, 0, 2)) & 0x02);
+}
+
+/* Interfaces carrying a default route are uplinks. Their ARP entries are the
+   ISP's gateway and whatever else lives on the provider's segment — neither is
+   a device on this network, and pausing one would be meaningless. */
+function np_uplink_devices() {
+	let out = {};
+	let header = true;
+	for (let line in split(readfile('/proc/net/route') ?? '', '\n')) {
+		if (header) { header = false; continue; }
+
+		const f = split(trim(line), /\s+/);
+		if (length(f) < 2)
+			continue;
+
+		if (f[1] === '00000000')
+			out[f[0]] = true;
+	}
+	return out;
+}
+
 /* ARP proves presence. Flags 0x0 means an incomplete entry: the neighbour is
    gone but its lease has not expired yet. */
 function np_read_arp() {
+	const uplinks = np_uplink_devices();
+
 	let out = {};
 	let header = true;
 	for (let line in split(readfile('/proc/net/arp') ?? '', '\n')) {
@@ -146,12 +184,56 @@ function np_read_arp() {
 		if (length(f) < 6)
 			continue;
 
+		if (uplinks[f[5]])
+			continue;
+
 		const mac = np_normalise_mac(f[3]);
-		if (!np_valid_mac(mac))
+		if (!np_valid_mac(mac) || !np_usable_mac(mac))
 			continue;
 
 		out[mac] = { ip: f[0], online: (f[2] !== '0x0') };
 	}
+	return out;
+}
+
+/* Names the router already knows but never showed here: a static lease carries
+   the name someone typed into the DHCP page, and /etc/ethers can carry one too.
+   Both beat falling back to a bare MAC. */
+function np_read_static_names() {
+	let out = {};
+
+	const uci = cursor();
+	uci.load('dhcp');
+	uci.foreach('dhcp', 'host', (h) => {
+		if (!length(h.name ?? ''))
+			return;
+
+		/* The mac option holds one address, several separated by whitespace, or
+		   a list — a host may be pinned by more than one interface. */
+		let macs = (type(h.mac) === 'array') ? h.mac : split(trim(h.mac ?? ''), /\s+/);
+		for (let entry in macs) {
+			const mac = np_normalise_mac(entry);
+			if (np_valid_mac(mac))
+				out[mac] = h.name;
+		}
+	});
+
+	for (let line in split(readfile('/etc/ethers') ?? '', '\n')) {
+		const text = trim(line);
+		if (!length(text) || substr(text, 0, 1) === '#')
+			continue;
+
+		const f = split(text, /\s+/);
+		if (length(f) < 2)
+			continue;
+
+		const mac = np_normalise_mac(f[0]);
+		/* The second column is a name or an address; an address is no better
+		   than what the page already shows. */
+		if (np_valid_mac(mac) && !match(f[1], /^[0-9.]+$/) && !(mac in out))
+			out[mac] = f[1];
+	}
+
 	return out;
 }
 
@@ -1826,6 +1908,7 @@ const methods = {
 			const leases = np_read_leases();
 			const arp = np_read_arp();
 			const cfg = np_read_config();
+			const static_names = np_read_static_names();
 
 			/* Union of all three: a paused or renamed device that has gone offline
 			   must stay listed, or there is no way to reach it from the page. */
@@ -1836,7 +1919,10 @@ const methods = {
 
 			let devices = [];
 			for (let mac in seen) {
-				const hostname = leases[mac]?.name;
+				/* A DHCP hostname is what the device calls itself; a static lease
+				   name is what someone typed on the DHCP page. Prefer the lease
+				   file, since that is the live one. */
+				const hostname = leases[mac]?.name ?? static_names[mac];
 				const label = cfg[mac]?.label;
 
 				push(devices, {
@@ -1849,7 +1935,9 @@ const methods = {
 					display: label ?? hostname ?? mac,
 					ip: arp[mac]?.ip ?? leases[mac]?.ip ?? null,
 					online: arp[mac]?.online ?? false,
-					paused: cfg[mac]?.paused ?? false
+					paused: cfg[mac]?.paused ?? false,
+					/* Explains an entry that has nothing but a MAC to show. */
+					randomised: np_randomised_mac(mac)
 				});
 			}
 
