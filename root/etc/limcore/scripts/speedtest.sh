@@ -44,12 +44,16 @@ API='https://www.speedtest.net/api/js/servers?engine=js&limit=5&https_functional
 # desktop VPN client, which also uses several, said an order of magnitude more.
 PAR=4
 
-# Short, because the sweep is serial and its length is the sum of these. Four streams reach
-# the ceiling far sooner than one, so the seconds a single stream needed to ramp up are not
-# needed here.
-DL_TIME=8
-UP_TIME=6
-UP_BYTES=6000000
+# Fifteen seconds a phase, which is what speedtest.net spends on its own: the number here
+# is read next to the one the browser gives, so it has to be taken over the same kind of
+# window. Shorter is not a cheaper version of the same measurement - a few seconds is spent
+# almost entirely in TCP slow start and the tunnel's own ramp, so it reports the climb
+# rather than the ceiling, and it reports it low.
+#
+# The sweep is serial, so this is also its length: about forty seconds a node once the core
+# is up, and a dozen nodes is therefore several minutes rather than one.
+DL_TIME=15
+UP_TIME=15
 NONCE=$(date +%s)$$
 LINES="$RESULT.part"
 TMPD="/tmp/limcore-speedtest.d"
@@ -223,7 +227,8 @@ running_speed() {
 		else
 			# Still running: the last line that is actually a progress line. Anything else
 			# in this file is curl telling us why it stopped.
-			tr '' '
+			tr '
+' '
 ' < "$f" | grep -E '^ *[0-9]' | tail -1 | awk -v c="$col" '{ print $c }'
 		fi
 	done | awk -v el="$elapsed" '{
@@ -298,7 +303,10 @@ start_streams() {
 # because it is what the list mostly returns now, and because a fixed 25 MB image is over
 # in under a second on a fast node and measures the ramp-up rather than the ceiling.
 measure_download() {
-	for U in "http://$HOST/download?nocache=$NONCE&size=100000000" "$BASE/random4000x4000.jpg?nocache=$NONCE"; do
+	# The size has to be more than a stream can pull in DL_TIME, or the transfer ends on
+	# running out of payload instead of on the clock and the phase measures the ramp again:
+	# a stream doing 10 MB/s wants 150 MB of it, and the old 100 MB was already short.
+	for U in "http://$HOST/download?nocache=$NONCE&size=1000000000" "$BASE/random4000x4000.jpg?nocache=$NONCE"; do
 		STARTED=$(date +%s)
 		start_streams "$U" dl "$DL_TIME"
 		watch_streams dl download "$STARTED"
@@ -316,6 +324,20 @@ measure_download() {
 
 # From /dev/zero down a pipe rather than a temp file: /tmp is RAM on these boxes and a
 # payload per stream written there is how you fill it.
+#
+# Streamed with -T rather than handed over with --data-binary, and that is the whole fix
+# for an upload figure that used to arrive in about a second. --data-binary needs a
+# Content-Length, so curl reads the entire payload into memory before it sends any of it,
+# which caps the payload at what the box can hold - it was six megabytes a stream, gone in
+# under a second on a fast node. The phase then ended long inside its own budget, the
+# number it reported was the ramp-up rather than the speed, and the cell never showed a
+# climb because the transfer was over before the first tick that could have drawn one.
+#
+# -T - sends chunked from stdin instead, holding nothing: measured on this router it moved
+# 553 MB in 15 s with free memory unchanged. The far end never gets to answer, since the
+# clock cuts the request off mid-body, so curl exits on timeout and its http_code is
+# meaningless here - which is already true of the download, and why both phases are judged
+# by the bytes -w reports rather than by curl's exit status.
 measure_upload() {
 	for U in "http://$HOST/upload?nocache=$NONCE" "$BASE/upload.php?nocache=$NONCE"; do
 		rm -f "$TMPD"/ul.*
@@ -323,8 +345,8 @@ measure_upload() {
 		PIDS=''
 		i=0
 		while [ $i -lt $PAR ]; do
-			head -c "$UP_BYTES" /dev/zero | curl $PROXY --max-time "$UP_TIME" -o /dev/null \
-				-H 'Content-Type: application/octet-stream' --data-binary @- \
+			cat /dev/zero | curl $PROXY --max-time "$UP_TIME" -o /dev/null \
+				-X POST -H 'Content-Type: application/octet-stream' -T - \
 				-w '%{speed_upload} %{size_upload}\n' "$U&stream=$i" \
 				> "$TMPD/ul.$i.res" 2> "$TMPD/ul.$i.prog" &
 			PIDS="$PIDS $!"
