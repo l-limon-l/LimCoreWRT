@@ -335,6 +335,37 @@ return baseclass.extend({
 		return true;
 	},
 
+	/* Latency bands, shared by every page that shows a delay.
+	 *
+	 * They used to be per page: the pool table called 270 ms green while the node grid
+	 * called the same figure orange, and one number wearing two colours reads as one of
+	 * the pages being wrong. The bands are the node grid's, because that is the table
+	 * people pick a node from: green is a latency nobody notices, orange shows on
+	 * interactive traffic, red is one to move off. 65535 ms is URLTest's timeout
+	 * sentinel rather than a measurement, and 0/absent means nothing has measured it. */
+	delayBand(delay) {
+		if (delay == null || delay === 0)
+			return 'none';
+		if (delay === 65535)
+			return 'dead';
+		if (delay < 150)
+			return 'good';
+		if (delay < 350)
+			return 'fair';
+		return 'bad';
+	},
+
+	/* Inline text colour for a delay, for the pages that style with a colour rather than
+	   with a class. */
+	delayColor(delay) {
+		switch (this.delayBand(delay)) {
+			case 'good': return '#0a0';
+			case 'fair': return '#c80';
+			case 'none': return 'gray';
+			default:     return '#c00';
+		}
+	},
+
 	validateUUID(section_id, value) {
 		if (section_id) {
 			if (!value)

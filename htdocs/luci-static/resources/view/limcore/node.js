@@ -910,9 +910,11 @@ function paintDelay(section_id, delay) {
 	}
 
 	el.textContent = '%d ms'.format(delay);
-	/* Three bands rather than a number alone: the useful question is "which of these
-	 * should I switch to", and a column of bare figures makes the reader do the sorting. */
-	el.style.color = (delay < 150) ? '#0a0' : (delay < 350) ? '#c80' : '#c00';
+	/* Bands rather than a number alone: the useful question is "which of these should I
+	 * switch to", and a column of bare figures makes the reader do the sorting. The bands
+	 * live in the shared helper so the pool table on the client page paints the same
+	 * figure the same colour. */
+	el.style.color = hp.delayColor(delay);
 }
 
 function speedCell(section_id) {
@@ -1069,15 +1071,22 @@ function runSpeedtestSweep(msgEl, sections) {
 		 * far it had got. A run in flight is something to join, not an error — so poll it
 		 * and paint what it reports, rather than starting a second one on top. */
 		const attached = (res && res.result !== true && res.running === true);
+		/* Pressed while another tab's sweep was in flight: these nodes are now behind it
+		 * rather than dropped, which is what the second press used to amount to. */
+		const queued = (res && res.result === true && res.queued === true);
 
 		if (!res || (res.result !== true && !attached))
 			return Promise.reject(new Error(res?.error || _('could not start the test')));
 
 		if (attached)
 			msgEl.textContent = _('A test was already running — showing it.');
-		else
-			/* Primed only for a run we started: on a run we joined, the cells the earlier
-			 * page filled in are results, not leftovers, and blanking them loses them. */
+		else if (queued)
+			msgEl.textContent = _('Queued — these nodes are measured once the running test finishes.');
+
+		if (!attached)
+			/* Primed only for nodes we asked for: on a run we merely joined, the cells
+			 * the earlier page filled in are results, not leftovers, and blanking them
+			 * loses them. */
 			for (const sec of sections) {
 				const el = speedCell(sec['.name']);
 				if (el) {
@@ -1090,8 +1099,18 @@ function runSpeedtestSweep(msgEl, sections) {
 		const total = sections.length;
 		/* A minute a node, and never less than two: a deadline tied to the node count is
 		 * the only one that neither cuts a long list off part way nor leaves the button
-		 * dead for ten minutes over a list of two. */
-		const deadline = Date.now() + Math.max(120000, total * 60000);
+		 * dead for ten minutes over a list of two. A sweep we queued behind or joined has
+		 * an unknown number of nodes in front of it, so it gets the run's own ceiling. */
+		const deadline = Date.now() + ((queued || attached)
+			? 1800000
+			: Math.max(120000, total * 60000));
+
+		/* Rows for other tabs are painted too — that is how a sweep fills in the tabs
+		 * nobody is looking at — but the progress line counts only what this press asked
+		 * for, or a queued run reports somebody else's nodes as its own. */
+		const mine = {};
+		for (const sec of sections)
+			mine[sec['.name']] = true;
 
 		const poll = () => new Promise((resolve) => window.setTimeout(resolve, 1500))
 			.then(callSpeedtestStatus)
@@ -1101,12 +1120,14 @@ function runSpeedtestSweep(msgEl, sections) {
 				for (const r of results)
 					paintSpeed(r.section, r);
 
+				const ours = results.filter((r) => mine[r.section]);
+
 				if (!st || st.running !== true) {
-					const done = results.filter((r) => r.state === 'done').length;
+					const done = ours.filter((r) => r.state === 'done').length;
 					/* Anything the sweep never reached keeps the '…' it was primed with,
 					 * which would read as still running long after it stopped. */
 					const seen = {};
-					for (const r of results)
+					for (const r of ours)
 						seen[r.section] = true;
 					for (const sec of sections) {
 						if (seen[sec['.name']])
@@ -1122,7 +1143,13 @@ function runSpeedtestSweep(msgEl, sections) {
 					return;
 				}
 
-				msgEl.textContent = _('Testing… %d of %d').format(results.length, total);
+				/* Still waiting behind another tab's sweep: say so, rather than showing
+				 * "0 of 6" as though this run had stalled on its first node. */
+				const waiting = (st.pending || []).filter((sec) => mine[sec]).length;
+				if (!ours.length && waiting)
+					msgEl.textContent = _('Queued — %d nodes waiting for the running test.').format(waiting);
+				else
+					msgEl.textContent = _('Testing… %d of %d').format(ours.length, total);
 
 				if (Date.now() > deadline) {
 					msgEl.style.color = '#c00';
@@ -1143,7 +1170,12 @@ function runSpeedtestSweep(msgEl, sections) {
  * sweep tests every node in parallel and is over in seconds, so covering all the tabs at
  * once costs nothing; here each node holds the uplink to itself for half a minute, and
  * "check this subscription" turning into twelve minutes of everything is not what anyone
- * pressed the button for. */
+ * pressed the button for.
+ *
+ * Pressing it on a second tab while the first is still going queues those nodes behind
+ * the running sweep rather than starting another one: two transfers over one uplink
+ * measure each other, and the press used to attach to the running sweep instead, so the
+ * nodes it was pressed for were never measured at all. */
 function addSpeedtestButton(s, tabname, key, belongs) {
 	const o = s.taboption(tabname, form.DummyValue, '_node_speed_' + key, _('Check speed'));
 	o.cfgvalue = function() {
@@ -1167,27 +1199,31 @@ function addSpeedtestButton(s, tabname, key, belongs) {
 		return E('div', {}, [ btn, msgEl ]);
 	};
 	o.description = _('Measures the nodes on this tab in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. ' +
-		'Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched.');
+		'Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. ' +
+		'Pressing it on another tab meanwhile adds those nodes to the queue instead of starting a second test. The running connection is not touched.');
 }
 
-/* The button is repeated on every node tab and measures the tab it was pressed on. It
- * used to sweep everything from wherever it was pressed, on the reasoning that the sweep
- * is parallel and costs the same either way — but "check all nodes" on a subscription tab
- * reading as every node on the router is not what it looks like it does, and the results
- * landed on tabs nobody was looking at. */
-function addSweepButton(s, tabname, key, belongs) {
+/* The button is repeated on every node tab and sweeps every node on the router from
+ * wherever it is pressed, subscriptions included.
+ *
+ * It was briefly limited to the tab it sat on, on the reasoning that "check all nodes" on
+ * a subscription tab should mean that subscription. In use that reads as the button being
+ * broken: the sweep is parallel and a second subscription costs it no extra time, so a
+ * per-tab limit only means pressing the same button on every tab in turn and, since each
+ * press starts a fresh probe core, waiting out the whole thing again each time. Results
+ * land in the delay column of every tab, so the ones not in view are filled in too. */
+function addSweepButton(s, tabname, key) {
 	const o = s.taboption(tabname, form.DummyValue, '_node_sweep_' + key, _('Check all nodes'));
 	o.cfgvalue = function() {
 		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
 		const btn = E('button', {
 			'class': 'btn cbi-button cbi-button-action',
 			'click': ui.createHandlerFn(this, function() {
-				const sections = uci.sections('limcore', 'node')
-					.filter((sec) => belongs(sec['.name']));
+				const sections = uci.sections('limcore', 'node');
 
 				if (!sections.length) {
 					msgEl.style.color = '';
-					msgEl.textContent = _('No nodes on this tab.');
+					msgEl.textContent = _('No nodes configured.');
 					return;
 				}
 
@@ -1197,7 +1233,7 @@ function addSweepButton(s, tabname, key, belongs) {
 
 		return E('div', {}, [ btn, msgEl ]);
 	};
-	o.description = _('Measures the nodes on this tab at once through a temporary core on its own port. ' +
+	o.description = _('Measures every node on the router — this tab and all the others — at once, through a temporary core on its own port. ' +
 		'The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly.');
 }
 
@@ -2326,7 +2362,7 @@ return view.extend({
 
 			return true;
 		};
-		addSweepButton(s, 'node', 'own', ownNode);
+		addSweepButton(s, 'node', 'own');
 		addSpeedtestButton(s, 'node', 'own', function(section_id) {
 			for (let info of subinfo)
 				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
@@ -2511,7 +2547,7 @@ return view.extend({
 					return uci.get(data[0], section_id, 'grouphash') === hash;
 				};
 			})(info.hash);
-			addSweepButton(s, 'sub_' + info.hash, info.hash, subNode);
+			addSweepButton(s, 'sub_' + info.hash, info.hash);
 			addSpeedtestButton(s, 'sub_' + info.hash, info.hash, (function(hash) {
 				return function(section_id) {
 					return uci.get(data[0], section_id, 'grouphash') === hash;

@@ -207,15 +207,17 @@ return view.extend({
 						const m = ret.node.match(/^cfg-(.+)-out$/);
 						const name = (m && proxy_nodes[m[1]]) ? proxy_nodes[m[1]] : ret.node;
 						const type = ret.type ? ' (' + ret.type + ')' : '';
-						/* Same 4-colour scheme as the status page: 65535 ms is the
-						   URLTest timeout sentinel (confirmed dead → red); >=3000 ms is
-						   working-but-slow (orange); a real low latency is green; no
-						   delay at all is unmeasured (gray, no number). */
-						let dColor, dStr = '';
-						if (ret.delay === 65535) { dColor = 'red'; dStr = ' — ' + _('timeout'); }
-						else if (ret.delay >= 3000) { dColor = 'orange'; dStr = ' — ' + ret.delay + ' ms'; }
-						else if (ret.delay) { dColor = 'green'; dStr = ' — ' + ret.delay + ' ms'; }
-						else dColor = 'gray';
+						/* Bands come from the shared helper, so this figure is the
+						   colour the node grid gives it: they used to disagree, and
+						   270 ms green here against 270 ms orange there is read as a
+						   bug in whichever page the reader trusts less. 65535 ms is
+						   URLTest's timeout sentinel, and no delay at all is
+						   unmeasured (gray, no number). */
+						const dBand = hp.delayBand(ret.delay);
+						const dColor = hp.delayColor(ret.delay);
+						let dStr = '';
+						if (dBand === 'dead') dStr = ' — ' + _('timeout');
+						else if (dBand !== 'none') dStr = ' — ' + ret.delay + ' ms';
 						el.textContent = name + type + dStr;
 						el.style.color = dColor;
 					} else {
@@ -252,10 +254,12 @@ return view.extend({
 
 						const rows = (ret.results || []).map(function(r) {
 							const name = (r.section && proxy_nodes[r.section]) ? proxy_nodes[r.section] : r.outbound;
+							/* A node that did not answer has no figure at all here,
+							   which is not the same as URLTest's 65535 sentinel; every
+							   real number is banded by the shared helper. */
 							let color, text;
-							if (r.delay == null) { color = 'red'; text = _('no answer'); }
-							else if (r.delay >= 3000) { color = 'orange'; text = r.delay + ' ms'; }
-							else { color = 'green'; text = r.delay + ' ms'; }
+							if (r.delay == null) { color = '#c00'; text = _('no answer'); }
+							else { color = hp.delayColor(r.delay); text = r.delay + ' ms'; }
 
 							return E('tr', { 'class': 'tr' }, [
 								E('td', { 'class': 'td' }, r.selected ? E('b', {}, name) : name),
@@ -264,8 +268,14 @@ return view.extend({
 							]);
 						});
 
+						/* The core answers with the pool it is running, not the one on
+						   screen: a pool edited but not applied yet is still a single
+						   node in the running config, and it comes back with no members
+						   at all. Saying only "no nodes" left the reader looking at a
+						   full list of them wondering which of the two was lying. */
 						if (!rows.length) {
-							out.textContent = _('The pool reported no nodes.');
+							out.style.color = '#c80';
+							out.textContent = _('The running configuration has no pool — save and apply the settings, then test again.');
 							return;
 						}
 						dom.content(out, E('table', { 'class': 'table' }, rows));

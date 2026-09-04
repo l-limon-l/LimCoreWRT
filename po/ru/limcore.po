@@ -5065,16 +5065,16 @@ msgid "in use"
 msgstr "используется"
 
 #: htdocs/luci-static/resources/view/limcore/client.js
-msgid "The pool reported no nodes."
-msgstr "Пул не вернул ни одного узла."
+msgid "The running configuration has no pool — save and apply the settings, then test again."
+msgstr "В работающей конфигурации пула нет — сохраните и примените настройки, затем проверьте снова."
 
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "Check speed"
 msgstr "Проверить скорость"
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "Measures the nodes on this tab in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. The running connection is not touched."
-msgstr "Измеряет узлы этой вкладки по очереди на одном и том же сервере Ookla Speedtest, каждый — через своё временное ядро, поэтому числа относятся именно к узлам и сравнимы между собой. Результаты появляются в колонке скорости по мере готовности каждого узла. По одному узлу за раз, потому что две передачи по одному каналу мешают друг другу — ждите около полуминуты на узел. Текущее подключение не трогается."
+msgid "Measures the nodes on this tab in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. Pressing it on another tab meanwhile adds those nodes to the queue instead of starting a second test. The running connection is not touched."
+msgstr "Измеряет узлы этой вкладки по очереди на одном и том же сервере Ookla Speedtest, каждый — через своё временное ядро, поэтому числа относятся именно к узлам и сравнимы между собой. Результаты появляются в колонке скорости по мере готовности каждого узла. По одному узлу за раз, потому что две передачи по одному каналу мешают друг другу — ждите около полуминуты на узел. Текущее подключение не трогается. Нажатие на другой вкладке во время проверки ставит её узлы в очередь, а не запускает вторую проверку."
 
 #: htdocs/luci-static/resources/view/limcore/node.js
 msgid "Starting…"
@@ -5121,5 +5121,17 @@ msgid "No nodes on this tab."
 msgstr "На этой вкладке нет узлов."
 
 #: htdocs/luci-static/resources/view/limcore/node.js
-msgid "Measures the nodes on this tab at once through a temporary core on its own port. The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly."
-msgstr "Измеряет узлы этой вкладки разом через временное ядро на отдельном порту. Текущее подключение не трогается и ничего не переключается — проверка только показывает, какие узлы отвечают и насколько быстро."
+msgid "No nodes configured."
+msgstr "Узлы не настроены."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Queued — these nodes are measured once the running test finishes."
+msgstr "В очереди — эти узлы проверятся, когда закончится текущая проверка."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Queued — %d nodes waiting for the running test."
+msgstr "В очереди — %d узлов ждут окончания текущей проверки."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Measures every node on the router — this tab and all the others — at once, through a temporary core on its own port. The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly."
+msgstr "Измеряет разом все узлы роутера — и этой вкладки, и всех остальных — через временное ядро на отдельном порту. Текущее подключение не трогается и ничего не переключается — проверка только показывает, какие узлы отвечают и насколько быстро."

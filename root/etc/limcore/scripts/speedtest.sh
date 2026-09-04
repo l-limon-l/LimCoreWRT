@@ -21,8 +21,11 @@
 # produce a column of numbers taken against different endpoints — which is exactly the
 # comparison this exists to make possible.
 #
-# Usage: speedtest.sh <core_path> <socks_port> <target> <result_file> <config_file> <log_file>
+# Usage: speedtest.sh <core_path> <socks_port> <target> <result_file> <config_file> #                     <log_file> [queue_file] [running_marker]
 #   target: node section ids separated by spaces, or '' for every configured node.
+#   queue_file: nodes another tab asked for while this sweep was running, one list per
+#     line. They are picked up when the sweep runs out of its own, because two sweeps at
+#     once would share the uplink and measure each other.
 #
 # Writes NDJSON to <result_file>: one object per node, rewritten in place as that node
 # moves through its stages, so a poller always sees the whole table with the node in hand
@@ -34,6 +37,8 @@ TARGET="$3"
 RESULT="$4"
 CFG="$5"
 LOG="$6"
+QUEUE="$7"
+RUNNING="$8"
 
 API='https://www.speedtest.net/api/js/servers?engine=js&limit=5&https_functional=true'
 
@@ -227,7 +232,8 @@ running_speed() {
 		else
 			# Still running: the last line that is actually a progress line. Anything else
 			# in this file is curl telling us why it stopped.
-			tr '' '
+			tr '
+' '
 ' < "$f" | grep -E '^ *[0-9]' | tail -1 | awk -v c="$col" '{ print $c }'
 		fi
 	done | awk -v el="$elapsed" '{
@@ -366,6 +372,10 @@ measure_upload() {
 
 run_one() {
 	SECTION="$1"
+	# The caller ages the marker out to decide whether a sweep is still alive, and a
+	# queue can carry this one well past that window. Touching it per node keeps a
+	# working sweep alive without keeping an abandoned one alive.
+	[ -n "$RUNNING" ] && touch "$RUNNING" 2>/dev/null
 	LABEL=$(uci -q get "limcore.$SECTION.label")
 	[ -n "$LABEL" ] || LABEL=$(uci -q get "limcore.$SECTION.address")
 	[ -n "$LABEL" ] || LABEL="$SECTION"
@@ -423,8 +433,25 @@ if [ -z "$TARGETS" ]; then
 	exit 1
 fi
 
-for T in $TARGETS; do
-	run_one "$T"
+TESTED=''
+while [ -n "$TARGETS" ]; do
+	for T in $TARGETS; do
+		# A tab pressed twice, or two tabs sharing a node, would otherwise measure it
+		# twice and write a second row for it.
+		case " $TESTED " in *" $T "*) continue ;; esac
+		run_one "$T"
+		TESTED="$TESTED $T"
+	done
+
+	# Whatever was asked for while this sweep was busy. Taken by rename so a press that
+	# lands between the read and the clear is not swallowed.
+	TARGETS=''
+	if [ -n "$QUEUE" ] && [ -s "$QUEUE" ]; then
+		if mv "$QUEUE" "$QUEUE.taken" 2>/dev/null; then
+			TARGETS=$(cat "$QUEUE.taken" 2>/dev/null)
+			rm -f "$QUEUE.taken"
+		fi
+	fi
 done
 
 rm -rf "$TMPD"

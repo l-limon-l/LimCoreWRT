@@ -62,6 +62,7 @@ const ST_CFG     = '/tmp/limcore-speedtest.json';
 const ST_LOG     = '/tmp/limcore-speedtest.log';
 const ST_RESULT  = '/tmp/limcore-speedtest.result';
 const ST_RUNNING = '/tmp/limcore-speedtest.running';
+const ST_QUEUE   = '/tmp/limcore-speedtest.queue';
 const ST_MAX_RUN = 1800;
 
 function get_active_core() {
@@ -1843,22 +1844,38 @@ const methods = {
 			if (!!access(ST_RUNNING)) {
 				/* A stale marker outlives a reboot and would lock the button out for good;
 				 * anything older than a sweep could possibly take is not a running test.
-				 * The window has to cover every node in turn, not one test: half a minute
-				 * a node, and nobody's node list is longer than this allows for. */
+				 * The marker is touched as each node starts, so a long sweep keeps itself
+				 * alive and only a genuinely abandoned one ages out. */
 				const st = lstat(ST_RUNNING);
-				/* Flagged, not just worded: a sweep outlives the page that started it, so
-				 * the caller wants to attach to it rather than be told off, and it can only
-				 * tell this refusal apart from a real failure if we say so in a field. */
-				if (st && (time() - st.mtime) < ST_MAX_RUN)
+				if (st && (time() - st.mtime) < ST_MAX_RUN) {
+					/* Queued, not refused. Two sweeps cannot run at once — they would share
+					 * the uplink and measure each other — but "press it on the other tab and
+					 * it does nothing" is not an answer either: the second press used to
+					 * attach to the running sweep, so those nodes were never tested and the
+					 * page showed somebody else's tab filling in. The running sweep picks
+					 * this list up when it finishes its own. */
+					if (length(target)) {
+						let queued = readfile(ST_QUEUE) || '';
+						if (!(target in split(trim(queued), '
+')))
+							writefile(ST_QUEUE, queued + target + '
+');
+						return { result: true, queued: true, running: true, targets: target };
+					}
+					/* Flagged, not just worded: a sweep outlives the page that started it,
+					 * so a caller with nothing of its own to add wants to attach to it
+					 * rather than be told off, and it can only tell this refusal apart from
+					 * a real failure if we say so in a field. */
 					return { result: false, running: true, error: 'a speed test is already running' };
+				}
 			}
 
-			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG}`);
+			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG} ${ST_QUEUE}`);
 			writefile(ST_RUNNING, '');
 
 			const script = `
-				sh ${HP_DIR}/scripts/speedtest.sh ${shellquote(core.path)} ${ST_PORT} ${shellquote(target)} ${ST_RESULT} ${ST_CFG} ${ST_LOG}
-				rm -f ${ST_RUNNING}
+				sh ${HP_DIR}/scripts/speedtest.sh ${shellquote(core.path)} ${ST_PORT} ${shellquote(target)} ${ST_RESULT} ${ST_CFG} ${ST_LOG} ${ST_QUEUE} ${ST_RUNNING}
+				rm -f ${ST_RUNNING} ${ST_QUEUE}
 			`;
 			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
 			if (rc !== 0) {
@@ -1888,9 +1905,17 @@ const methods = {
 			const st = lstat(ST_RUNNING);
 			const running = !!access(ST_RUNNING) && st && (time() - st.mtime) < ST_MAX_RUN;
 			if (!running)
-				system(`rm -f ${ST_RUNNING}`);
+				system(`rm -f ${ST_RUNNING} ${ST_QUEUE}`);
 
-			return { running: !!running, results };
+			/* What is still waiting its turn, so a page whose nodes were queued behind
+			 * another tab's sweep can say so instead of looking stalled. */
+			let pending = [];
+			for (let line in split(trim(readfile(ST_QUEUE) || ''), '
+'))
+				for (let t in split(trim(line), ' '))
+					if (length(t)) push(pending, t);
+
+			return { running: !!running, results, pending };
 		}
 	},
 
