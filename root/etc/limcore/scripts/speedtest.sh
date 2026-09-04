@@ -227,8 +227,7 @@ running_speed() {
 		else
 			# Still running: the last line that is actually a progress line. Anything else
 			# in this file is curl telling us why it stopped.
-			tr '
-' '
+			tr '' '
 ' < "$f" | grep -E '^ *[0-9]' | tail -1 | awk -v c="$col" '{ print $c }'
 		fi
 	done | awk -v el="$elapsed" '{
