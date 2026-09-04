@@ -58,8 +58,6 @@ const NP_DONE   = '/tmp/limcore-node-probe.done';
  * done-marker not. */
 const NP_RUNNING = '/tmp/limcore-node-probe.running';
 const ST_PORT    = 5340;
-const GT_RESULT  = '/tmp/limcore-group-test.result';
-
 const ST_CFG     = '/tmp/limcore-speedtest.json';
 const ST_LOG     = '/tmp/limcore-speedtest.log';
 const ST_RESULT  = '/tmp/limcore-speedtest.result';
@@ -1760,24 +1758,45 @@ const methods = {
 				return { result: false, error: 'no usable group members' };
 
 			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
-			system(`rm -f ${GT_RESULT}`);
 
-			/* One short line per worker, and O_APPEND makes writes under a pipe buffer
-			 * atomic, so they cannot interleave — the same arrangement the node sweep uses. */
+			/* One short line per worker, written straight down the pipe: each is a single
+			 * echo well under PIPE_BUF, so concurrent writes cannot interleave.
+			 *
+			 * Read through popen rather than run through system. The sweep has to outlive
+			 * the shell that launches it, and the shell's own `wait` cannot be relied on to
+			 * hold it there — under rpcd the workers were reaped out from under it, so the
+			 * call returned while most of them were still in flight and the pool came back
+			 * almost entirely dead. The pipe has no such opinion: it closes only once every
+			 * worker holding its end has exited, so reading it to EOF is the wait.
+			 *
+			 * The worker also hands its answer over whole, to be picked apart on this side
+			 * rather than by a sed in the pipeline. A backslash in such a sed has to survive
+			 * both this template string and the shell, and getting that by one level wrong
+			 * costs nothing visible: the expression stops matching, every worker reports an
+			 * empty answer, and the page declares a dead pool that is perfectly healthy —
+			 * which is the very failure this function exists to stop misreporting. */
 			let script = '';
 			for (let name in members)
-				script += `( D=$(wget -qO- --timeout=20 "http://127.0.0.1:9090/proxies/${name}/delay?timeout=8000&url=${url}" 2>/dev/null | sed -n 's/.*"delay":\([0-9]*\).*/\1/p'); ` +
-				          `if [ -n "$D" ]; then echo "${name} $D" >> ${GT_RESULT}; else echo "${name} FAIL" >> ${GT_RESULT}; fi ) & `;
+				script += `( R=$(wget -qO- --timeout=20 "http://127.0.0.1:9090/proxies/${name}/delay?timeout=8000&url=${url}" 2>/dev/null); ` +
+				          `echo "${name} $R" ) & `;
 
-			system(`sh -c ${shellquote(script + 'wait')}`, 30000);
+			const sfd = popen(`sh -c ${shellquote(script + 'wait')} 2>/dev/null`);
+			if (!sfd)
+				return { result: false, error: 'failed to run the sweep' };
+			const sraw = sfd.read('all') || '';
+			sfd.close();
 
+			/* A node that failed answers {"message":"Timeout"} instead, and one that could
+			 * not be reached at all answers nothing — neither carries a delay, so both are
+			 * left absent here and read as a failure below. */
 			let delays = {};
-			for (let line in split(trim(readfile(GT_RESULT) || ''), '\n')) {
-				const m = match(trim(line), /^([A-Za-z0-9_.:-]+) (FAIL|[0-9]+)$/);
-				if (m && m[2] !== 'FAIL')
-					delays[m[1]] = int(m[2]);
+			for (let line in split(trim(sraw), '\n')) {
+				const m = match(trim(line), /^([A-Za-z0-9_.:-]+) (.*)$/);
+				if (!m) continue;
+				const d = match(m[2], /"delay" *: *([0-9]+)/);
+				if (d)
+					delays[m[1]] = int(d[1]);
 			}
-			system(`rm -f ${GT_RESULT}`);
 
 			/* Read the group back afterwards: the fresh numbers are exactly what makes
 			 * URLTest reconsider, so the node marked "in use" has to be the one it holds
