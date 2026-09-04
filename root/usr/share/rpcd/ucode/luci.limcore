@@ -58,6 +58,8 @@ const NP_DONE   = '/tmp/limcore-node-probe.done';
  * done-marker not. */
 const NP_RUNNING = '/tmp/limcore-node-probe.running';
 const ST_PORT    = 5340;
+const GT_RESULT  = '/tmp/limcore-group-test.result';
+
 const ST_CFG     = '/tmp/limcore-speedtest.json';
 const ST_LOG     = '/tmp/limcore-speedtest.log';
 const ST_RESULT  = '/tmp/limcore-speedtest.result';
@@ -1705,13 +1707,21 @@ const methods = {
 	 * The pool tests itself on its own interval, which is fine until someone is standing
 	 * in front of the page asking why it is on the node it is on: the delays on show can
 	 * be minutes old and were taken at different moments, so they do not even compare with
-	 * each other. Hitting the group's delay endpoint tests every member back to back and
-	 * hands the group a fresh set of numbers, which is also what makes it reconsider —
-	 * sing-box re-selects off the history this writes, so this is both the explanation and
-	 * the fix for "it is sitting on the wrong node".
+	 * each other.
 	 *
-	 * Long timeout on our side: the endpoint answers only when the slowest member has
-	 * finished or timed out. */
+	 * This used to ask the core for /group/<tag>/delay, on the assumption that it walks the
+	 * group's members. It does not. A group dials whichever member it has selected, so that
+	 * endpoint dials once and answers with at most one entry — the active node — and with
+	 * nothing at all whenever that single dial times out. Everything absent was then read
+	 * as a failure, so a healthy pool came back all red, the node carrying traffic at that
+	 * moment included, and the only way to get one number out of it was to press the button
+	 * until the active node happened to answer. Watching one node fail eleven times over is
+	 * not a test of the pool.
+	 *
+	 * The members are walked here instead — one delay request each, in parallel, so a dead
+	 * node costs its own timeout and not the sweep's. Each answer is also written into that
+	 * node's history inside the core, and history is what URLTest re-selects on, so this is
+	 * still both the explanation and the fix for "it is sitting on the wrong node". */
 	clash_group_test: {
 		args: { tag: 'tag' },
 		call: function(req) {
@@ -1719,37 +1729,60 @@ const methods = {
 			if (!match(tag, /^[A-Za-z0-9_-]+$/))
 				return { result: false, error: 'bad group tag' };
 
-			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
-			const fd = popen(`wget -qO- --timeout=25 "http://127.0.0.1:9090/group/${tag}/delay?timeout=8000&url=${url}" 2>/dev/null`);
-			if (!fd)
-				return { result: false, error: 'failed to run wget' };
-			const raw = trim(fd.read('all'));
-			fd.close();
-			if (!length(raw))
+			const read_group = () => {
+				const fd = popen('wget -qO- --timeout=5 http://127.0.0.1:9090/proxies 2>/dev/null');
+				if (!fd)
+					return null;
+				const raw = trim(fd.read('all'));
+				fd.close();
+				if (!length(raw))
+					return null;
+				let data;
+				try { data = json(raw); } catch(e) { return null; }
+				return data?.proxies?.[tag] || null;
+			};
+
+			const before = read_group();
+			if (!before)
 				return { result: false, error: 'Clash API not reachable' };
 
-			let data;
-			try { data = json(raw); } catch(e) { return { result: false, error: 'invalid JSON from Clash API' }; }
-			if (data?.message)
-				return { result: false, error: data.message };
+			const all = before.all || [];
+			if (!length(all))
+				return { result: true, now: before.now, results: [] };
 
-			/* Nodes that failed the test are simply absent from the answer, and "absent"
-			 * reads as "not tested" unless it is spelled out — so the group membership is
-			 * read back and anything missing is reported as a failure, which is what it is. */
+			/* The names come out of the core's own config, but they are spliced into a shell
+			 * command below, so they are checked here rather than trusted for being ours. */
+			let members = [];
+			for (let name in all)
+				if (match(name, /^[A-Za-z0-9_.:-]+$/))
+					push(members, name);
+			if (!length(members))
+				return { result: false, error: 'no usable group members' };
+
+			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
+			system(`rm -f ${GT_RESULT}`);
+
+			/* One short line per worker, and O_APPEND makes writes under a pipe buffer
+			 * atomic, so they cannot interleave — the same arrangement the node sweep uses. */
+			let script = '';
+			for (let name in members)
+				script += `( D=$(wget -qO- --timeout=20 "http://127.0.0.1:9090/proxies/${name}/delay?timeout=8000&url=${url}" 2>/dev/null | sed -n 's/.*"delay":\([0-9]*\).*/\1/p'); ` +
+				          `if [ -n "$D" ]; then echo "${name} $D" >> ${GT_RESULT}; else echo "${name} FAIL" >> ${GT_RESULT}; fi ) & `;
+
+			system(`sh -c ${shellquote(script + 'wait')}`, 30000);
+
 			let delays = {};
-			for (let k in data)
-				delays[k] = data[k];
-
-			let now = null, all = [];
-			const gfd = popen('wget -qO- --timeout=5 http://127.0.0.1:9090/proxies 2>/dev/null');
-			if (gfd) {
-				const graw = trim(gfd.read('all'));
-				gfd.close();
-				let gdata;
-				try { gdata = json(graw); } catch(e) { gdata = null; }
-				const g = gdata?.proxies?.[tag];
-				if (g) { now = g.now; all = g.all || []; }
+			for (let line in split(trim(readfile(GT_RESULT) || ''), '\n')) {
+				const m = match(trim(line), /^([A-Za-z0-9_.:-]+) (FAIL|[0-9]+)$/);
+				if (m && m[2] !== 'FAIL')
+					delays[m[1]] = int(m[2]);
 			}
+			system(`rm -f ${GT_RESULT}`);
+
+			/* Read the group back afterwards: the fresh numbers are exactly what makes
+			 * URLTest reconsider, so the node marked "in use" has to be the one it holds
+			 * now, not the one it held before the sweep. */
+			const now = read_group()?.now ?? before.now;
 
 			let results = [];
 			for (let name in all) {
