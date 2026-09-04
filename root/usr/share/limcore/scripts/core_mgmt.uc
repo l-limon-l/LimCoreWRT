@@ -7,7 +7,7 @@
 
 'use strict';
 
-import { access, lstat, popen, readfile } from 'fs';
+import { access, lsdir, lstat, popen, readfile, readlink, stat } from 'fs';
 
 function shellquote(s) {
 	return `'${replace(s, "'", "'\\''")}'`;
@@ -86,6 +86,50 @@ function overlay_compresses() {
 	return (t in ['jffs2', 'ubifs']);
 }
 
+/* PIDs of live processes still running the core binary. The kernel keeps an executable's
+ * inode alive for as long as a process runs it, so a core started from a since-deleted
+ * binary keeps occupying flash while /usr/bin/sing-box no longer exists — the reason a
+ * removal done on a running core frees nothing at all. */
+function core_pids() {
+	let pids = [];
+	for (let ent in (lsdir('/proc') || [])) {
+		if (!match(ent, /^[0-9]+$/)) continue;
+		const link = readlink(`/proc/${ent}/exe`);
+		if (link && match(link, /\/sing-box( \(deleted\))?$/))
+			push(pids, ent);
+	}
+	return pids;
+}
+
+/* Raw KB of core binary that is held open by a running process but already unlinked, i.e.
+ * flash that a plain `df` counts as used and that stopping the core would hand back. The
+ * largest such inode, not their sum: every process of one core shares a single inode. */
+function held_core_kb() {
+	let held = 0;
+	for (let pid in core_pids()) {
+		const link = readlink(`/proc/${pid}/exe`);
+		if (!link || !match(link, /\(deleted\)$/)) continue;
+		/* stat() on /proc/PID/exe follows the magic link through to the deleted inode. */
+		const st = stat(`/proc/${pid}/exe`);
+		if (st && st.size > held) held = st.size;
+	}
+	return int(held / 1024);
+}
+
+/* Stop the core so the flash its binary occupies is actually released. procd's stop is the
+ * normal path; anything left running outside it (a hand-started core, a stuck instance)
+ * still pins the inode, so those get signalled directly. */
+function stop_core() {
+	if (!length(core_pids())) return;
+	system('/etc/init.d/limcore stop >/dev/null 2>&1', 60000);
+	let left = core_pids();
+	if (!length(left)) return;
+	system(`kill ${join(' ', left)} >/dev/null 2>&1; sleep 2`, 15000);
+	left = core_pids();
+	if (length(left))
+		system(`kill -9 ${join(' ', left)} >/dev/null 2>&1; sleep 1`, 15000);
+}
+
 /* Footprint thresholds (KB). The Go binary is ~72 MB raw → ~72 MB on ext4/f2fs, and ~33 MB
  * on a compressing overlay at the measured 2.21 ratio.
  *
@@ -95,6 +139,14 @@ function overlay_compresses() {
  * install that would in fact have fit. Retrying later is the workaround. */
 const FULL_OVERLAY_RAW_KB  = 81920;   /* ~80 MB free on an uncompressed overlay */
 const FULL_OVERLAY_COMP_KB = 32768;   /* ~32 MB on a compressing overlay */
+const OVERLAY_COMPRESS_RATIO = 2.21;  /* measured on ubifs, see overlay_compresses() */
+
+/* Flash that stopping the core would give back, in the units df reports for this overlay. */
+function reclaimable_kb() {
+	const raw = held_core_kb();
+	if (!raw) return 0;
+	return overlay_compresses() ? int(raw / OVERLAY_COMPRESS_RATIO) : raw;
+}
 
 const CORE_BINARY = '/usr/bin/sing-box';
 const RELEASE_API = 'https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest';
@@ -175,10 +227,17 @@ if (action === 'info') {
 				const ext = pkg_manager === 'apk' ? '.apk' : '.ipk';
 				const need = overlay_compresses() ? FULL_OVERLAY_COMP_KB : FULL_OVERLAY_RAW_KB;
 
+				/* A core that is still running holds its own binary open, so df counts
+				 * that flash as used even once the package is gone. install_pkg stops the
+				 * core and gets it back, so count it as available here — refusing on it is
+				 * what left a removed-but-still-running core impossible to reinstall. */
+				const reclaim_kb = reclaimable_kb();
+
 				/* An install that runs out of overlay mid-extraction leaves a registered
 				 * package with a truncated/absent binary, so refuse up front. */
-				if (overlay_free_kb < need) {
-					result = { error: `Not enough overlay space: ${overlay_free_kb} KB free, sing-box-extended needs ~${need} KB.` };
+				if (overlay_free_kb + reclaim_kb < need) {
+					const held = reclaim_kb ? ` (${reclaim_kb} KB more will be freed by stopping the running core)` : '';
+					result = { error: `Not enough overlay space: ${overlay_free_kb} KB free${held}, sing-box-extended needs ~${need} KB.` };
 				} else {
 					const api = github_api(RELEASE_API);
 					if (api.error) {
@@ -261,7 +320,19 @@ if (action === 'info') {
 			? `apk add --allow-untrusted ${shellquote(tmp_path)}`
 			: `opkg install --force-reinstall ${shellquote(tmp_path)}`;
 
+		/* Stop the core first. Its binary is what the package replaces, and a running
+		 * process pins the old copy in flash until it exits — so installing over a live
+		 * core needs room for both copies at once, and on a small overlay that is exactly
+		 * the "not enough space" the user is trying to escape. The package is already in
+		 * /tmp by now, so nothing here needs the tunnel to be up. */
+		const was_running = length(core_pids()) > 0;
+		stop_core();
+
 		const exit_code = system(`{ ${cmd}; } >${log} 2>&1; RC=$?; rm -f ${shellquote(tmp_path)}; exit $RC`, 300000);
+
+		/* Bring the tunnel back up on the freshly installed binary. */
+		if (was_running)
+			system('/etc/init.d/limcore start >/dev/null 2>&1', 60000);
 
 		let out = trim(readfile(log) || '');
 		/* Trim to the tail: apk lists every package it touched, and only the end matters. */
@@ -303,6 +374,12 @@ if (action === 'info') {
 	if (!pkg_manager) {
 		result = { result: false, error: 'no supported package manager found' };
 	} else {
+		/* Stop the core before unregistering the package. Removing it under a running core
+		 * unlinks the files but frees no flash: the kernel keeps the binary's inode alive
+		 * for as long as the process runs it, so the UI reports the core as gone while
+		 * ~73 MB stays occupied and the next install refuses for lack of space. */
+		stop_core();
+
 		const exit_code = pkg_manager === 'apk'
 			? system('apk del sing-box-extended >/dev/null 2>&1', 60000)
 			: system('opkg remove sing-box-extended >/dev/null 2>&1', 60000);
