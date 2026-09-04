@@ -63,6 +63,7 @@ const ST_LOG     = '/tmp/limcore-speedtest.log';
 const ST_RESULT  = '/tmp/limcore-speedtest.result';
 const ST_RUNNING = '/tmp/limcore-speedtest.running';
 const ST_QUEUE   = '/tmp/limcore-speedtest.queue';
+const ST_PID     = '/tmp/limcore-speedtest.pid';
 const ST_MAX_RUN = 1800;
 
 function get_active_core() {
@@ -1870,12 +1871,18 @@ const methods = {
 				}
 			}
 
-			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG} ${ST_QUEUE}`);
+			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG} ${ST_QUEUE} ${ST_PID}`);
 			writefile(ST_RUNNING, '');
 
+			/* setsid puts this shell in a session and process group of its own, and the
+			 * pid recorded here is that group: stopping the sweep means signalling the
+			 * whole group, because the work is not in this shell but in the core, the
+			 * curl streams and the script it spawns. Killing the script alone would leave
+			 * four transfers running on the uplink with nothing left to stop them. */
 			const script = `
+				echo $$ > ${ST_PID}
 				sh ${HP_DIR}/scripts/speedtest.sh ${shellquote(core.path)} ${ST_PORT} ${shellquote(target)} ${ST_RESULT} ${ST_CFG} ${ST_LOG} ${ST_QUEUE} ${ST_RUNNING}
-				rm -f ${ST_RUNNING} ${ST_QUEUE}
+				rm -f ${ST_RUNNING} ${ST_QUEUE} ${ST_PID}
 			`;
 			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
 			if (rc !== 0) {
@@ -1916,6 +1923,32 @@ const methods = {
 					if (length(t)) push(pending, t);
 
 			return { running: !!running, results, pending };
+		}
+	},
+
+	/* Abandon a sweep in flight. A run is minutes long on a list of any size, and the
+	 * only way out of one used to be to wait it out: the button was disabled, the queue
+	 * kept feeding it, and the transfers held the uplink the whole time.
+	 *
+	 * The queue goes with it. Someone stopping the test does not mean "stop this node and
+	 * carry on with the rest", and leaving a queue behind would restart the sweep the
+	 * moment it was cleared. Results already measured are kept — they are what the run
+	 * was for, and the page is still showing them. */
+	speedtest_stop: {
+		call: function() {
+			const pid = int(trim(readfile(ST_PID) || '')) || 0;
+			if (pid > 1) {
+				/* The negative pid is the point: signal the whole process group, so the
+				 * core and the curl streams go too, not just the shell that started them. */
+				system(`kill -TERM -${pid} 2>/dev/null; sleep 1; kill -KILL -${pid} 2>/dev/null`, 15000);
+			}
+
+			/* A core from a run started before this feature, or one orphaned by a kill
+			 * that raced its own startup, is still holding the SOCKS port. */
+			system(`kill $(ps w | grep '[-]c ${ST_CFG}' | awk '{print $1}') 2>/dev/null`);
+			system(`rm -f ${ST_RUNNING} ${ST_QUEUE} ${ST_PID} ${ST_CFG}`);
+
+			return { result: true };
 		}
 	},
 

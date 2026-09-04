@@ -5125,6 +5125,10 @@ msgid "No nodes configured."
 msgstr "Узлы не настроены."
 
 #: htdocs/luci-static/resources/view/limcore/node.js
+msgid "Stopped — %d of %d nodes measured."
+msgstr "Остановлено — измерено узлов: %d из %d."
+
+#: htdocs/luci-static/resources/view/limcore/node.js
 msgid "Queued — these nodes are measured once the running test finishes."
 msgstr "В очереди — эти узлы проверятся, когда закончится текущая проверка."
 

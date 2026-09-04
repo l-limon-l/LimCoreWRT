@@ -1027,6 +1027,50 @@ const callSpeedtestStatus = rpc.declare({
 	expect: { '': {} }
 });
 
+const callSpeedtestStop = rpc.declare({
+	object: 'luci.limcore',
+	method: 'speedtest_stop',
+	expect: { '': {} }
+});
+
+/* The sweep runs on the router and the only way out of one used to be to wait: a dozen
+ * nodes is ten minutes of held uplink for someone who changed their mind after the second.
+ *
+ * One flag and one list of buttons for the whole page, because there is one sweep on the
+ * router: whichever tab a run was started from, the Stop button in front of the reader is
+ * the one they will press, and it has to stop that run rather than only the run its own
+ * tab started. */
+let speedtestStopped = false;
+const speedtestStopBtns = [];
+
+function makeSpeedtestStopButton() {
+	const btn = E('button', {
+		'class': 'btn cbi-button cbi-button-negative',
+		'style': 'margin-left:4px; display:none',
+		'click': function() {
+			speedtestStopped = true;
+			for (const b of speedtestStopBtns) {
+				b.disabled = true;
+				b.textContent = _('Stopping…');
+			}
+			return L.resolveDefault(callSpeedtestStop(), {});
+		}
+	}, [ _('Stop') ]);
+
+	speedtestStopBtns.push(btn);
+	return btn;
+}
+
+function showSpeedtestStop(show) {
+	for (const b of speedtestStopBtns) {
+		b.style.display = show ? '' : 'none';
+		if (show) {
+			b.disabled = false;
+			b.textContent = _('Stop');
+		}
+	}
+}
+
 /* Speedtest reports bytes per second and everybody reads their line in megabits, so the
  * conversion happens before this and what is left is the rounding: three digits of Mbit/s
  * in a grid cell is noise, and a node doing 278 does not need the .3. */
@@ -1062,6 +1106,9 @@ function speedtestStageText(state) {
 function runSpeedtestSweep(msgEl, sections) {
 	msgEl.style.color = '';
 	msgEl.textContent = _('Starting…');
+
+	speedtestStopped = false;
+	showSpeedtestStop(true);
 
 	const targets = sections.map((sec) => sec['.name']).join(' ');
 
@@ -1123,6 +1170,7 @@ function runSpeedtestSweep(msgEl, sections) {
 				const ours = results.filter((r) => mine[r.section]);
 
 				if (!st || st.running !== true) {
+					showSpeedtestStop(false);
 					const done = ours.filter((r) => r.state === 'done').length;
 					/* Anything the sweep never reached keeps the '…' it was primed with,
 					 * which would read as still running long after it stopped. */
@@ -1139,7 +1187,9 @@ function runSpeedtestSweep(msgEl, sections) {
 						}
 					}
 
-					msgEl.textContent = _('Tested %d of %d nodes.').format(done, total);
+					msgEl.textContent = speedtestStopped
+						? _('Stopped — %d of %d nodes measured.').format(done, total)
+						: _('Tested %d of %d nodes.').format(done, total);
 					return;
 				}
 
@@ -1152,6 +1202,7 @@ function runSpeedtestSweep(msgEl, sections) {
 					msgEl.textContent = _('Testing… %d of %d').format(ours.length, total);
 
 				if (Date.now() > deadline) {
+					showSpeedtestStop(false);
 					msgEl.style.color = '#c00';
 					msgEl.textContent = _('Test timed out.');
 					return;
@@ -1161,6 +1212,7 @@ function runSpeedtestSweep(msgEl, sections) {
 
 		return poll();
 	}).catch((e) => {
+		showSpeedtestStop(false);
 		msgEl.style.color = '#c00';
 		msgEl.textContent = e.message || _('Test failed');
 	});
@@ -1196,7 +1248,7 @@ function addSpeedtestButton(s, tabname, key, belongs) {
 			})
 		}, [ _('Check speed') ]);
 
-		return E('div', {}, [ btn, msgEl ]);
+		return E('div', {}, [ btn, makeSpeedtestStopButton(), msgEl ]);
 	};
 	o.description = _('Measures the nodes on this tab in turn against the same Ookla Speedtest server, each through a temporary core of its own, so the figures belong to the nodes and compare with each other. ' +
 		'Results fill in the speed column as each node finishes. One node at a time, because two transfers over the same uplink measure each other — expect around half a minute per node. ' +
@@ -1269,6 +1321,38 @@ function renderNodeSettings(section, data, features, main_node, routing_mode) {
 	o.modalonly = false;
 	o.cfgvalue = function(section_id) {
 		return '–';
+	};
+
+	/* Per-row check, because "all of them" is not the only question a node list raises:
+	 * a subscription of a dozen nodes takes minutes to sweep for speed, and someone who
+	 * suspects one node should not have to run the other eleven to look at it. The button
+	 * measures that node's delay and then its speed, writing into this row's own two
+	 * cells — the same cells a full sweep fills, so the figures are the same figures. If a
+	 * sweep is already running, this node joins its queue rather than fighting it for the
+	 * uplink. */
+	o = s.option(form.Button, '_check', _('Check'));
+	o.modalonly = false;
+	o.editable = true;
+	o.inputstyle = 'action';
+	o.inputtitle = _('Check');
+	o.onclick = function(ev, section_id) {
+		const btn = ev.target;
+		const label = btn.textContent;
+		btn.disabled = true;
+		btn.textContent = _('Testing…');
+
+		/* The row reports itself in its delay and speed cells, so the sweep's message
+		 * element has nowhere to go and is deliberately detached. */
+		const msgEl = E('span', {});
+		const one = [ { '.name': section_id } ];
+
+		return runNodeSweep(msgEl, one)
+			.then(() => runSpeedtestSweep(msgEl, one))
+			.catch(() => {})
+			.then(() => {
+				btn.disabled = false;
+				btn.textContent = label;
+			});
 	};
 
 	o = s.option(form.ListValue, 'type', _('Type'));
