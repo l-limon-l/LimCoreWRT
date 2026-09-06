@@ -4832,6 +4832,10 @@ msgstr "— не выбрано —"
 msgid "AI services (ChatGPT, Claude)"
 msgstr "ИИ-сервисы (ChatGPT, Claude)"
 
+#: htdocs/luci-static/resources/view/limcore/client.js:870
+msgid "Epic Games (launcher, store, EOS)"
+msgstr "Epic Games (лаунчер, магазин, EOS)"
+
 #: htdocs/luci-static/resources/view/limcore/client.js:878
 msgid "Pick a service for this rule, or delete the rule"
 msgstr "Выберите сервис для этого правила или удалите правило"

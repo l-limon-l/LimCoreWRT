@@ -1910,6 +1910,25 @@ if (!isEmpty(main_node)) {
 						download_detour: ruleset_detour,
 						update_interval: '1d'
 					});
+			} else if (cfg.source === 'epicgames') {
+				/* Epic rents its CDN space instead of owning any, so there is no IP half to
+				 * pin — the account service sits on Akamai, the launcher and the Talon
+				 * antibot on Cloudflare, downloads on Akamai and Fastly. That split is the
+				 * whole reason this set exists: the generic cloudflare/cloudfront sources
+				 * pull the launcher through the proxy while the account service keeps going
+				 * direct, Epic sees one session from two countries and answers "credentials
+				 * are invalid". Nothing here is blocked; the set is about one exit for every
+				 * part of the service. Built from Epic's own whitelist, minus the domains of
+				 * its shut-down games. */
+				if (!has_ruleset('hp-ru-epicgames'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'hp-ru-epicgames',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/epicgames.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
 			} else if (cfg.source === 'google_ai') {
 				/* itdoginfo's google_ai.lst opens Antigravity but not the Cloud AI Companion
 				 * backend the agent calls, nor ogs.google.com, which decides whether Gemini

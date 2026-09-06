@@ -942,6 +942,7 @@ return view.extend({
 		so.value('cloudfront', _('CloudFront CDN'));
 		so.value('discord', _('Discord'));
 		so.value('digitalocean', _('DigitalOcean cloud hosting'));
+		so.value('epicgames', _('Epic Games (launcher, store, EOS)'));
 		so.rmempty = false;
 		so.editable = true;
 		so.validate = function(section_id, value) {
