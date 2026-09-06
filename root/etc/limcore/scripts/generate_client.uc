@@ -893,11 +893,50 @@ if (!isEmpty(main_node)) {
 				server: 'secure-dns'
 			});
 
+		/* A rule pinned to its own node still resolved through secure-dns, and secure-dns
+		 * rides main-out — so the name was looked up from whatever node urltest happened to
+		 * be on while the connection left from the pinned one. Google's AI stack is the
+		 * clearest casualty: pinned to one exit and resolved from another, it sees a single
+		 * session coming from two countries and stops working the moment urltest moves. Each
+		 * pinned source therefore gets its own DoH server routed through its own outbound, so
+		 * the answer and the connection come from the same place. Same argument the direct
+		 * list above makes, applied to per-rule nodes. */
+		let pinned_sources = [];
+		uci.foreach(uciconfig, ucirurule, (cfg) => {
+			if (cfg.enabled !== '1' || isEmpty(cfg.source))
+				return;
+			/* main-out/byedpi-out/zapret-out reuse an existing outbound and are not pinned:
+			 * their DNS already matches the exit their traffic takes. */
+			if (isEmpty(cfg.node) || cfg.node in ['main-out', 'byedpi-out', 'zapret-out'])
+				return;
+			if (index(pinned_sources, cfg.source) < 0)
+				push(pinned_sources, cfg.source);
+		});
+		const ru_domain_tag = (src) => (src === 'refilter') ? 'hp-ru-refilter-domain' : ('hp-ru-' + src);
+		for (let src in pinned_sources) {
+			const dns_tag = 'hp-ru-' + src + '-dns';
+			push(config.dns.servers, {
+				tag: dns_tag,
+				domain_resolver: {
+					server: 'russia-dns',
+					strategy: (ipv6_support !== '1') ? 'ipv4_only' : null
+				},
+				detour: 'hp-ru-' + src + '-out',
+				...parse_dnsserver(secure_dns_server, 'tcp')
+			});
+			push(config.dns.rules, {
+				rule_set: [ ru_domain_tag(src) ],
+				action: 'route',
+				server: dns_tag
+			});
+		}
+
 		/* Proxy-list domains → secure-dns (Cloudflare DoH via proxy) to prevent DNS leaks */
 		let ru_domain_rulesets = [];
 		uci.foreach(uciconfig, ucirurule, (cfg) => {
 			if (cfg.enabled !== '1' || isEmpty(cfg.source)) return;
-			const tag = (cfg.source === 'refilter') ? 'hp-ru-refilter-domain' : ('hp-ru-' + cfg.source);
+			if (index(pinned_sources, cfg.source) >= 0) return;
+			const tag = ru_domain_tag(cfg.source);
 			if (index(ru_domain_rulesets, tag) < 0)
 				push(ru_domain_rulesets, tag);
 		});
