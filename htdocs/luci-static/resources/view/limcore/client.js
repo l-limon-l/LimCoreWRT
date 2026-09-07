@@ -311,6 +311,28 @@ return view.extend({
 			return E('div', {}, [ el, row ]);
 		};
 
+		/* A pin is absolute — the core sits on the chosen node while it answers slowly, and
+		 * goes on sitting on it while it answers not at all — so it is watched rather than
+		 * made conditional: pin_watch.sh measures the pinned node and the rest of the pool
+		 * on the pool's own interval and hands the choice back when the pin stops being the
+		 * right one. Off by default, because someone who pins a node usually means it. */
+		o = s.taboption('routing', form.Flag, 'pin_auto_return', _('Return to automatic by itself'),
+			_('Watches the node you picked by hand and gives the choice back to URLTest when that node stops answering, or falls too far behind the best node in the pool. Without this a hand-picked node is kept whatever happens to it.'));
+		o.depends('main_node', 'urltest');
+		o.default = '0';
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Value, 'pin_auto_return_margin', _('Return threshold'),
+			_('How far behind the best node in the pool the pinned node may fall (ms) before the choice goes back to URLTest. A node that stops answering is always given back, whatever this says — 0 means only that case counts and any latency is tolerated. Checked on the test interval below.'));
+		o.value('0', _('0 — only when the node stops answering'));
+		o.value('100', _('100 ms — react early'));
+		o.value('150', _('150 ms — balanced'));
+		o.value('250', _('250 ms — tolerate a slow node'));
+		o.datatype = 'uinteger';
+		o.default = '150';
+		o.depends({'main_node': 'urltest', 'pin_auto_return': '1'});
+		o.rmempty = false;
+
 		/* The pool's own numbers, taken in one pass, next to the node it settled on.
 		 * Without this the page showed a single delay for the selected node and the Nodes
 		 * page showed a different figure for another one, measured minutes apart by a

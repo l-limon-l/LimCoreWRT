@@ -185,6 +185,24 @@ start_service() {
 		procd_close_instance
 	fi
 
+	# Watchdog over a hand-picked node, off unless asked for. A pin in the main selector is
+	# absolute — the core will sit on the chosen node while it answers slowly, and go on
+	# sitting on it while it answers not at all — so this hands the choice back to the pool
+	# when the pinned node stops answering or falls far enough behind the best alternative.
+	# Only meaningful in URLTest mode: that is the only mode that generates a selector to
+	# pin anything in.
+	local main_node pin_return pin_margin pin_interval
+	config_get main_node "config" "main_node" "nil"
+	config_get_bool pin_return "config" "pin_auto_return" "0"
+	if [ "$pin_return" = "1" ] && [ "$main_node" = "urltest" ]; then
+		config_get pin_margin "config" "pin_auto_return_margin" "150"
+		config_get pin_interval "config" "main_urltest_interval" "180"
+		procd_open_instance "pin-watch"
+		procd_set_param command "$HP_DIR/scripts/pin_watch.sh" "$pin_interval" "$pin_margin"
+		procd_set_param respawn
+		procd_close_instance
+	fi
+
 	# log-cleaner
 	procd_open_instance "log-cleaner"
 	procd_set_param command "$HP_DIR/scripts/clean_log.sh"
