@@ -4260,6 +4260,30 @@ msgstr "Проверка…"
 msgid "Active URLTest node"
 msgstr "Активная нода URLTest"
 
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Automatic is the pool's own pick, by latency. Choose a node to hold traffic on it instead — useful when the fastest node by ping is not the best one to use. The change applies at once, without a restart, and survives one."
+msgstr "«Автоматически» — это выбор самого пула по задержке. Выберите узел, чтобы удержать трафик на нём — это полезно, когда самый быстрый по пингу узел не лучший для работы. Изменение применяется сразу, без перезапуска, и переживает его."
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Automatic (URLTest picks)"
+msgstr "Автоматически (выбирает URLTest)"
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Switching…"
+msgstr "Переключение…"
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "The pool chooses again."
+msgstr "Выбор снова за пулом."
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Traffic is held on this node."
+msgstr "Трафик закреплён за этим узлом."
+
+#: htdocs/luci-static/resources/view/limcore/client.js
+msgid "Could not switch"
+msgstr "Не удалось переключить"
+
 #: htdocs/luci-static/resources/view/limcore/diagnostics.js
 msgid "Runs Core, Config, Network, and Connectivity checks simultaneously."
 msgstr "Запускает проверки ядра, конфигурации, сети и подключения одновременно."

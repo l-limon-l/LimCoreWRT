@@ -30,6 +30,7 @@ const callServiceList = rpc.declare({
 const callActiveNode = rpc.declare({
 	object: 'luci.limcore',
 	method: 'clash_active_node',
+	params: ['tag'],
 	expect: { '': {} }
 });
 
@@ -37,6 +38,13 @@ const callGroupTest = rpc.declare({
 	object: 'luci.limcore',
 	method: 'clash_group_test',
 	params: ['tag'],
+	expect: { '': {} }
+});
+
+const callSelectNode = rpc.declare({
+	object: 'luci.limcore',
+	method: 'clash_select_node',
+	params: ['tag', 'name'],
 	expect: { '': {} }
 });
 
@@ -195,14 +203,76 @@ return view.extend({
 		o.depends({'routing_mode': /^((?!custom).)+$/});
 		o.rmempty = false;
 
-		/* Live: which node URLTest currently has selected. Only shown in URLTest mode
-		 * (depends on main_node='urltest'); hidden when a specific node is the main node. */
-		o = s.taboption('routing', form.DummyValue, '_active_urltest_node', _('Active URLTest node'));
+		/* Live: which node URLTest currently has selected, and the pick that overrides it.
+		 * Only shown in URLTest mode (depends on main_node='urltest'); hidden when a
+		 * specific node is the main node.
+		 *
+		 * The pool chooses on latency alone, so one spike is enough to move traffic onto a
+		 * worse exit and keep it there until the next round — and the only way out of that
+		 * used to be leaving URLTest for a single named node, which also throws away the
+		 * failover the pool exists for. The dropdown holds traffic on one node without
+		 * leaving the mode, and handing the choice back is picking automatic again. */
+		o = s.taboption('routing', form.DummyValue, '_active_urltest_node', _('Active URLTest node'),
+			_('Automatic is the pool\'s own pick, by latency. Choose a node to hold traffic on it instead — useful when the fastest node by ping is not the best one to use. The change applies at once, without a restart, and survives one.'));
 		o.depends('main_node', 'urltest');
 		o.cfgvalue = function() {
-			const el = E('span', { 'style': 'color:gray' }, '—');
+			/* The pool's own tag inside the main selector — see generate_client.uc. */
+			const AUTO = 'main-urltest-out';
+
+			const el  = E('span', { 'style': 'color:gray' }, '—');
+			const sel = E('select', { 'class': 'cbi-input-select', 'style': 'margin-top:.5em' }, []);
+			const msg = E('span', { 'style': 'margin-left:.5em' }, '');
+			/* Hidden until the poll confirms the running core actually has a selector. */
+			const row = E('div', { 'style': 'display:none' }, [ sel, msg ]);
+
+			const nodeLabel = function(tag) {
+				if (tag === AUTO) return _('Automatic (URLTest picks)');
+				const m = tag.match(/^cfg-(.+)-out$/);
+				return (m && proxy_nodes[m[1]]) ? proxy_nodes[m[1]] : tag;
+			};
+
+			/* Rebuilt only when the running pool's membership actually changes, so the poll
+			 * cannot drop the list out from under a click, and never while the dropdown is
+			 * open — reselecting the current value under the pointer is how a page picks a
+			 * node the reader did not ask for. */
+			let rendered = null, busy = false;
+			const fill = function(options, selected) {
+				const key = options.join('\x00');
+				if (key !== rendered) {
+					rendered = key;
+					dom.content(sel, options.map(function(tag) {
+						return E('option', { 'value': tag }, nodeLabel(tag));
+					}));
+				}
+				if (!busy && document.activeElement !== sel && selected && sel.value !== selected)
+					sel.value = selected;
+			};
+
+			sel.addEventListener('change', function() {
+				const want = sel.value;
+				busy = true;
+				msg.style.color = '';
+				msg.textContent = _('Switching…');
+				L.resolveDefault(callSelectNode('main-out', want), {}).then(function(ret) {
+					busy = false;
+					if (ret && ret.result === true) {
+						msg.style.color = '';
+						msg.textContent = (want === AUTO) ? _('The pool chooses again.')
+						                                  : _('Traffic is held on this node.');
+					} else {
+						msg.style.color = 'red';
+						msg.textContent = ret?.error || _('Could not switch');
+					}
+				});
+			});
+
 			poll.add(L.bind(function() {
-				return L.resolveDefault(callActiveNode(), {}).then(function(ret) {
+				/* Ask about main-out by name. Left to itself the call follows the core's
+				 * GLOBAL group, which in a config with several groups can land on the
+				 * URLTest pool directly — and a pool is not where the pin lives, so the
+				 * page would report the node correctly and then hide the control for
+				 * changing it. */
+				return L.resolveDefault(callActiveNode('main-out'), {}).then(function(ret) {
 					if (ret && !ret.error && ret.node) {
 						const m = ret.node.match(/^cfg-(.+)-out$/);
 						const name = (m && proxy_nodes[m[1]]) ? proxy_nodes[m[1]] : ret.node;
@@ -224,9 +294,21 @@ return view.extend({
 						el.textContent = _('No active node');
 						el.style.color = 'gray';
 					}
+
+					/* No selector in the running core means a pool saved before this
+					 * existed, or one edited but not applied yet — there is nothing to
+					 * switch, and offering names the core would refuse is worse than
+					 * offering nothing, so the control stays away until there is. */
+					if (ret && ret.selector && ret.options?.length) {
+						row.style.display = '';
+						fill(ret.options, ret.selected);
+					} else {
+						row.style.display = 'none';
+					}
 				});
 			}));
-			return el;
+
+			return E('div', {}, [ el, row ]);
 		};
 
 		/* The pool's own numbers, taken in one pass, next to the node it settled on.

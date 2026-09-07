@@ -565,6 +565,38 @@ const methods = {
 				return (h && length(h)) ? h[length(h) - 1].delay : null;
 			};
 
+			const isGroup = (name) => {
+				const t = proxies[name]?.type;
+				return t === 'URLTest' || t === 'Fallback' || t === 'Selector';
+			};
+
+			/* main-out is a selector wrapping the URLTest pool whenever the pool can be
+			 * pinned by hand, so a group's choice is now a group of its own often enough
+			 * that following exactly one step would report 'main-urltest-out' as the node
+			 * in use — a tag, where the reader is looking for the name of a server. Walk
+			 * down to the leaf instead, remembering the outermost selector on the way: that
+			 * is the group a pin lives in, and whether it is holding the pool or one node
+			 * is what the page needs in order to say which of the two is happening. */
+			const descend = (startTag) => {
+				let seen = {}, chain = [], leaf = startTag;
+				let selectorTag = null, selectorNow = null, selectorAll = null;
+				while (leaf && isGroup(leaf) && proxies[leaf].now && !seen[leaf]) {
+					seen[leaf] = true;
+					push(chain, leaf);
+					if (!selectorTag && proxies[leaf].type === 'Selector') {
+						selectorTag = leaf;
+						selectorNow = proxies[leaf].now;
+						/* What the group may be switched to, straight from the running
+						 * core: a pool edited on the page but not applied yet is not what
+						 * the selector holds, and offering those names would be offering a
+						 * choice the core would refuse. */
+						selectorAll = proxies[leaf].all || [];
+					}
+					leaf = proxies[leaf].now;
+				}
+				return { leaf, chain, selectorTag, selectorNow, selectorAll };
+			};
+
 			/* Focused query: resolve a specific group/leaf (e.g. 'main-udp-out' for the
 			 * dedicated UDP node) instead of following GLOBAL. */
 			const wantTag = req?.args?.tag;
@@ -572,8 +604,14 @@ const methods = {
 				const p = proxies[wantTag];
 				if (!p)
 					return { error: 'no active proxy node' };
-				if ((p.type === 'URLTest' || p.type === 'Fallback' || p.type === 'Selector') && p.now)
-					return { node: p.now, type: proxies[p.now]?.type || null, delay: lastDelay(p.now), group: wantTag, group_type: p.type };
+				if (isGroup(wantTag) && p.now) {
+					const d = descend(wantTag);
+					return {
+						node: d.leaf, type: proxies[d.leaf]?.type || null, delay: lastDelay(d.leaf),
+						group: wantTag, group_type: p.type,
+						selector: d.selectorTag, selected: d.selectorNow, options: d.selectorAll
+					};
+				}
 				return { node: wantTag, type: p.type || null, delay: lastDelay(wantTag), group: null, group_type: null };
 			}
 
@@ -583,13 +621,18 @@ const methods = {
 			let nodeName  = null;
 
 			const nonProxy = (name) => name === 'direct-out' || name === 'block-out' || !name;
+			let selectorName = null, selectorNow = null, selectorAll = null;
 			const globalNow = proxies['GLOBAL']?.now;
 			if (globalNow && proxies[globalNow] && !nonProxy(globalNow)) {
 				const g = proxies[globalNow];
-				if (g.type === 'URLTest' || g.type === 'Fallback' || g.type === 'Selector') {
-					groupName = globalNow;
-					groupType = g.type;
-					nodeName  = g.now;
+				if (isGroup(globalNow)) {
+					const d = descend(globalNow);
+					groupName    = globalNow;
+					groupType    = g.type;
+					nodeName     = d.leaf;
+					selectorName = d.selectorTag;
+					selectorNow  = d.selectorNow;
+					selectorAll  = d.selectorAll;
 				} else {
 					/* GLOBAL points directly to a leaf node */
 					nodeName = globalNow;
@@ -601,10 +644,14 @@ const methods = {
 				for (let name in proxies) {
 					if (name === 'GLOBAL') continue;
 					const p = proxies[name];
-					if ((p.type === 'URLTest' || p.type === 'Fallback' || p.type === 'Selector') && p.now) {
-						groupName = name;
-						groupType = p.type;
-						nodeName  = p.now;
+					if (isGroup(name) && p.now) {
+						const d = descend(name);
+						groupName    = name;
+						groupType    = p.type;
+						nodeName     = d.leaf;
+						selectorName = d.selectorTag;
+						selectorNow  = d.selectorNow;
+						selectorAll  = d.selectorAll;
 						break;
 					}
 				}
@@ -622,7 +669,10 @@ const methods = {
 				type:       proxies[nodeName]?.type || null,
 				delay:      lastDelay(nodeName),
 				group:      groupName,
-				group_type: groupType
+				group_type: groupType,
+				selector:   selectorName,
+				selected:   selectorNow,
+				options:    selectorAll
 			};
 		}
 	},
@@ -1729,7 +1779,7 @@ const methods = {
 			if (!match(tag, /^[A-Za-z0-9_-]+$/))
 				return { result: false, error: 'bad group tag' };
 
-			const read_group = () => {
+			const read_proxies = () => {
 				const fd = popen('wget -qO- --timeout=5 http://127.0.0.1:9090/proxies 2>/dev/null');
 				if (!fd)
 					return null;
@@ -1739,16 +1789,47 @@ const methods = {
 					return null;
 				let data;
 				try { data = json(raw); } catch(e) { return null; }
-				return data?.proxies?.[tag] || null;
+				return data?.proxies || null;
 			};
 
-			const before = read_group();
+			const isGroup = (proxies, name) => {
+				const t = proxies?.[name]?.type;
+				return t === 'URLTest' || t === 'Fallback' || t === 'Selector';
+			};
+
+			/* The pool behind the tag, not the tag itself. main-out is a selector over the
+			 * URLTest pool and its members once the node can be pinned by hand, and sweeping
+			 * a selector's members would ask the pool for a delay as though it were a node —
+			 * one dial through whichever member it holds — and leave every real node
+			 * unmeasured. The members that matter are always one level in. */
+			const pool_of = (proxies, start) => {
+				if (proxies[start]?.type !== 'Selector')
+					return start;
+				for (let name in proxies[start].all || [])
+					if (proxies[name]?.type === 'URLTest' || proxies[name]?.type === 'Fallback')
+						return name;
+				return start;
+			};
+
+			/* The node actually carrying traffic, however many groups deep it sits. */
+			const leaf_of = (proxies, start) => {
+				let seen = {}, leaf = start;
+				while (leaf && isGroup(proxies, leaf) && proxies[leaf].now && !seen[leaf]) {
+					seen[leaf] = true;
+					leaf = proxies[leaf].now;
+				}
+				return leaf;
+			};
+
+			const proxies_before = read_proxies();
+			const before = proxies_before?.[tag];
 			if (!before)
 				return { result: false, error: 'Clash API not reachable' };
 
-			const all = before.all || [];
+			const pool_tag = pool_of(proxies_before, tag);
+			const all = proxies_before[pool_tag]?.all || [];
 			if (!length(all))
-				return { result: true, now: before.now, results: [] };
+				return { result: true, now: leaf_of(proxies_before, tag), results: [] };
 
 			/* The names come out of the core's own config, but they are spliced into a shell
 			 * command below, so they are checked here rather than trusted for being ours. */
@@ -1803,7 +1884,7 @@ const methods = {
 			/* Read the group back afterwards: the fresh numbers are exactly what makes
 			 * URLTest reconsider, so the node marked "in use" has to be the one it holds
 			 * now, not the one it held before the sweep. */
-			const now = read_group()?.now ?? before.now;
+			const now = leaf_of(read_proxies() || proxies_before, tag);
 
 			let results = [];
 			for (let name in all) {
@@ -1817,6 +1898,69 @@ const methods = {
 			}
 
 			return { result: true, now, results };
+		}
+	},
+
+	/* Pin the main group to one node by hand, or hand the choice back to URLTest.
+	 *
+	 * URLTest measures latency and nothing else, so a node that answers quickly and carries
+	 * traffic badly wins the pool on every re-test, and a single spike is enough to move
+	 * traffic onto a worse exit until the next round. Until now the only answer to that was
+	 * to leave URLTest and name a single node, which also gives up the failover that is the
+	 * reason to run a pool at all. Selecting the pool itself here is what returns the group
+	 * to choosing on its own.
+	 *
+	 * A URLTest group will not take a choice — the core's API refuses anything that is not a
+	 * selector — which is why main-out is generated as a selector over [pool, ...nodes] and
+	 * the name passed here is either the pool's tag or one of its members.
+	 *
+	 * The choice is live: it takes effect on the running core with no restart and no config
+	 * regeneration, and it is kept across restarts by the core's cache file. */
+	clash_select_node: {
+		args: { tag: 'tag', name: 'name' },
+		call: function(req) {
+			const tag  = req?.args?.tag || 'main-out';
+			const name = req?.args?.name;
+			if (!match(tag, /^[A-Za-z0-9_.:-]+$/) || !name || !match(name, /^[A-Za-z0-9_.:-]+$/))
+				return { result: false, error: 'bad tag or node name' };
+
+			const body = `{"name":"${name}"}`;
+			const request = `PUT /proxies/${tag} HTTP/1.1\r\nHost: 127.0.0.1\r\n` +
+			                `Content-Type: application/json\r\nContent-Length: ${length(body)}\r\n` +
+			                `Connection: close\r\n\r\n${body}`;
+			const tmp = '/tmp/limcore_select.out';
+
+			/* The core takes the choice over its HTTP API and nowhere else, and that API
+			 * wants a PUT — which the router's wget cannot send: both BusyBox wget and
+			 * uclient-fetch speak GET only. The request is therefore written straight down a
+			 * socket with nc, which every build has, and curl is kept only as the fallback
+			 * for one whose nc cannot open a port. */
+			let rc = system(`printf %s ${shellquote(request)} | nc 127.0.0.1 9090 > ${tmp} 2>/dev/null`, 5000);
+			if (rc !== 0 && access('/usr/bin/curl'))
+				system(`curl -s -o /dev/null -X PUT -H 'Content-Type: application/json' ` +
+				       `-d ${shellquote(body)} http://127.0.0.1:9090/proxies/${tag} > ${tmp} 2>/dev/null`, 5000);
+			system(`rm -f ${tmp}`);
+
+			/* Read the group back rather than trust the reply: a 204 with the group still on
+			 * its old node would be reported here as a pin that never happened, and the page
+			 * would then be the only thing claiming the traffic had moved. */
+			const fd = popen('wget -qO- --timeout=3 http://127.0.0.1:9090/proxies 2>/dev/null');
+			let raw = '';
+			if (fd) { raw = trim(fd.read('all')); fd.close(); }
+			if (!length(raw))
+				return { result: false, error: 'Clash API not reachable' };
+			let data;
+			try { data = json(raw); } catch(e) { return { result: false, error: 'invalid JSON from Clash API' }; }
+
+			const group = data?.proxies?.[tag];
+			if (!group)
+				return { result: false, error: 'no such group in the running configuration' };
+			if (group.type !== 'Selector')
+				return { result: false, error: 'the running configuration cannot be switched by hand — save and apply the settings first' };
+			if (group.now !== name)
+				return { result: false, error: 'the core did not accept the choice' };
+
+			return { result: true, now: group.now };
 		}
 	},
 

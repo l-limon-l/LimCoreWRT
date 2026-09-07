@@ -1350,11 +1350,28 @@ if (!isEmpty(main_node)) {
 
 		push(config.outbounds, {
 			type: 'urltest',
-			tag: 'main-out',
+			tag: 'main-urltest-out',
 			outbounds: map(main_urltest_nodes, (k) => `cfg-${k}-out`),
 			interval: strToTime(main_urltest_interval),
 			tolerance: strToInt(main_urltest_tolerance) || URLTEST_TOLERANCE,
 			idle_timeout: (strToInt(main_urltest_interval) > 1800) ? `${main_urltest_interval * 2}s` : null,
+		});
+
+		/* main-out is a selector over [the pool, every node in it] rather than the pool
+		 * itself, so the node in use can be pinned by hand while the mode stays URLTest.
+		 * A group's choice cannot be overridden through the core's API — only a selector
+		 * takes one — and URLTest measures latency alone, so a node that answers fast and
+		 * carries traffic badly wins the pool every time and there was no way to say
+		 * otherwise short of leaving URLTest altogether. Picking the pool itself back is
+		 * what returns the group to choosing on its own.
+		 *
+		 * The default is the pool, so nothing changes for anyone who never touches it. */
+		push(config.outbounds, {
+			type: 'selector',
+			tag: 'main-out',
+			outbounds: [ 'main-urltest-out', ...map(main_urltest_nodes, (k) => `cfg-${k}-out`) ],
+			default: 'main-urltest-out',
+			interrupt_exist_connections: true
 		});
 		urltest_nodes = main_urltest_nodes;
 	} else if (main_node === 'byedpi-out') {
@@ -2162,6 +2179,14 @@ if (is_selective_mode(routing_mode) || routing_mode === 'custom') {
 		rdrc_timeout: strToTime(cache_file_rdrc_timeout),
 	};
 }
+
+/* A node pinned by hand in the main selector has to survive a restart of the core, or every
+ * update and every settings change would quietly hand the choice back to URLTest without
+ * saying so. A selector's choice is kept in the cache file — the core stores it there on its
+ * own, there is no option asking for it — so the cache file is turned on for the pinned mode
+ * as well when the routing mode did not already ask for one. */
+if (main_node === 'urltest' && !config.experimental.cache_file)
+	config.experimental.cache_file = { enabled: true, path: RUN_DIR + '/cache.db' };
 /* Experimental end */
 
 system('mkdir -p ' + RUN_DIR);
