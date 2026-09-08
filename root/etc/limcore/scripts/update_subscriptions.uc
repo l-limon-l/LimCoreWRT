@@ -39,6 +39,12 @@ const allow_insecure = uci.get(uciconfig, ucisubscription, 'allow_insecure') || 
       hwid = uci.get(uciconfig, ucisubscription, 'hwid') || uci.get(uciconfig, ucimain, 'hwid'),
       via_proxy = uci.get(uciconfig, ucisubscription, 'update_via_proxy') || '0';
 
+/* Optional argument: the md5 of one subscription URL, as shown on that subscription's
+ * node tab. Given one, only that subscription is fetched and only its nodes are touched -
+ * the others keep the nodes they have. Without it every subscription is updated, which is
+ * what the button on the settings tab and the nightly cron job still ask for. */
+const only_group = ARGV[0];
+
 const routing_mode = uci.get(uciconfig, ucimain, 'routing_mode') || 'bypass_mainalnd_china';
 let main_node, main_udp_node;
 if (routing_mode !== 'custom') {
@@ -1089,6 +1095,10 @@ function main() {
 	for (let url in subscription_urls) {
 		url = replace(url, /#.*$/, '');
 		const groupHash = md5(url);
+
+		if (only_group && groupHash !== only_group)
+			continue;
+
 		node_cache[groupHash] = {};
 
 		/* One fetch with the configured User-Agent; every format below is attempted on
@@ -1198,6 +1208,11 @@ function main() {
 				push(node_result[length(node_result)-1], config);
 				node_cache[groupHash][confHash] = config;
 				node_cache[groupHash][nameHash] = config;
+				/* Nodes whose label collides with another subscription's live under a
+				 * name qualified by their group (see the add pass below). Register that
+				 * name too, so the next run recognises the section it wrote last time
+				 * instead of deleting and re-adding it every update. */
+				node_cache[groupHash][md5(groupHash + label)] = config;
 
 				count++;
 			}
@@ -1226,6 +1241,12 @@ function main() {
 		if (!cfg.grouphash)
 			return null;
 
+		/* Updating one subscription leaves the others alone. Without this they would all
+		 * be pruned: nothing was fetched for them, so no node of theirs is in the cache
+		 * and every one of them looks like a node the provider has dropped. */
+		if (only_group && cfg.grouphash !== only_group)
+			return null;
+
 		/* Empty object - failed to fetch nodes */
 		if (length(node_cache[cfg.grouphash]) === 0)
 			return null;
@@ -1238,8 +1259,14 @@ function main() {
 		} else {
 			const cached = node_cache[cfg.grouphash][cfg['.name']];
 			const user_fields = ['bind_interface'];
+			/* A key the parser produced with no value counts as dropped, not as absent:
+			 * every option lives in the parsed object whether the link carried it or
+			 * not, so `null` is how a provider says "this node no longer has that".
+			 * Setting null is a no-op in uci, which left the old value in place - a node
+			 * that lost its post-quantum encryption key kept the previous one and then
+			 * failed to connect against a server no longer expecting it. */
 			map(keys(cfg), (v) => {
-				if (v in cached)
+				if (v in cached && cached[v] !== null)
 					uci.set(uciconfig, cfg['.name'], v, cached[v]);
 				else if (!(v in user_fields))
 					uci.delete(uciconfig, cfg['.name'], v);
@@ -1257,7 +1284,18 @@ function main() {
 			if (node.isExisting)
 				return null;
 
-			const nameHash = md5(node.label);
+			/* The section is named after the label, which is only unique inside one
+			 * subscription. Two subscriptions offering a node of the same name - two
+			 * providers both calling their Dutch exit "Нидерланды" - wrote into the same
+			 * section: the second overwrote the first's address and keys, kept whatever
+			 * fields it had no value for, and the result was one node that belonged to
+			 * neither. Qualify the name with the group when the plain one is already
+			 * taken by someone else, so both nodes exist and each keeps its own fields. */
+			let nameHash = md5(node.label);
+			if (uci.get(uciconfig, nameHash) &&
+			    uci.get(uciconfig, nameHash, 'grouphash') !== node.grouphash)
+				nameHash = md5(node.grouphash + node.label);
+
 			uci.set(uciconfig, nameHash, 'node');
 			map(keys(node), (v) => uci.set(uciconfig, nameHash, v, node[v]));
 

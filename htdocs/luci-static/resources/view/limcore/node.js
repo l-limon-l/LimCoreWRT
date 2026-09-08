@@ -1255,38 +1255,71 @@ function addSpeedtestButton(s, tabname, key, belongs) {
 		'Pressing it on another tab meanwhile adds those nodes to the queue instead of starting a second test. The running connection is not touched.');
 }
 
-/* The button is repeated on every node tab and sweeps every node on the router from
- * wherever it is pressed, subscriptions included.
+/* Measures the tab it sits on, like the speed button next to it.
  *
- * It was briefly limited to the tab it sat on, on the reasoning that "check all nodes" on
- * a subscription tab should mean that subscription. In use that reads as the button being
- * broken: the sweep is parallel and a second subscription costs it no extra time, so a
- * per-tab limit only means pressing the same button on every tab in turn and, since each
- * press starts a fresh probe core, waiting out the whole thing again each time. Results
- * land in the delay column of every tab, so the ones not in view are filled in too. */
-function addSweepButton(s, tabname, key) {
-	const o = s.taboption(tabname, form.DummyValue, '_node_sweep_' + key, _('Check all nodes'));
+ * It used to sweep every node on the router from wherever it was pressed, on the
+ * reasoning that the sweep is parallel and the extra nodes cost it nothing. What that
+ * costs instead is the reading: a subscription tab answering with a column of figures for
+ * nodes that are not on it, while the one node someone came to look at waits behind
+ * however many others the router happens to hold. The two buttons on a tab now mean the
+ * same set of nodes, which is the set in front of the reader. */
+function addSweepButton(s, tabname, key, belongs) {
+	const o = s.taboption(tabname, form.DummyValue, '_node_sweep_' + key, _('Check delay'));
 	o.cfgvalue = function() {
 		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
 		const btn = E('button', {
 			'class': 'btn cbi-button cbi-button-action',
 			'click': ui.createHandlerFn(this, function() {
-				const sections = uci.sections('limcore', 'node');
+				const sections = uci.sections('limcore', 'node')
+					.filter((sec) => belongs(sec['.name']));
 
 				if (!sections.length) {
 					msgEl.style.color = '';
-					msgEl.textContent = _('No nodes configured.');
+					msgEl.textContent = _('No nodes on this tab.');
 					return;
 				}
 
 				return runNodeSweep(msgEl, sections);
 			})
-		}, [ _('Check all nodes') ]);
+		}, [ _('Check delay') ]);
 
 		return E('div', {}, [ btn, msgEl ]);
 	};
-	o.description = _('Measures every node on the router — this tab and all the others — at once, through a temporary core on its own port. ' +
+	o.description = _('Measures the nodes on this tab at once, through a temporary core on its own port. ' +
 		'The running connection is not touched and nothing is switched — this only reports which nodes answer, and how quickly.');
+}
+
+/* Updating one subscription, on the tab that shows it, next to the two measurements of
+ * the same nodes. The button on the settings tab fetches every subscription: fine for the
+ * nightly run, but a provider who has just added or moved a node is one provider, and
+ * re-fetching the rest only widens the window in which something else changes underfoot.
+ *
+ * The page is reloaded afterwards rather than patched, because a node that changed came
+ * back under a different section name and every list that referenced it - the urltest
+ * pool, per-device assignments - was rewritten on the router. */
+function addSubUpdateButton(s, tabname, info) {
+	const o = s.taboption(tabname, form.DummyValue, '_sub_update_' + info.hash, _('Update this subscription'));
+	o.cfgvalue = function() {
+		const msgEl = E('span', { 'style': 'margin-left:1em' }, '');
+		const btn = E('button', {
+			'class': 'btn cbi-button cbi-button-apply',
+			'click': ui.createHandlerFn(this, function() {
+				msgEl.style.color = '';
+				msgEl.textContent = _('Fetching nodes…');
+
+				return fs.exec_direct('/etc/limcore/scripts/update_subscriptions.uc', [ info.hash ]).then(() => {
+					return location.reload();
+				}).catch((err) => {
+					msgEl.style.color = '#c00';
+					msgEl.textContent = _('An error occurred during updating subscriptions: %s').format(err);
+				});
+			})
+		}, [ _('Update this subscription') ]);
+
+		return E('div', {}, [ btn, msgEl ]);
+	};
+	o.description = _('Fetches this subscription only and leaves the nodes of the others as they are. ' +
+		'The core is restarted at the end, the same way the full update does it, so the connection drops for a moment.');
 }
 
 function renderNodeSettings(section, data, features, main_node, routing_mode) {
@@ -2446,14 +2479,8 @@ return view.extend({
 
 			return true;
 		};
-		addSweepButton(s, 'node', 'own');
-		addSpeedtestButton(s, 'node', 'own', function(section_id) {
-			for (let info of subinfo)
-				if (info.hash === uci.get(data[0], section_id, 'grouphash'))
-					return false;
-
-			return true;
-		});
+		addSweepButton(s, 'node', 'own', ownNode);
+		addSpeedtestButton(s, 'node', 'own', ownNode);
 		o = s.taboption('node', form.SectionValue, '_node', form.GridSection, 'node');
 		ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 		ss.addremove = true;
@@ -2631,12 +2658,9 @@ return view.extend({
 					return uci.get(data[0], section_id, 'grouphash') === hash;
 				};
 			})(info.hash);
-			addSweepButton(s, 'sub_' + info.hash, info.hash);
-			addSpeedtestButton(s, 'sub_' + info.hash, info.hash, (function(hash) {
-				return function(section_id) {
-					return uci.get(data[0], section_id, 'grouphash') === hash;
-				};
-			})(info.hash));
+			addSubUpdateButton(s, 'sub_' + info.hash, info);
+			addSweepButton(s, 'sub_' + info.hash, info.hash, subNode);
+			addSpeedtestButton(s, 'sub_' + info.hash, info.hash, subNode);
 			o = s.taboption('sub_' + info.hash, form.SectionValue, '_sub_' + info.hash, form.GridSection, 'node');
 			ss = renderNodeSettings(o.subsection, data, features, main_node, routing_mode);
 			ss.filter = function(section_id) {
