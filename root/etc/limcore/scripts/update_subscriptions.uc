@@ -1086,6 +1086,88 @@ function parse_uri(uri) {
 	return config;
 }
 
+/* A subscription is a list, and the provider ordered it deliberately: the exits meant for
+ * daily use first, the special-purpose ones last. Nothing carried that order across.
+ * Sections were laid down in the order they happened to be created - a node from a year
+ * ago sits where it was, one the provider inserted in the middle of the list lands at the
+ * end - so the node list on the router matched no other client's, and the whitelist exits
+ * that belong together were scattered through it.
+ *
+ * Order restored here: own nodes first, then one subscription after another as they are
+ * configured, each in the order its provider sent. Only node sections move, and only
+ * among themselves - every other section keeps the order it had.
+ *
+ * A group not fetched this run (a single-subscription update, or a fetch that failed)
+ * keeps the order it is already in, which is the order its provider last sent. */
+function sort_nodes() {
+	let own = [], current = {}, current_order = [];
+
+	uci.foreach(uciconfig, ucinode, (cfg) => {
+		push(current_order, cfg['.name']);
+
+		if (!cfg.grouphash) {
+			push(own, cfg['.name']);
+			return null;
+		}
+
+		if (!current[cfg.grouphash])
+			current[cfg.grouphash] = [];
+		push(current[cfg.grouphash], cfg['.name']);
+	});
+
+	if (!length(current_order))
+		return;
+
+	let fetched = {};
+	for (let nodes in node_result)
+		for (let node in nodes) {
+			if (!node.section)
+				continue;
+			if (!fetched[node.grouphash])
+				fetched[node.grouphash] = [];
+			push(fetched[node.grouphash], node.section);
+		}
+
+	let ordered = [], done = {};
+	for (let name in own)
+		push(ordered, name);
+
+	for (let url in subscription_urls) {
+		const groupHash = md5(replace(url, /#.*$/, ''));
+		if (done[groupHash])
+			continue;
+		done[groupHash] = true;
+
+		for (let name in (fetched[groupHash] || current[groupHash] || []))
+			push(ordered, name);
+	}
+
+	/* Nodes of a subscription that is no longer configured: they are still in the config
+	 * until someone removes them, so they go last rather than nowhere. */
+	for (let groupHash in current)
+		if (!done[groupHash])
+			for (let name in current[groupHash])
+				push(ordered, name);
+
+	if (join(',', ordered) === join(',', current_order))
+		return;
+
+	/* The block starts where the first node section is now, so the sections above it -
+	 * the settings, the routing rules that live there - are not disturbed. */
+	let base = null;
+	uci.foreach(uciconfig, ucinode, (cfg) => {
+		if (base === null)
+			base = cfg['.index'];
+	});
+
+	/* Ascending, so each section placed is already past the point the next move touches. */
+	for (let i = 0; i < length(ordered); i++)
+		uci.reorder(uciconfig, ordered[i], base + i);
+
+	uci.commit(uciconfig);
+	log('Node order restored to the order the subscriptions list them.');
+}
+
 function main() {
 	if (via_proxy !== '1') {
 		log('Stopping service...');
@@ -1277,6 +1359,10 @@ function main() {
 					uci.set(uciconfig, cfg['.name'], v, cached[v]);
 			});
 			cached.isExisting = true;
+			/* Remembered for the ordering pass below, which needs to know which section
+			 * each fetched node ended up in. Set after the two field maps, so it is not
+			 * written into the config as an option of its own. */
+			cached.section = cfg['.name'];
 		}
 	});
 	for (let nodes in node_result)
@@ -1298,11 +1384,14 @@ function main() {
 
 			uci.set(uciconfig, nameHash, 'node');
 			map(keys(node), (v) => uci.set(uciconfig, nameHash, v, node[v]));
+			node.section = nameHash;
 
 			added++;
 			log(sprintf('Adding node: %s.', node.label));
 		});
 	uci.commit(uciconfig);
+
+	sort_nodes();
 
 	let need_restart = (via_proxy !== '1');
 	if (!isEmpty(main_node)) {
