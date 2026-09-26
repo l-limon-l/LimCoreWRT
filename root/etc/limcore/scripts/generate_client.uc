@@ -2132,6 +2132,20 @@ if (!isEmpty(main_node)) {
 						download_detour: ruleset_detour,
 						update_interval: '1d'
 					});
+			} else if (cfg.source === 'anydesk') {
+				/* AnyDesk is not on the RKN list, but its relays sit on OVH, CDN77 and GCore,
+				 * which DPI throttles wholesale: the ClientHello goes out, nothing comes back,
+				 * and the client hangs on "connecting to the AnyDesk network". Domain-only for
+				 * the same reason as Epic — the address space is rented, not AnyDesk's. */
+				if (!has_ruleset('lc-ru-anydesk'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'lc-ru-anydesk',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/anydesk.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
 			} else if (cfg.source === 'google_ai') {
 				/* itdoginfo's google_ai.lst opens Antigravity but not the Cloud AI Companion
 				 * backend the agent calls, nor ogs.google.com, which decides whether Gemini

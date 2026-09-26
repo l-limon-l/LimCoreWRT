@@ -14,7 +14,7 @@ LUCI_DEPENDS:= \
 	+ucode-mod-socket
 
 PKG_NAME:=luci-app-limcore
-PKG_VERSION:=2.0
+PKG_VERSION:=2.0.1
 PKG_RELEASE:=1
 PKG_MAINTAINER:=l_limon_l
 PKG_LICENSE:=GPL-2.0-only
