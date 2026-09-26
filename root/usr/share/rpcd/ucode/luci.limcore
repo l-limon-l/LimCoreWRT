@@ -1,0 +1,2724 @@
+#!/usr/bin/ucode
+/*
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * Copyright (C) 2023-2024 ImmortalWrt.org
+ */
+
+'use strict';
+
+import { access, basename, error, lstat, popen, readfile, writefile } from 'fs';
+import { cursor } from 'uci';
+
+/* Kanged from ucode/luci */
+function shellquote(s) {
+	return `'${replace(s, "'", "'\\''")}'`;
+}
+
+/* Optional GitHub mirror (uci limcore.config.github_mirror), used ONLY as a
+ * FALLBACK: gh_fetch tries GitHub first and swaps to the mirror only if GitHub
+ * fails — a healthy GitHub is never bypassed. Mirrors core_mgmt.uc's helpers. */
+function gh_mirror_base() {
+	let base = null;
+	const fd = popen('uci -q get limcore.config.github_mirror 2>/dev/null');
+	if (fd) { base = trim(fd.read('all')); fd.close(); }
+	return (base && length(base)) ? replace(base, /\/+$/, '') : null;
+}
+
+function gh_fetch(url, dest, timeout_ms) {
+	let rc = system(`wget -qO ${shellquote(dest)} --timeout=15 ${shellquote(url)} 2>/dev/null`, timeout_ms);
+	if (rc !== 0) {
+		const base = gh_mirror_base();
+		const m = base ? match(url, /^https:\/\/github\.com(\/[^\/]+\/[^\/]+\/releases\/.+)$/) : null;
+		if (m)
+			rc = system(`wget -qO ${shellquote(dest)} --timeout=15 ${shellquote(base + m[1])} 2>/dev/null`, timeout_ms);
+	}
+	return rc;
+}
+
+function hasKernelModule(kmod) {
+	const modname = replace(replace(kmod, /\.ko$/, ''), /-/g, '_');
+	return !!access('/sys/module/' + modname);
+}
+
+const LC_DIR = '/etc/limcore';
+/* zapret2 and ByeDPI install from LimCore's own copy of their packages, never from the
+ * repositories they are copied from. A rolling release named after each package holds
+ * version-free file names and is titled with the version it holds. */
+const PKG_REPO = 'l-limon-l/limcore-packages';
+const RUN_DIR = '/var/run/limcore';
+const UPDATE_BIN = '/usr/bin/limcore-update';
+const UPDATE_LOG = '/tmp/limcore-update.log';
+const UPDATE_PID = '/tmp/limcore-update.pid';
+const NP_PORT   = 9092;
+const NP_CFG    = '/tmp/limcore-node-probe.json';
+const NP_LOG    = '/tmp/limcore-node-probe.log';
+const NP_RESULT = '/tmp/limcore-node-probe.result';
+const NP_DONE   = '/tmp/limcore-node-probe.done';
+/* Absence of the done-marker cannot mean "running" on its own: before any sweep has been
+ * started, and again after the results have been collected and cleaned up, there is no
+ * done-marker either. Both were reported as a sweep in progress, so a failed start left
+ * the button spinning until the page was reloaded. Running is this marker present and the
+ * done-marker not. */
+const NP_RUNNING = '/tmp/limcore-node-probe.running';
+const ST_PORT    = 5340;
+const ST_CFG     = '/tmp/limcore-speedtest.json';
+const ST_LOG     = '/tmp/limcore-speedtest.log';
+const ST_RESULT  = '/tmp/limcore-speedtest.result';
+const ST_RUNNING = '/tmp/limcore-speedtest.running';
+const ST_QUEUE   = '/tmp/limcore-speedtest.queue';
+const ST_PID     = '/tmp/limcore-speedtest.pid';
+const ST_MAX_RUN = 1800;
+
+/* The delay every page shows, taken the way the Ping tab says (see ping_conf).
+ *
+ * Not the Clash API's delay test: it can only dial the node afresh, one request, and its
+ * figure jumped between presses - one node read 60 ms warm and 190-425 ms through the API
+ * from the same router a second apart. Here the requests go out through a SOCKS port with
+ * curl, so the ping settings (a kept connection or not, the URL, HEAD or GET) can be had.
+ *
+ * URLTest still re-selects on the API's own figures, so the pool test keeps asking the API
+ * as well — this is what is shown, not what the core decides on. */
+const WARM_URL   = 'https://www.gstatic.com/generate_204';
+const NP_SOCKS   = 9093;
+const GT_PORT    = 9095;
+const GT_SOCKS   = 9096;
+const GT_CFG     = '/tmp/limcore-group-probe.json';
+/* A 127.0.0.1-only port in the running config that leads straight to main-out, so the node
+ * in use can be measured the same way without a second core. */
+const DELAY_PORT = 9094;
+const WARM_CACHE = '/tmp/limcore-warm-main';
+
+/* How a delay is taken, as set on the Nodes page's Ping tab (the same choices Happ offers).
+ *
+ *   ping_type  get       a GET through the node (the default, and what this always was)
+ *              head      a HEAD through the node
+ *              tcp       the TCP connect to the node's server, straight from the router
+ *              icmp      an ICMP echo to the node's server
+ *   ping_mode  default   every request as in a fresh core session: a connection of its
+ *                        own, and the probe core keeps no DNS cache either (see
+ *                        generate_client's probe config). The node in use is measured
+ *                        through the running core, whose cache stays, so there it is
+ *                        double. The default, as in Happ.
+ *              double    every request opens a connection of its own, handshake included
+ *              keepalive the requests share one connection: the first pays for the
+ *                        handshake, the second times the node's answer alone
+ *   ping_url   what the requests through the node ask for, Happ's URL by default
+ *
+ * Two requests (or connects, or echoes), and the better of the two is shown - Happ's rule.
+ *
+ * Read on every call rather than once: rpcd keeps this file loaded, and a saved setting
+ * has to count from the next press without a restart. */
+function ping_conf() {
+	const u = cursor();
+	const type = u.get('limcore', 'config', 'ping_type');
+	const mode = u.get('limcore', 'config', 'ping_mode');
+	let url = u.get('limcore', 'config', 'ping_url');
+	if (!url || !match(url, /^https?:\/\/[^\s'"`$\\]+$/))
+		url = WARM_URL;
+	return {
+		type: (type in ['get', 'head', 'tcp', 'icmp']) ? type : 'get',
+		mode: (mode in ['double', 'keepalive']) ? mode : 'default',
+		url,
+		mark: int(u.get('limcore', 'infra', 'self_mark') || '100') || 100
+	};
+}
+
+/* The curl for one measurement through the node, printing "<code>:<seconds> " per request.
+ * user may be empty (a port that needs no login) or a shell word such as "$T".
+ * --fail-early so a node that does not answer costs one timeout and not three. */
+function warm_cmd(port, user) {
+	const pc = ping_conf();
+	const auth = length(user) ? `${user}:x@` : '';
+	const url = shellquote(pc.url);
+	/* curl reuses a connection between the URLs of one run unless told to close it. */
+	const opts = ((pc.type === 'head') ? '-I ' : '') + ((pc.mode !== 'keepalive') ? "-H 'Connection: close' " : '');
+	return `curl -s -k --fail-early ${opts}-x "socks5h://${auth}127.0.0.1:${port}" --connect-timeout 5 --max-time 6 ` +
+		`-o /dev/null -o /dev/null -w '%{http_code}:%{time_total} ' ${url} ${url} 2>/dev/null`;
+}
+
+/* Protocols that do not answer a TCP connect or run over UDP: TCP and ICMP pings mean
+ * nothing for them, and they are measured through the node whatever the setting. */
+const PING_NOT_DIRECT = [ 'hysteria', 'hysteria2', 'tuic', 'wireguard', 'amneziawg' ];
+
+/* The command for a TCP or ICMP ping of one node, in warm_cmd's output shape, or null when
+ * the setting asks for a ping through the node or the node has nothing to ping. A group
+ * pings its members one after another, and warm_delay then keeps the quickest. */
+function direct_cmd(sid, pc, depth) {
+	pc = pc || ping_conf();
+	if (!(pc.type in ['tcp', 'icmp']) || !match(sid || '', /^[A-Za-z0-9_]+$/))
+		return null;
+	const u = cursor();
+	const n = u.get_all('limcore', sid);
+	if (!n)
+		return null;
+
+	if (n.type === 'urltest') {
+		if (depth)
+			return null;
+		let cmds = [];
+		u.foreach('limcore', 'node', (m) => {
+			if (m.label && (m.label in (n.group_members || []))) {
+				const c = direct_cmd(m['.name'], pc, 1);
+				if (c) push(cmds, c);
+			}
+		});
+		return length(cmds) ? join('; ', cmds) : null;
+	}
+
+	if (!n.address || (n.type in PING_NOT_DIRECT))
+		return null;
+	const host = shellquote(n.address);
+	if (pc.type === 'icmp')
+		/* busybox ping prints each reply's time in ms; the shape wanted is seconds. */
+		return `ping -c 2 -W 2 ${host} 2>/dev/null | awk -F'time=' '/time=/ { split($2, a, " "); printf "200:%f ", a[1] / 1000 }'`;
+	return `ucode /usr/share/limcore/scripts/tcping.uc ${pc.mark} ${host} ${int(n.port) || 443} 2 2>/dev/null`;
+}
+
+/* One node's measurement by the ping setting: straight to the node for TCP and ICMP,
+ * through the SOCKS port otherwise and for whatever cannot be pinged straight. */
+function measure_cmd(sid, port, user) {
+	return direct_cmd(sid) || warm_cmd(port, user);
+}
+
+/* The section behind an outbound tag, "cfg-<section>-out". */
+function tag_sid(tag) {
+	const m = match(tag || '', /^cfg-(.+)-out$/);
+	return m ? m[1] : null;
+}
+
+/* The delay in ms out of a measurement's output ("<code>:<seconds> " per attempt), or null
+ * when nothing answered: the better of the attempts, a 000 being one that got no answer. */
+function warm_delay(raw) {
+	let delay = null;
+	for (let r in split(trim(raw || ''), ' ')) {
+		const t = match(r, /^([0-9]{3}):([0-9.]+)$/);
+		if (!t || t[1] === '000' || int(t[1]) >= 400)
+			continue;
+		const ms = int(+t[2] * 1000 + 0.5);
+		if (delay == null || ms < delay)
+			delay = ms;
+	}
+	return (delay != null && delay < 1) ? 1 : delay;
+}
+
+function get_active_core() {
+	/* Mirror init.d / generate_client.uc precedence: the standard sing-box binary, else a
+	 * user-supplied one from custom_core_path. Must stay in sync with those two, or LuCI
+	 * would report a core the service never actually runs. */
+	if (access('/usr/bin/sing-box'))
+		return { path: '/usr/bin/sing-box', type: 'singbox', proc_name: 'sing-box' };
+
+	let custom_path = null;
+	const fd = popen('uci -q get limcore.config.custom_core_path 2>/dev/null');
+	if (fd) { custom_path = trim(fd.read('all')); fd.close(); }
+	if (length(custom_path) > 0 && access(custom_path))
+		return {
+			path:      custom_path,
+			type:      'singbox',
+			proc_name: basename(custom_path),
+			custom:    true
+		};
+	return null;
+}
+
+/* Device Control helpers.
+ *
+ * Ported into LimCore from Device-Control (luci-app-netpause) by Yany1944:
+ * https://github.com/Yany1944/Device-Control
+ * The devices are stored as 'device' sections in LimCore's own UCI file rather
+ * than in a config of their own. */
+
+const NP_CONFIG = 'limcore';
+const NP_APPLY = '/usr/share/limcore/scripts/netpause_apply.uc';
+const NP_MAC_RE = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
+
+/* Counted in BYTES: ucode's length() is byte-based, so Cyrillic costs two per
+   character. Over-long input is refused rather than truncated — cutting a byte
+   string mid-character would leave broken UTF-8 in the config file. The limit is
+   set well above what the input fields accept (48 and 64 characters). */
+const NP_TEXT_MAX = 256;
+
+function np_normalise_mac(value) {
+	return lc(trim(value ?? ''));
+}
+
+function np_valid_mac(value) {
+	return !!match(value, NP_MAC_RE);
+}
+
+/* Labels never reach the ruleset — only the MAC does, and that is validated
+   against NP_MAC_RE — and uci writes through libuci rather than through a shell,
+   so the only real hazard is a line break landing inside the config file.
+   Note the character class: ucode's regex engine rejects \x escapes with
+   "Missing ']'", so the control characters are spelled with the escapes it does
+   understand rather than as a \x00-\x1f range. */
+function np_clean_text(value) {
+	const text = trim(value ?? '');
+	if (!length(text))
+		return null;
+
+	const safe = trim(replace(text, /[\n\r\t]/g, ' '));
+	return length(safe) ? safe : null;
+}
+
+function np_read_leases() {
+	let out = {};
+	for (let line in split(readfile('/tmp/dhcp.leases') ?? '', '\n')) {
+		const f = split(trim(line), /\s+/);
+		if (length(f) < 4)
+			continue;
+
+		const mac = np_normalise_mac(f[1]);
+		if (!np_valid_mac(mac))
+			continue;
+
+		out[mac] = { ip: f[2], name: (f[3] !== '*') ? f[3] : null };
+	}
+	return out;
+}
+
+/* A MAC that cannot belong to a real neighbour: the all-zero placeholder the
+   kernel leaves behind, and anything with the multicast bit set (which covers
+   the broadcast address too). Listing those as devices to pause is noise. */
+function np_usable_mac(mac) {
+	if (mac === '00:00:00:00:00:00')
+		return false;
+
+	return !(hex(substr(mac, 0, 2)) & 0x01);
+}
+
+/* Locally administered, i.e. the phone is rotating a private MAC rather than
+   showing its real one. Such a device has no vendor to look up and usually no
+   DHCP hostname either, so the page says so instead of looking broken. */
+function np_randomised_mac(mac) {
+	return !!(hex(substr(mac, 0, 2)) & 0x02);
+}
+
+/* Interfaces carrying a default route are uplinks. Their ARP entries are the
+   ISP's gateway and whatever else lives on the provider's segment — neither is
+   a device on this network, and pausing one would be meaningless. */
+function np_uplink_devices() {
+	let out = {};
+	let header = true;
+	for (let line in split(readfile('/proc/net/route') ?? '', '\n')) {
+		if (header) { header = false; continue; }
+
+		const f = split(trim(line), /\s+/);
+		if (length(f) < 2)
+			continue;
+
+		if (f[1] === '00000000')
+			out[f[0]] = true;
+	}
+	return out;
+}
+
+/* ARP proves presence. Flags 0x0 means an incomplete entry: the neighbour is
+   gone but its lease has not expired yet. */
+function np_read_arp() {
+	const uplinks = np_uplink_devices();
+
+	let out = {};
+	let header = true;
+	for (let line in split(readfile('/proc/net/arp') ?? '', '\n')) {
+		if (header) { header = false; continue; }
+
+		const f = split(trim(line), /\s+/);
+		if (length(f) < 6)
+			continue;
+
+		if (uplinks[f[5]])
+			continue;
+
+		const mac = np_normalise_mac(f[3]);
+		if (!np_valid_mac(mac) || !np_usable_mac(mac))
+			continue;
+
+		out[mac] = { ip: f[0], online: (f[2] !== '0x0') };
+	}
+	return out;
+}
+
+/* Names the router already knows but never showed here: a static lease carries
+   the name someone typed into the DHCP page, and /etc/ethers can carry one too.
+   Both beat falling back to a bare MAC. */
+function np_read_static_names() {
+	let out = {};
+
+	const uci = cursor();
+	uci.load('dhcp');
+	uci.foreach('dhcp', 'host', (h) => {
+		if (!length(h.name ?? ''))
+			return;
+
+		/* The mac option holds one address, several separated by whitespace, or
+		   a list — a host may be pinned by more than one interface. */
+		let macs = (type(h.mac) === 'array') ? h.mac : split(trim(h.mac ?? ''), /\s+/);
+		for (let entry in macs) {
+			const mac = np_normalise_mac(entry);
+			if (np_valid_mac(mac))
+				out[mac] = h.name;
+		}
+	});
+
+	for (let line in split(readfile('/etc/ethers') ?? '', '\n')) {
+		const text = trim(line);
+		if (!length(text) || substr(text, 0, 1) === '#')
+			continue;
+
+		const f = split(text, /\s+/);
+		if (length(f) < 2)
+			continue;
+
+		const mac = np_normalise_mac(f[0]);
+		/* The second column is a name or an address; an address is no better
+		   than what the page already shows. */
+		if (np_valid_mac(mac) && !match(f[1], /^[0-9.]+$/) && !(mac in out))
+			out[mac] = f[1];
+	}
+
+	return out;
+}
+
+function np_read_config() {
+	let out = {};
+	const uci = cursor();
+	uci.load(NP_CONFIG);
+	uci.foreach(NP_CONFIG, 'device', (d) => {
+		const mac = np_normalise_mac(d.mac);
+		if (np_valid_mac(mac))
+			out[mac] = {
+				section: d['.name'],
+				label: d.label,
+				note: d.note,
+				paused: (d.paused === '1')
+			};
+	});
+	return out;
+}
+
+/* A section is worth keeping only while it still carries something. Resuming a
+   device the user never renamed leaves nothing behind, so the config lists only
+   what has actually been customised or paused. */
+function np_prune(uci, section) {
+	const label = uci.get(NP_CONFIG, section, 'label');
+	const note = uci.get(NP_CONFIG, section, 'note');
+	const paused = uci.get(NP_CONFIG, section, 'paused');
+
+	if (!length(label ?? '') && !length(note ?? '') && paused !== '1')
+		uci.delete(NP_CONFIG, section);
+}
+
+function np_find_section(uci, mac) {
+	let section = null;
+	uci.foreach(NP_CONFIG, 'device', (d) => {
+		if (np_normalise_mac(d.mac) === mac)
+			section = d['.name'];
+	});
+	return section;
+}
+
+function np_apply_ruleset() {
+	return system('/usr/bin/ucode ' + NP_APPLY + ' >/dev/null 2>&1');
+}
+
+const methods = {
+	acllist_read: {
+		args: { type: 'type' },
+		call: function(req) {
+			if (index(['direct_list', 'proxy_list'], req.args?.type) === -1)
+				return { content: null, error: 'illegal type' };
+
+			const filecontent = readfile(`${LC_DIR}/resources/${req.args?.type}.txt`);
+			return { content: filecontent };
+		}
+	},
+	acllist_write: {
+		args: { type: 'type', content: 'content' },
+		call: function(req) {
+			if (index(['direct_list', 'proxy_list'], req.args?.type) === -1)
+				return { result: false, error: 'illegal type' };
+
+			const file = `${LC_DIR}/resources/${req.args?.type}.txt`;
+			let content = req.args?.content;
+
+			/* Sanitize content */
+			if (content) {
+				content = trim(content);
+				content = replace(content, /\r\n?/g, '\n');
+				if (!match(content, /\n$/))
+					content += '\n';
+			}
+
+			system(`mkdir -p ${LC_DIR}/resources`);
+			writefile(file, content);
+
+			return { result: true };
+		}
+	},
+
+	certificate_write: {
+		args: { filename: 'filename' },
+		call: function(req) {
+			const writeCertificate = (filename, priv) => {
+				const tmpcert = '/tmp/limcore_certificate.tmp';
+				const filestat = lstat(tmpcert);
+
+				if (!filestat || filestat.type !== 'file' || filestat.size <= 0) {
+					system(`rm -f ${tmpcert}`);
+					return { result: false, error: 'empty certificate file' };
+				}
+
+				let filecontent = readfile(tmpcert);
+				if (is_binary(filecontent)) {
+					system(`rm -f ${tmpcert}`);
+					return { result: false, error: 'illegal file type: binary' };
+				}
+
+				/* Kanged from luci-proto-openconnect */
+				const beg = priv ? /^-----BEGIN (RSA|EC) PRIVATE KEY-----$/ : /^-----BEGIN CERTIFICATE-----$/,
+				      end = priv ? /^-----END (RSA|EC) PRIVATE KEY-----$/ : /^-----END CERTIFICATE-----$/,
+				      lines = split(trim(filecontent), /[\r\n]/);
+				let start = false, i;
+
+				for (i = 0; i < length(lines); i++) {
+					if (match(lines[i], beg))
+						start = true;
+					else if (start && !b64dec(lines[i]) && length(lines[i]) !== 64)
+						break;
+				}
+
+				if (!start || i < length(lines) - 1 || !match(lines[i], end)) {
+					system(`rm -f ${tmpcert}`);
+					return { result: false, error: 'this does not look like a correct PEM file' };
+				}
+
+				/* Sanitize certificate */
+				filecontent = trim(filecontent);
+				filecontent = replace(filecontent, /\r\n?/g, '\n');
+				if (!match(filecontent, /\n$/))
+					filecontent += '\n';
+
+				system(`mkdir -p ${LC_DIR}/certs`);
+				writefile(`${LC_DIR}/certs/${filename}.pem`, filecontent);
+				system(`rm -f ${tmpcert}`);
+
+				return { result: true };
+			};
+
+			const filename = req.args?.filename;
+			switch (filename) {
+			case 'client_ca':
+			case 'server_publickey':
+				return writeCertificate(filename, false);
+				break;
+			case 'server_privatekey':
+				return writeCertificate(filename, true);
+				break;
+			default:
+				return { result: false, error: 'illegal cerificate filename' };
+				break;
+			}
+		}
+	},
+
+	connection_check: {
+		args: { site: 'site' },
+		call: function(req) {
+			let url;
+			switch(req.args?.site) {
+			case 'baidu':
+				url = 'https://www.baidu.com';
+				break;
+			case 'google':
+				url = 'https://www.google.com';
+				break;
+			case 'yandex':
+				url = 'https://ya.ru';
+				break;
+			case 'speedtest':
+				url = 'https://www.speedtest.net';
+				break;
+			case 'youtube':
+				url = 'https://www.youtube.com';
+				break;
+			default:
+				return { result: false, error: 'illegal site' };
+				break;
+			}
+
+			return { result: (system(`/usr/bin/wget --spider -qT3 ${url} 2>"/dev/null"`, 3100) === 0) };
+		}
+	},
+
+	log_clean: {
+		args: { type: 'type' },
+		call: function(req) {
+			if (index(['daemon', 'core'], req.args?.type) === -1)
+				return { result: false, error: 'illegal type' };
+
+			const filestat = lstat(`${RUN_DIR}/${req.args?.type}.log`);
+			if (filestat)
+				writefile(`${RUN_DIR}/${req.args?.type}.log`, '');
+			return { result: true };
+		}
+	},
+
+	singbox_generator: {
+		args: { type: 'type', params: 'params' },
+		call: function(req) {
+			if (index(['ech-keypair', 'uuid', 'reality-keypair', 'vapid-keypair', 'wg-keypair'], req.args?.type) === -1)
+				return { result: false, error: 'illegal type' };
+
+			const type = req.args?.type;
+			let result = {};
+
+			const fd = popen('/usr/bin/sing-box generate ' + type + ` ${req.args?.params || ''}`);
+			if (fd) {
+				let ech_cfg_set = false;
+				let ech_key_set = false;
+
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					if (type === 'uuid')
+						result.uuid = trim(line);
+					else if (type in ['reality-keypair', 'vapid-keypair', 'wg-keypair']) {
+						let priv = match(trim(line), /PrivateKey: (.*)/);
+						if (priv)
+							result.private_key = priv[1];
+						let pub = match(trim(line), /PublicKey: (.*)/);
+						if (pub)
+							result.public_key = pub[1];
+					} else if (type in ['ech-keypair']) {
+						if (trim(line) === '-----BEGIN ECH CONFIGS-----')
+							ech_cfg_set = true;
+						else if (trim(line) === '-----BEGIN ECH KEYS-----')
+							ech_key_set = true;
+
+						if (ech_cfg_set)
+							result.ech_cfg = result.ech_cfg ? result.ech_cfg + '\n' + trim(line) : trim(line) ;
+						if (ech_key_set)
+							result.ech_key = result.ech_key ? result.ech_key + '\n' + trim(line) : trim(line) ;
+
+						if (trim(line) === '-----END ECH CONFIGS-----')
+							ech_cfg_set = false;
+						else if (trim(line) === '-----END ECH KEYS-----')
+							ech_key_set = false;
+					}
+				}
+
+				fd.close();
+			}
+
+			return { result };
+		}
+	},
+
+	singbox_get_features: {
+		call: function() {
+			let features = {};
+
+				const core = get_active_core();
+				const core_binary = core ? core.path : null;
+				if (core) {
+					features.core_type = core.type;
+					if (core.custom)
+						features.core_custom = true;
+				}
+
+				if (core_binary) {
+					const fd = popen(core_binary + ' version');
+					if (fd) {
+						const out = fd.read('all');
+						fd.close();
+
+						const verMatch = match(out, / version v?(\S+)/);
+						if (verMatch)
+							features.version = verMatch[1];
+
+						const tagsMatch = match(out, /\nTags: ([^\n]+)/);
+						if (tagsMatch)
+							for (let tag in split(tagsMatch[1], ','))
+								features[trim(tag)] = true;
+					}
+				}
+
+				features.lc_has_ip_full = !!access('/usr/libexec/ip-full');
+				features.lc_has_tcp_brutal = hasKernelModule('brutal.ko');
+				features.lc_has_tproxy = hasKernelModule('nft_tproxy.ko') || !!access('/etc/modules.d/nft-tproxy');
+				features.lc_has_tun = hasKernelModule('tun.ko') || !!access('/etc/modules.d/30-tun');
+
+				features.available_cores = [];
+				if (access('/usr/bin/sing-box')) push(features.available_cores, 'singbox');
+
+				return features;
+		}
+	},
+
+	detect_custom_core: {
+		args: { path: 'path' },
+		call: function(req) {
+			const path = req.args?.path;
+			if (!path || length(path) === 0)
+				return { result: false, error: 'No path provided' };
+			if (!access(path))
+				return { result: false, error: 'File not found: ' + path };
+			let out = '';
+			let fd = popen(shellquote(path) + ' version 2>&1');
+			if (fd) { out = trim(fd.read('all')); fd.close(); }
+			if (length(out) === 0)
+				return { result: false, error: 'Binary produced no output' };
+			if (!match(out, /sing.box|singbox/))
+				return { result: false, error: 'Not a sing-box compatible binary. Output: ' + substr(out, 0, 120) };
+			const verMatch = match(out, / version v?(\S+)/);
+			const version = verMatch ? verMatch[1] : null;
+			system('uci set limcore.config.custom_core_path=' + shellquote(path));
+			system('uci commit limcore');
+			return { result: true, type: 'singbox', version: version };
+		}
+	},
+
+	clash_active_node: {
+		args: { tag: 'tag' },
+		call: function(req) {
+			const fd = popen('wget -qO- --timeout=3 http://127.0.0.1:9090/proxies');
+			if (!fd)
+				return { error: 'failed to run wget' };
+			const raw = trim(fd.read('all'));
+			fd.close();
+			if (!length(raw))
+				return { error: 'Clash API not reachable' };
+			let data;
+			try {
+				data = json(raw);
+			} catch(e) {
+				return { error: 'invalid JSON from Clash API' };
+			}
+			const proxies = data?.proxies || {};
+
+			const lastDelay = (name) => {
+				const h = proxies[name]?.history;
+				return (h && length(h)) ? h[length(h) - 1].delay : null;
+			};
+
+			/* The node in use, measured warm through the running core's own delay port
+			 * (DELAY_PORT, which leads to main-out) so this line shows the figure the node
+			 * list and the pool test show. Cached for half a minute per node, because the
+			 * page polls this every few seconds. A core started from a config older than the
+			 * port refuses at once, and the core's own last figure is shown until it is
+			 * restarted. */
+			const warmMain = (leaf) => {
+				const now = time();
+				const c = split(trim(readfile(WARM_CACHE) || ''), ' ');
+				if (length(c) === 3 && c[1] === leaf && now - int(c[0]) < 30)
+					return (c[2] === '-') ? null : int(c[2]);
+				let d = null;
+				const wfd = popen(measure_cmd(tag_sid(leaf), DELAY_PORT, ''));
+				if (wfd) {
+					d = warm_delay(wfd.read('all'));
+					wfd.close();
+				}
+				writefile(WARM_CACHE, `${now} ${leaf} ${(d == null) ? '-' : d}`);
+				return d;
+			};
+			const shownDelay = (group, leaf) => {
+				const w = (group === 'main-out' && leaf) ? warmMain(leaf) : null;
+				return (w != null) ? w : lastDelay(leaf);
+			};
+
+			const isGroup = (name) => {
+				const t = proxies[name]?.type;
+				return t === 'URLTest' || t === 'Fallback' || t === 'Selector';
+			};
+
+			/* main-out is a selector wrapping the URLTest pool whenever the pool can be
+			 * pinned by hand, so a group's choice is now a group of its own often enough
+			 * that following exactly one step would report 'main-urltest-out' as the node
+			 * in use — a tag, where the reader is looking for the name of a server. Walk
+			 * down to the leaf instead, remembering the outermost selector on the way: that
+			 * is the group a pin lives in, and whether it is holding the pool or one node
+			 * is what the page needs in order to say which of the two is happening. */
+			const descend = (startTag) => {
+				let seen = {}, chain = [], leaf = startTag;
+				let selectorTag = null, selectorNow = null, selectorAll = null;
+				while (leaf && isGroup(leaf) && proxies[leaf].now && !seen[leaf]) {
+					seen[leaf] = true;
+					push(chain, leaf);
+					if (!selectorTag && proxies[leaf].type === 'Selector') {
+						selectorTag = leaf;
+						selectorNow = proxies[leaf].now;
+						/* What the group may be switched to, straight from the running
+						 * core: a pool edited on the page but not applied yet is not what
+						 * the selector holds, and offering those names would be offering a
+						 * choice the core would refuse. */
+						selectorAll = proxies[leaf].all || [];
+					}
+					leaf = proxies[leaf].now;
+				}
+				return { leaf, chain, selectorTag, selectorNow, selectorAll };
+			};
+
+			/* Focused query: resolve a specific group/leaf (e.g. 'main-udp-out' for the
+			 * dedicated UDP node) instead of following GLOBAL. */
+			const wantTag = req?.args?.tag;
+			if (wantTag) {
+				const p = proxies[wantTag];
+				if (!p)
+					return { error: 'no active proxy node' };
+				if (isGroup(wantTag) && p.now) {
+					const d = descend(wantTag);
+					return {
+						node: d.leaf, type: proxies[d.leaf]?.type || null, delay: shownDelay(wantTag, d.leaf),
+						group: wantTag, group_type: p.type,
+						selector: d.selectorTag, selected: d.selectorNow, options: d.selectorAll
+					};
+				}
+				return { node: wantTag, type: p.type || null, delay: shownDelay(wantTag, wantTag), group: null, group_type: null };
+			}
+
+			/* Follow GLOBAL -> proxy group -> leaf node */
+			let groupName = null;
+			let groupType = null;
+			let nodeName  = null;
+
+			const nonProxy = (name) => name === 'direct-out' || name === 'block-out' || !name;
+			let selectorName = null, selectorNow = null, selectorAll = null;
+			const globalNow = proxies['GLOBAL']?.now;
+			if (globalNow && proxies[globalNow] && !nonProxy(globalNow)) {
+				const g = proxies[globalNow];
+				if (isGroup(globalNow)) {
+					const d = descend(globalNow);
+					groupName    = globalNow;
+					groupType    = g.type;
+					nodeName     = d.leaf;
+					selectorName = d.selectorTag;
+					selectorNow  = d.selectorNow;
+					selectorAll  = d.selectorAll;
+				} else {
+					/* GLOBAL points directly to a leaf node */
+					nodeName = globalNow;
+				}
+			}
+
+			/* Fallback: first URLTest/Fallback/Selector group */
+			if (!nodeName) {
+				for (let name in proxies) {
+					if (name === 'GLOBAL') continue;
+					const p = proxies[name];
+					if (isGroup(name) && p.now) {
+						const d = descend(name);
+						groupName    = name;
+						groupType    = p.type;
+						nodeName     = d.leaf;
+						selectorName = d.selectorTag;
+						selectorNow  = d.selectorNow;
+						selectorAll  = d.selectorAll;
+						break;
+					}
+				}
+			}
+
+			/* Last fallback: main-out (route-based modes) */
+			if (!nodeName && proxies['main-out'])
+				nodeName = 'main-out';
+
+			if (!nodeName)
+				return { error: 'no active proxy node' };
+
+			return {
+				node:       nodeName,
+				type:       proxies[nodeName]?.type || null,
+				delay:      shownDelay((nodeName === 'main-out') ? 'main-out' : groupName, nodeName),
+				group:      groupName,
+				group_type: groupType,
+				selector:   selectorName,
+				selected:   selectorNow,
+				options:    selectorAll
+			};
+		}
+	},
+
+	diag_core_check: {
+		call: function() {
+			const core = get_active_core();
+			const binary = core ? core.path : null;
+			const proc_name = core ? core.proc_name : 'sing-box';
+
+			const result = {
+				singbox_installed: !!access('/usr/bin/sing-box'),
+				binary:            binary,
+				version:           null,
+				running:           false,
+				pid:               null,
+				byedpi_installed:  !!access('/usr/bin/ciadpi'),
+				byedpi_running:    false,
+				byedpi_pid:        null,
+				zapret_installed:  !!access('/opt/zapret2/nfq2/nfqws2'),
+				zapret_running:    false,
+				zapret_pid:        null,
+				listen_ports:      []
+			};
+
+			/* ByeDPI (ciadpi) runs independently of the core, so detect it regardless.
+			 * Use pidof, not `pgrep -x` — BusyBox pgrep -x matches argv0 (/usr/bin/ciadpi),
+			 * not the bare name, so it misses the process. */
+			let bfd = popen('pidof ciadpi 2>/dev/null');
+			if (bfd) {
+				const bpid = trim(bfd.read('all'));
+				bfd.close();
+				result.byedpi_running = length(bpid) > 0;
+				result.byedpi_pid = length(bpid) > 0 ? bpid : null;
+			}
+
+			/* Zapret (nfqws2) is the limcore-launched packet mangler — detect like ByeDPI. */
+			let zfd = popen('pidof nfqws2 2>/dev/null');
+			if (zfd) {
+				const zpid = trim(zfd.read('all'));
+				zfd.close();
+				result.zapret_running = length(zpid) > 0;
+				result.zapret_pid = length(zpid) > 0 ? zpid : null;
+			}
+
+			if (!binary)
+				return result;
+
+			let fd = popen(binary + ' version 2>&1');
+			if (fd) { result.version = trim(fd.read('all')); fd.close(); }
+
+			fd = popen('pidof ' + shellquote(proc_name) + ' 2>/dev/null');
+			if (fd) {
+				const pid = trim(fd.read('all'));
+				fd.close();
+				result.running = length(pid) > 0;
+				result.pid = length(pid) > 0 ? pid : null;
+			}
+
+			fd = popen('netstat -tlnup 2>/dev/null');
+			if (fd) {
+				const ports = [];
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					if (match(line, /sing.box|nfqws|ciadpi/))
+						push(ports, trim(line));
+				}
+				fd.close();
+				result.listen_ports = ports;
+			}
+
+			return result;
+		}
+	},
+
+	diag_config_check: {
+		call: function() {
+			const core = get_active_core();
+			const binary = core ? core.path : null;
+			const config_path = RUN_DIR + '/core.json';
+
+			if (!binary)
+				return { valid: false, check_output: 'No core binary found', stats: {} };
+
+			const stat = lstat(config_path);
+			if (!stat)
+				return { valid: false, check_output: 'Config not found: ' + config_path, stats: {} };
+
+			/* JSON parse first — it's the validity signal for cores without a `check` command */
+			let stats = { outbounds: 0, rules: 0, inbounds: 0, dns_servers: 0 };
+			let parse_ok = false;
+			const content = readfile(config_path);
+			if (content) {
+				try {
+					const cfg = json(content);
+					stats.outbounds    = length(cfg.outbounds || []);
+					stats.rules        = length((cfg.route || {}).rules || []);
+					stats.inbounds     = length(cfg.inbounds || []);
+					stats.dns_servers  = length(((cfg.dns || {}).servers) || []);
+					parse_ok = true;
+				} catch(e) {}
+			}
+
+			/* sing-box has a real config validator */
+			let check_output;
+			let fd = popen(shellquote(binary) + ' check -c ' + shellquote(config_path) + ' 2>&1');
+			if (fd) { check_output = trim(fd.read('all')); fd.close(); }
+			const valid = (system(shellquote(binary) + ' check -c ' + shellquote(config_path) + ' >/dev/null 2>&1') === 0);
+
+			return {
+				valid:        valid,
+				check_output: check_output,
+				size_bytes:   stat.size,
+				stats:        stats
+			};
+		}
+	},
+
+	diag_dns_ru: {
+		call: function() {
+			let fd = popen('uci get limcore.config.routing_mode 2>/dev/null');
+			if (!fd) return { skip: true };
+			const mode = trim(fd.read('all'));
+			fd.close();
+
+			/* The DNS test runs in every selective mode. Region is data: the resolver
+			 * tag and the domestic anchor domain (must be in the region's geosite so it
+			 * routes to the region resolver) differ; the secure-dns test is shared. */
+			const REGION_DIAG = {
+				proxy_banned_ru: { tag: 'russia-dns', label: 'Russia', domain: 'mail.ru' },
+				bypass_cn:       { tag: 'region-dns', label: 'China',  domain: 'baidu.com' },
+				bypass_ir:       { tag: 'region-dns', label: 'Iran',   domain: 'aparat.com' }
+			};
+			const rd = REGION_DIAG[mode];
+			if (!rd) return { skip: true };
+
+			/* Get the region resolver + secure-dns server address from running config */
+			const content = readfile(RUN_DIR + '/core.json');
+			if (!content) return { error: 'Config not found — is the service running?' };
+			let cfg;
+			try { cfg = json(content); } catch(e) { return { error: 'Config parse error' }; }
+
+			let region_server = null;
+			let secure_server = null;
+			const dns_servers = (cfg.dns || {}).servers || [];
+			for (let s in dns_servers) {
+				if (s.tag === rd.tag) region_server = s.server || s.address;
+				if (s.tag === 'secure-dns') secure_server = s.server || s.address;
+			}
+			if (!region_server) return { error: rd.tag + ' server not found in config — regenerate and restart' };
+
+			/* Test 1: domestic anchor via default resolver — if LimCore routes it to the region resolver, it resolves */
+			let region_ok = false;
+			let region_out = '';
+			fd = popen('nslookup ' + rd.domain + ' 2>&1');
+			if (fd) { region_out = trim(fd.read('all')); fd.close(); }
+			region_ok = !!match(region_out, /Name:/);
+
+			/* Test 2: andrevi.ch via default resolver — LimCore routes to secure-dns via proxy */
+			let secure_ok = false;
+			let secure_out = '';
+			fd = popen('nslookup andrevi.ch 2>&1');
+			if (fd) { secure_out = trim(fd.read('all')); fd.close(); }
+			secure_ok = !!match(secure_out, /Name:/);
+
+			return {
+				region_label:  rd.label,
+				region_domain: rd.domain,
+				region_server: region_server,
+				region_ok:     region_ok,
+				region_output: region_out,
+				secure_server: secure_server,
+				bootstrap:     region_server,
+				secure_ok:     secure_ok,
+				secure_output: secure_out
+			};
+		}
+	},
+
+	diag_nftables: {
+		call: function() {
+			let nft_lines = [];
+			let fd = popen('nft list table inet fw4 2>/dev/null');
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					if (match(line, /limcore/))
+						push(nft_lines, trim(line));
+				}
+				fd.close();
+			}
+
+			let uci_lines = [];
+			fd = popen('uci show limcore 2>&1');
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					const l = trim(line);
+					if (match(l, /(proxy_mode|redirect_port|tproxy_port|dns_port|bypass|firewall|intercept)/))
+						push(uci_lines, l);
+				}
+				fd.close();
+			}
+
+			const nft_present = length(nft_lines) > 0;
+
+			/* Zapret queue chain: its counter rules don't contain the word "limcore",
+			 * so they are NOT in nft_lines above. Pull the chain explicitly so the packet
+			 * counters (mark 110 tcp/udp → NFQUEUE) are visible. */
+			let zapret_enabled = false;
+			let zfd = popen('uci -q get limcore.config.zapret_enabled 2>/dev/null');
+			if (zfd) { zapret_enabled = trim(zfd.read('all')) === '1'; zfd.close(); }
+			let zapret_running = false;
+			zfd = popen('pidof nfqws2 2>/dev/null');
+			if (zfd) { zapret_running = length(trim(zfd.read('all'))) > 0; zfd.close(); }
+
+			let zq_lines = [];
+			fd = popen('nft list chain inet fw4 limcore_zapret_queue 2>/dev/null');
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					const l = trim(line);
+					if (match(l, /(mark|queue|counter|chain)/))
+						push(zq_lines, l);
+				}
+				fd.close();
+			}
+
+			/* UDP TPROXY chains: the full mangle chain plus its _port/_mark companions,
+			 * so the counter on the "tproxy → core" rule (UDP into LimCore) is visible
+			 * alongside the rules that return UDP before it. These chains only exist when
+			 * the UDP-tproxy firewall block was emitted (proxy_mode=tproxy + a UDP node). */
+			let udp_lines = [];
+			let uchains = ['limcore_mangle_tproxy_port', 'limcore_mangle_mark', 'limcore_mangle_tproxy'];
+			for (let ch in uchains) {
+				fd = popen('nft list chain inet fw4 ' + ch + ' 2>/dev/null');
+				if (fd) {
+					for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+						const l = trim(line);
+						if (length(l) > 0)
+							push(udp_lines, l);
+					}
+					fd.close();
+				}
+			}
+
+			return {
+				nft_present: nft_present,
+				nft_rules:   join('\n', nft_lines),
+				uci_firewall: join('\n', uci_lines),
+				zapret_enabled: zapret_enabled,
+				zapret_running: zapret_running,
+				zapret_queue: join('\n', zq_lines),
+				udp_tproxy: join('\n', udp_lines)
+			};
+		}
+	},
+
+	diag_service_restart: {
+		call: function() {
+			const exit_code = system('/etc/init.d/limcore restart >/dev/null 2>&1');
+			return { result: exit_code === 0, exit_code: exit_code };
+		}
+	},
+
+	diag_report: {
+		call: function() {
+			const lines = [];
+			const add = (s) => push(lines, s);
+
+			add('# LimCore Diagnostics Report');
+			let fd = popen('date 2>/dev/null');
+			if (fd) { add('# Generated: ' + trim(fd.read('all'))); fd.close(); }
+			add('');
+
+			add('## System');
+			fd = popen('cat /etc/openwrt_release 2>/dev/null');
+			if (fd) { add(trim(fd.read('all'))); fd.close(); }
+			fd = popen('uname -a 2>/dev/null');
+			if (fd) { add('Kernel: ' + trim(fd.read('all'))); fd.close(); }
+			add('');
+
+			add('## Core Binary');
+			const core = get_active_core();
+			const binary = core ? core.path : null;
+			const proc_name = core ? core.proc_name : 'sing-box';
+			if (binary) {
+				fd = popen(binary + ' version 2>&1');
+				if (fd) { add(trim(fd.read('all'))); fd.close(); }
+				fd = popen('pidof ' + shellquote(proc_name) + ' 2>/dev/null');
+				if (fd) { const pid = trim(fd.read('all')); fd.close(); add('PID: ' + (length(pid) > 0 ? pid : 'not running')); }
+			} else {
+				add('No core binary found');
+			}
+			add('');
+
+			add('## ByeDPI (ciadpi)');
+			if (access('/usr/bin/ciadpi')) {
+				add('Installed: yes');
+				fd = popen('pgrep -x ciadpi 2>/dev/null');
+				if (fd) { const bpid = trim(fd.read('all')); fd.close(); add('PID: ' + (length(bpid) > 0 ? bpid : 'not running')); }
+			} else {
+				add('Installed: no');
+			}
+			add('');
+
+			add('## Zapret (zapret2/nfqws2)');
+			if (access('/opt/zapret2/nfq2/nfqws2')) {
+				add('Installed: yes');
+				fd = popen('uci -q get limcore.config.zapret_enabled 2>/dev/null');
+				let zen = '0'; if (fd) { zen = trim(fd.read('all')); fd.close(); }
+				add('Enabled: ' + (zen === '1' ? 'yes' : 'no'));
+				fd = popen('pidof nfqws2 2>/dev/null');
+				if (fd) { const zpid = trim(fd.read('all')); fd.close(); add('PID: ' + (length(zpid) > 0 ? zpid : 'not running')); }
+				fd = popen('uci -q get limcore.config.zapret_voice 2>/dev/null');
+				let zvoice = '0'; if (fd) { zvoice = trim(fd.read('all')); fd.close(); }
+				add('Discord calls: ' + (zvoice === '1' ? 'on' : 'off'));
+				fd = popen('uci -q get limcore.config.zapret_cmd_opts 2>/dev/null');
+				if (fd) { const zstrat = trim(fd.read('all')); fd.close(); if (length(zstrat)) add('Strategy: ' + zstrat); }
+				fd = popen('nft list chain inet fw4 limcore_zapret_queue 2>/dev/null');
+				if (fd) {
+					let any = false;
+					for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+						const l = trim(line);
+						if (match(l, /(mark|queue)/)) { add('  ' + l); any = true; }
+					}
+					fd.close();
+					if (!any) add('Queue chain: not present (firewall rule missing?)');
+				}
+			} else {
+				add('Installed: no');
+			}
+			add('');
+
+			add('## Config Stats');
+			const config_path = RUN_DIR + '/core.json';
+			const stat = lstat(config_path);
+			if (stat) {
+				add('Size: ' + stat.size + ' bytes');
+				const content = readfile(config_path);
+				if (content) {
+					try {
+						const cfg = json(content);
+						add('Outbounds: '   + length(cfg.outbounds || []));
+						add('Rules: '       + length((cfg.route || {}).rules || []));
+						add('Inbounds: '    + length(cfg.inbounds || []));
+						add('DNS servers: ' + length(((cfg.dns || {}).servers) || []));
+					} catch(e) { add('Parse error: ' + e); }
+				}
+			} else {
+				add('Config file not found');
+			}
+			add('');
+
+			add('## UCI Config (sanitized)');
+			fd = popen('uci show limcore 2>&1');
+			if (fd) {
+				/* uci show prints multi-line option values (PEM keys — ssh_priv_key /
+				 * ssh_host_key) across several physical lines; only the first carries
+				 * `key=`, so a naive per-line redaction leaks the whole key body on the
+				 * lines after it. Every real uci line begins with `limcore.`; the value
+				 * continuation lines never do. So after redacting an option, drop the
+				 * following non-`limcore.` lines until the next option begins. */
+				let skip_value_body = false;
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					let out = trim(line);
+					let is_uci_line = match(out, /^limcore\./);
+					if (skip_value_body && !is_uci_line)
+						continue;
+					skip_value_body = false;
+					if (is_uci_line && match(out, /(password|private_key|pre_shared_key|uuid|token|secret|subscription_url|address|tls_sni|tls_reality_public_key|tls_reality_short_id|grouphash|username|grpc_servicename|http_path|xhttp_download_server|naive_extra_headers|ssh_priv_key|ssh_host_key)=/)) {
+						out = replace(out, /=.*$/, '=[REDACTED]');
+						skip_value_body = true;
+					}
+					add(out);
+				}
+				fd.close();
+			}
+			add('');
+
+			add('## Listening Ports');
+			fd = popen('netstat -tlnup 2>/dev/null');
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					if (match(line, /sing.box|nfqws|ciadpi/))
+						add(trim(line));
+				}
+				fd.close();
+			}
+			add('');
+
+			add('## Kernel Modules');
+			fd = popen('lsmod 2>/dev/null | grep -E "nft_tproxy|tun|xt_socket"');
+			if (fd) { const out = trim(fd.read('all')); fd.close(); add(length(out) > 0 ? out : '(none matched)'); }
+			add('');
+
+			add('## DNS Tests');
+			let mode_fd = popen('uci get limcore.config.routing_mode 2>/dev/null');
+			if (mode_fd) {
+				const routing_mode = trim(mode_fd.read('all'));
+				mode_fd.close();
+				const REGION_DIAG = {
+					proxy_banned_ru: { tag: 'russia-dns', label: 'Russia', domain: 'mail.ru' },
+					bypass_cn:       { tag: 'region-dns', label: 'China',  domain: 'baidu.com' },
+					bypass_ir:       { tag: 'region-dns', label: 'Iran',   domain: 'aparat.com' }
+				};
+				const rd = REGION_DIAG[routing_mode];
+				if (rd) {
+					let region_server = null;
+					let secure_server = null;
+					const dns_servers = ((() => { try { return json(readfile(RUN_DIR + '/core.json')); } catch(e) { return {}; } })().dns || {}).servers || [];
+					for (let s in dns_servers) {
+						if (s.tag === rd.tag) region_server = s.server || s.address;
+						if (s.tag === 'secure-dns') secure_server = s.server || s.address;
+					}
+					add('Mode: ' + routing_mode);
+					add(rd.label + ' DNS server: ' + (region_server || 'not found'));
+					add('Secure DNS server: ' + (secure_server || 'not found'));
+					add('Bootstrap: ' + (region_server || 'not found'));
+					let dns_fd = popen('nslookup ' + rd.domain + ' 2>&1');
+					if (dns_fd) { add('nslookup ' + rd.domain + ':\n' + trim(dns_fd.read('all'))); dns_fd.close(); }
+					dns_fd = popen('nslookup andrevi.ch 2>&1');
+					if (dns_fd) { add('nslookup andrevi.ch:\n' + trim(dns_fd.read('all'))); dns_fd.close(); }
+				} else {
+					add('Mode: ' + routing_mode + ' (DNS test runs in selective modes only)');
+				}
+			}
+			add('');
+
+			add('## Connectivity');
+			/* Same site probes as the interactive Connectivity card (connection_check),
+			 * captured into the report so a copy/download carries them. Exit-IP rows
+			 * (Direct IP / Proxy IP) are intentionally omitted — they are interactive
+			 * and expose addresses. */
+			let conn_sites = [
+				['Baidu',     'https://www.baidu.com'],
+				['Google',    'https://www.google.com'],
+				['YouTube',   'https://www.youtube.com'],
+				['Yandex',    'https://ya.ru'],
+				['Speedtest', 'https://www.speedtest.net']
+			];
+			for (let site in conn_sites) {
+				const conn_ok = (system(`/usr/bin/wget --spider -qT3 ${site[1]} 2>"/dev/null"`, 3100) === 0);
+				add(sprintf('%-11s %s', site[0] + ':', conn_ok ? 'OK' : 'FAIL'));
+			}
+			add('');
+
+			add('## Daemon Log (last 50 lines)');
+			fd = popen('tail -n 50 ' + RUN_DIR + '/daemon.log 2>/dev/null');
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line'))
+					add(replace(trim(line), /https?:\/\/[^ \t\n]+/, '[REDACTED_URL]'));
+				fd.close();
+			}
+			add('');
+
+			add('## Core Log (last 50 lines)');
+			fd = popen('tail -n 50 ' + RUN_DIR + '/core.log 2>/dev/null');
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line'))
+					add(replace(trim(line), /https?:\/\/[^ \t\n]+/, '[REDACTED_URL]'));
+				fd.close();
+			}
+
+			return { report: join('\n', lines) };
+		}
+	},
+
+	byedpi_status: {
+		call: function(req) {
+			const installed = !!access('/usr/bin/ciadpi');
+			let version = null;
+			if (installed) {
+				if (access('/usr/bin/apk')) {
+					const fd = popen('apk info byedpi 2>/dev/null | head -1');
+					if (fd) {
+						const out = trim(fd.read('all'));
+						fd.close();
+						const m = match(out, /byedpi-([0-9][0-9.]*)/);
+						if (m) version = m[1];
+					}
+				} else if (access('/bin/opkg')) {
+					const fd = popen('opkg status byedpi 2>/dev/null');
+					if (fd) {
+						const out = fd.read('all');
+						fd.close();
+						const m = match(out, /Version: ([0-9][0-9.]*)/);
+						if (m) version = m[1];
+					}
+				}
+			}
+			let running = false;
+			const fd2 = popen('pidof ciadpi 2>/dev/null');
+			if (fd2) {
+				running = length(trim(fd2.read('all'))) > 0;
+				fd2.close();
+			}
+			let pkg_manager = null;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk')) pkg_manager = 'apk';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg')) pkg_manager = 'opkg';
+			let arch = null;
+			const afd = popen("awk -F\\' '/DISTRIB_ARCH/ {print $2}' /etc/openwrt_release 2>/dev/null");
+			if (afd) { arch = trim(afd.read('all')); afd.close(); }
+			return { installed, version, running, pkg_manager, arch };
+		}
+	},
+
+	byedpi_prepare_install: {
+		call: function(req) {
+			let pkg_manager = null;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk')) pkg_manager = 'apk';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg')) pkg_manager = 'opkg';
+			if (!pkg_manager)
+				return { error: 'No supported package manager (apk/opkg)' };
+
+			let arch = null;
+			const afd = popen("awk -F\\' '/DISTRIB_ARCH/ {print $2}' /etc/openwrt_release 2>/dev/null");
+			if (afd) { arch = trim(afd.read('all')); afd.close(); }
+			if (!length(arch))
+				return { error: 'Cannot detect architecture' };
+
+			const ext = (pkg_manager === 'apk') ? 'apk' : 'ipk';
+			const dl_url = `https://github.com/${PKG_REPO}/releases/download/byedpi/byedpi_${arch}.${ext}`;
+			const tmp_path = `/tmp/byedpi_${arch}.${ext}`;
+
+			return { dl_url, tmp_path, pkg_manager };
+		}
+	},
+
+	byedpi_install_pkg: {
+		args: { tmp_path: 'tmp_path', pkg_manager: 'pkg_manager' },
+		call: function(req) {
+			const tmp_path = req.args?.tmp_path;
+			const pkg_manager = req.args?.pkg_manager;
+			if (!tmp_path || !pkg_manager)
+				return { result: false, error: 'Missing arguments' };
+			if (!access(tmp_path))
+				return { result: false, error: 'Package file not found' };
+			let ret;
+			if (pkg_manager === 'apk') {
+				/* Signing key (see zapret_install_pkg): skip the GitHub fetch if it's
+				 * already present (a provisioning tool may pre-place it); otherwise
+				 * a SHORT-timeout best-effort wget so a throttled GitHub can't hang the
+				 * ubus call. Install trusted if the key is there, else --allow-untrusted. */
+				if (!access('/etc/apk/keys/LimCoreWRT.pub')) {
+					if (gh_fetch('https://github.com/l-limon-l/LimCoreWRT/releases/latest/download/LimCoreWRT.pub', '/tmp/LimCoreWRT.pub', 20000) === 0)
+						system('[ -s /tmp/LimCoreWRT.pub ] && cp /tmp/LimCoreWRT.pub /etc/apk/keys/ 2>/dev/null; rm -f /tmp/LimCoreWRT.pub');
+				}
+				if (access('/etc/apk/keys/LimCoreWRT.pub'))
+					ret = system(`apk add ${shellquote(tmp_path)}`, 120000);
+				else
+					ret = system(`apk add --allow-untrusted ${shellquote(tmp_path)}`, 120000);
+			} else {
+				ret = system(`opkg install ${shellquote(tmp_path)}`);
+			}
+			system(`rm -f ${shellquote(tmp_path)}`);
+			/* opkg/apk can exit non-zero on a SUCCESSFUL install (e.g. the package's
+			 * postinst starts its own service and that step fails while every file
+			 * still lands). Trust the installed binary (same probe as byedpi_status),
+			 * not the exit code. */
+			const installed = !!access('/usr/bin/ciadpi');
+			if (installed) {
+				system('/etc/init.d/ciadpi stop 2>/dev/null; true');
+				system('/etc/init.d/ciadpi disable 2>/dev/null; true');
+			}
+			return { result: installed };
+		}
+	},
+
+	byedpi_remove: {
+		call: function(req) {
+			/* Stop the running ciadpi BEFORE pulling the package. Otherwise the live
+			 * process keeps running (Linux keeps a deleted binary's process alive via its
+			 * inode), and byedpi_status — which is just `pidof ciadpi` — still reports
+			 * "running" until the next limcore restart. So: disable it in config (so
+			 * limcore's procd instance stops and won't respawn), stop/disable the
+			 * standalone service, reload limcore, then kill any leftover (e.g.
+			 * strategy-test) instances — and only then remove the package. */
+			system("uci set limcore.config.byedpi_enabled='0'; uci commit limcore 2>/dev/null; true");
+			system('/etc/init.d/ciadpi stop 2>/dev/null; /etc/init.d/ciadpi disable 2>/dev/null; true');
+			system('/etc/init.d/limcore reload 2>/dev/null; true');
+			system('pkill -f ciadpi 2>/dev/null; true');
+			let ret;
+			if (access('/usr/bin/apk'))
+				ret = system('apk del byedpi');
+			else if (access('/bin/opkg'))
+				ret = system('opkg remove byedpi');
+			else
+				return { result: false, error: 'No package manager' };
+			return { result: ret === 0 };
+		}
+	},
+
+	zapret_status: {
+		call: function(req) {
+			const installed = !!access('/opt/zapret2/nfq2/nfqws2');
+			let version = null;
+			if (installed) {
+				if (access('/usr/bin/apk')) {
+					const fd = popen('apk info zapret2 2>/dev/null | head -1');
+					if (fd) {
+						const out = trim(fd.read('all'));
+						fd.close();
+						const m = match(out, /zapret2-([0-9][0-9.]*)/);
+						if (m) version = m[1];
+					}
+				} else if (access('/bin/opkg')) {
+					const fd = popen('opkg status zapret2 2>/dev/null');
+					if (fd) {
+						const out = fd.read('all');
+						fd.close();
+						const m = match(out, /Version: ([0-9][0-9.]*)/);
+						if (m) version = m[1];
+					}
+				}
+			}
+			let running = false;
+			const fd2 = popen('pidof nfqws2 2>/dev/null');
+			if (fd2) {
+				running = length(trim(fd2.read('all'))) > 0;
+				fd2.close();
+			}
+			let pkg_manager = null;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk')) pkg_manager = 'apk';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg')) pkg_manager = 'opkg';
+
+			/* kmod_ok: nfqws2's `nft ... queue num` needs the NFQUEUE kernel module
+			 * (kmod-nft-queue). Without it the firewall rule fails to load and nft
+			 * rejects the whole fw4 set. Check the package first, then a loaded module
+			 * as a fallback (built-in / already-inserted kernels). */
+			let kmod_ok = false;
+			if (pkg_manager === 'apk') {
+				const kf = popen('apk info -e kmod-nft-queue 2>/dev/null');
+				if (kf) { kmod_ok = length(trim(kf.read('all'))) > 0; kf.close(); }
+			} else if (pkg_manager === 'opkg') {
+				const kf = popen('opkg list-installed kmod-nft-queue 2>/dev/null');
+				if (kf) { kmod_ok = length(trim(kf.read('all'))) > 0; kf.close(); }
+			}
+			if (!kmod_ok) {
+				const kf = popen('grep -qE "(^|[[:space:]])(nft_queue|nfnetlink_queue)([[:space:]]|$)" /proc/modules 2>/dev/null && echo y');
+				if (kf) { kmod_ok = trim(kf.read('all')) === 'y'; kf.close(); }
+			}
+
+			let arch = null;
+			const afd = popen("awk -F\\' '/DISTRIB_ARCH/ {print $2}' /etc/openwrt_release 2>/dev/null");
+			if (afd) { arch = trim(afd.read('all')); afd.close(); }
+			return { installed, version, running, pkg_manager, arch, kmod_ok };
+		}
+	},
+
+	zapret_prepare_install: {
+		call: function(req) {
+			let pkg_manager = null;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk')) pkg_manager = 'apk';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg')) pkg_manager = 'opkg';
+			if (!pkg_manager)
+				return { error: 'No supported package manager (apk/opkg)' };
+
+			let arch = null;
+			const afd = popen("awk -F\\' '/DISTRIB_ARCH/ {print $2}' /etc/openwrt_release 2>/dev/null");
+			if (afd) { arch = trim(afd.read('all')); afd.close(); }
+			if (!length(arch))
+				return { error: 'Cannot detect architecture' };
+
+			/* Asset names are version-less, so no GitHub API call is needed — the rolling
+			 * release always holds the newest build. */
+			const ext = (pkg_manager === 'apk') ? 'apk' : 'ipk';
+			const dl_url = `https://github.com/${PKG_REPO}/releases/download/zapret2/zapret2_${arch}.${ext}`;
+			const tmp_path = `/tmp/zapret2_${arch}.${ext}`;
+
+			return { dl_url, tmp_path, pkg_manager };
+		}
+	},
+
+	zapret_install_pkg: {
+		args: { tmp_path: 'tmp_path', pkg_manager: 'pkg_manager' },
+		call: function(req) {
+			const tmp_path = req.args?.tmp_path;
+			const pkg_manager = req.args?.pkg_manager;
+			if (!tmp_path || !pkg_manager)
+				return { result: false, error: 'Missing arguments' };
+			if (!access(tmp_path))
+				return { result: false, error: 'Package file not found' };
+			let ret;
+			if (pkg_manager === 'apk') {
+				/* Signing key: if it's ALREADY present (e.g. pre-placed by a provisioning
+				 * tool, or a prior install), skip the GitHub fetch entirely. Only
+				 * if it's missing do a SHORT-timeout best-effort wget — the old un-timed
+				 * one hung on a throttled GitHub until the ubus call timed out (exit 249).
+				 * Then install trusted if the key is there, else --allow-untrusted. */
+				if (!access('/etc/apk/keys/zapret2-1andrevich.pub')) {
+					if (gh_fetch(`https://github.com/${PKG_REPO}/releases/download/zapret2/zapret2-1andrevich.pub`, '/tmp/zapret2-1andrevich.pub', 20000) === 0)
+						system('[ -s /tmp/zapret2-1andrevich.pub ] && cp /tmp/zapret2-1andrevich.pub /etc/apk/keys/ 2>/dev/null; rm -f /tmp/zapret2-1andrevich.pub');
+				}
+				if (access('/etc/apk/keys/zapret2-1andrevich.pub'))
+					ret = system(`apk add ${shellquote(tmp_path)}`, 120000);
+				else
+					ret = system(`apk add --allow-untrusted ${shellquote(tmp_path)}`, 120000);
+			} else {
+				system('opkg update 2>/dev/null');
+				ret = system(`opkg install ${shellquote(tmp_path)}`);
+			}
+			system(`rm -f ${shellquote(tmp_path)}`);
+			/* opkg/apk can exit non-zero on a SUCCESSFUL install (e.g. the package's
+			 * postinst starts its own service and that step fails while every file
+			 * still lands). Trust the installed binary (same probe as zapret_status),
+			 * not the exit code. */
+			const installed = !!access('/opt/zapret2/nfq2/nfqws2');
+			if (installed) {
+				/* Keep the package's own service out of the way — LimCore runs its own
+				 * nfqws2 instance (qnum 200) and installs the NFQUEUE rule itself. */
+				system('/etc/init.d/zapret2 stop 2>/dev/null; true');
+				system('/etc/init.d/zapret2 disable 2>/dev/null; true');
+			}
+			return { result: installed };
+		}
+	},
+
+	zapret_remove: {
+		call: function(req) {
+			system("uci set limcore.config.zapret_enabled='0'; uci commit limcore 2>/dev/null; true");
+			system('/etc/init.d/zapret2 stop 2>/dev/null; /etc/init.d/zapret2 disable 2>/dev/null; true');
+			system('/etc/init.d/limcore reload 2>/dev/null; true');
+			system('pkill -f nfqws2 2>/dev/null; true');
+			let ret;
+			if (access('/usr/bin/apk'))
+				ret = system('apk del zapret2');
+			else if (access('/bin/opkg'))
+				ret = system('opkg remove zapret2');
+			else
+				return { result: false, error: 'No package manager' };
+			return { result: ret === 0 };
+		}
+	},
+
+	zapret_resolve_hosts: {
+		call: function(req) {
+			/* Resolve the tester's 4 fixed test hosts ONCE (bounded + retried), via
+			 * the router's normal resolver — the same secure-DNS/direct path the live
+			 * config uses for these blocked domains, so the IP stays representative for
+			 * the TLS probe. The full test calls this up front and feeds the IPs to
+			 * every candidate, so the sweep doesn't re-hit DNS 36×. */
+			const fd = popen(`sh /etc/limcore/scripts/zapret_resolve.sh 2>/dev/null`);
+			let out = '';
+			if (fd) { out = trim(fd.read('all')); fd.close(); }
+			if (!length(out))
+				out = '{"ok":0,"error":"resolver produced no output"}';
+			return { output: out };
+		}
+	},
+
+	zapret_strategy_test: {
+		args: { cmd_opts: 'cmd_opts', ips: 'ips' },
+		call: function(req) {
+			if (!access('/opt/zapret2/nfq2/nfqws2'))
+				return { output: '{"ok":0,"total":0,"error":"zapret2 not installed"}' };
+			const cmd_opts = req.args?.cmd_opts || '';
+			/* Optional pre-resolved "tag=ip …" from zapret_resolve_hosts; if empty the
+			 * tester resolves the hosts itself (standalone call). */
+			const ips = req.args?.ips || '';
+			/* The tester script runs a candidate nfqws2 on a temp queue scoped to the
+			 * test IPs, probes the TLS handshakes, and prints one JSON line. It self-
+			 * tears-down (trap + 30s watchdog), so live traffic/queue is never left
+			 * touched. We just relay its JSON for the UI to parse. */
+			const fd = popen(`sh /etc/limcore/scripts/zapret_test.sh ${shellquote(cmd_opts)} ${shellquote(ips)} 2>/dev/null`);
+			let out = '';
+			if (fd) { out = trim(fd.read('all')); fd.close(); }
+			if (!length(out))
+				out = '{"ok":0,"total":0,"error":"tester produced no output"}';
+			return { output: out };
+		}
+	},
+
+	byedpi_strategy_test: {
+		args: { cmd_opts: 'cmd_opts', port: 'port' },
+		call: function(req) {
+			if (!access('/usr/bin/ciadpi'))
+				return { result: false, error: 'ciadpi not installed' };
+			const cmd_opts = req.args?.cmd_opts || '--disorder 1';
+			const test_port = req.args?.port || 15335;
+			const has_curl = !!access('/usr/bin/curl');
+
+			/* Test panel. Pass = the TLS handshake completes (judged below by time_appconnect),
+			 * which is the precise DPI-bypass signal — not the HTTP status. YouTube probes the
+			 * real video CDN (redirector.googlevideo.com), not the www page: the video path is
+			 * what users care about and what the DPI actually blocks. It returns 404 with no
+			 * path requested — irrelevant, we judge the handshake. Discord/Telegram/Speedtest
+			 * cover the Cloudflare/other edges for a destination spread. */
+			const hosts = [
+				{ tag: 'yt', label: 'YouTube (video)', url: 'https://redirector.googlevideo.com' },
+				{ tag: 'tg', label: 'Telegram',        url: 'https://telegram.org' },
+				{ tag: 'dc', label: 'Discord',         url: 'https://discord.com' },
+				{ tag: 'st', label: 'Speedtest.net',   url: 'https://www.speedtest.net' }
+			];
+
+			/* Detect redirect mode: limcore_output_redir intercepts router-originated
+			 * TCP via the OUTPUT chain. Flush it while testing so curl traffic from ciadpi
+			 * goes direct; restore immediately after. LAN clients are unaffected (they
+			 * go through dstnat → limcore_redirect_lanac, a separate path). */
+			let out_chain_nfproto = null;
+			const cfd2 = popen('nft list chain inet fw4 limcore_output_redir 2>/dev/null');
+			if (cfd2) {
+				const out = cfd2.read('all');
+				cfd2.close();
+				if (length(trim(out)) > 0) {
+					out_chain_nfproto = (index(out, 'ipv6') >= 0) ? '{ ipv4, ipv6 }' : 'ipv4';
+					system('nft flush chain inet fw4 limcore_output_redir 2>/dev/null; true');
+				}
+			}
+
+			/* The flush also wiped the ByeDPI skgid exclusion (if present) — capture the gid
+			 * so we can rebuild it on restore, or the live ByeDPI egress would loop afterwards. */
+			let byedpi_gid = null;
+			const efd = popen('uci get limcore.config.byedpi_enabled 2>/dev/null');
+			if (efd) {
+				if (trim(efd.read('all')) === '1') {
+					byedpi_gid = '8181';
+					const gfd = popen('uci get limcore.infra.byedpi_gid 2>/dev/null');
+					if (gfd) { const g = trim(gfd.read('all')); if (length(g)) byedpi_gid = g; gfd.close(); }
+				}
+				efd.close();
+			}
+			/* Restore command (no nested function — those can crash rpcd call bodies). Rebuilds
+			 * the skgid exclusion first (if ByeDPI is on), then the redirect jump. */
+			let restore_cmd = 'true';
+			if (out_chain_nfproto != null) {
+				restore_cmd = '';
+				if (byedpi_gid != null)
+					restore_cmd += `nft add rule inet fw4 limcore_output_redir meta skgid ${byedpi_gid} counter return 2>/dev/null; `;
+				restore_cmd += `nft add rule inet fw4 limcore_output_redir meta nfproto ${out_chain_nfproto} meta l4proto tcp jump limcore_redirect 2>/dev/null; true`;
+			}
+
+			system(`pkill -f 'ciadpi.*${test_port}' 2>/dev/null; true`);
+			system(`/usr/bin/ciadpi -i 127.0.0.1 -p ${test_port} ${cmd_opts} &`);
+			system('sleep 0.5');
+
+			let running = false;
+			const pfd = popen(`pgrep -f 'ciadpi.*${test_port}' 2>/dev/null`);
+			if (pfd) { running = length(trim(pfd.read('all'))) > 0; pfd.close(); }
+
+			if (!running) {
+				system(restore_cmd);
+				return { result: false, error: 'ciadpi did not start — check arguments', method: 'startup' };
+			}
+
+			if (!has_curl) {
+				system(`pkill -f 'ciadpi.*${test_port}' 2>/dev/null; true`);
+				system(restore_cmd);
+				return { result: true, method: 'startup', results: [] };
+			}
+
+			/* Probe every host in parallel through the one ciadpi instance. Each background
+			 * job writes "<http_code> <time_appconnect> <curl_exit>": time_appconnect is the
+			 * pass signal (non-zero = the TLS handshake completed, i.e. the desync got the
+			 * ClientHello past the DPI), and curl_exit explains a failure (tls reset vs timeout
+			 * vs dns). 15s max-time gives slow/adaptive strategies room to land. */
+			const tmp = `/tmp/byedpi_test_${test_port}`;
+			system(`rm -rf ${tmp}; mkdir -p ${tmp} 2>/dev/null; true`);
+			let cmd = '';
+			for (let i = 0; i < length(hosts); i++)
+				cmd += `( out=$(curl -s --socks5-hostname 127.0.0.1:${test_port} -o /dev/null -w '%{http_code} %{time_appconnect}' --connect-timeout 5 --max-time 15 ${shellquote(hosts[i].url)} 2>/dev/null); echo "$out $?" > ${tmp}/${i} ) & `;
+			cmd += 'wait';
+			system(cmd);
+
+			let results = [];
+			let passed = 0;
+			for (let i = 0; i < length(hosts); i++) {
+				const raw = trim(readfile(`${tmp}/${i}`) || '');
+				const parts = split(raw, ' ');
+				const code = parts[0] || '000';
+				const appconnect = parts[1] || '0';
+				const rc = parts[2] || '';
+				/* Pass = the TLS handshake completed (time_appconnect > 0) — the precise
+				 * DPI-bypass signal. The HTTP status is irrelevant (a 404 from googlevideo is a
+				 * pass). The old criterion (2xx/3xx only) produced false negatives: 4xx replies
+				 * and slow adaptive handshakes were wrongly failed. */
+				const ok = (+appconnect > 0);
+				if (ok) passed++;
+				push(results, {
+					tag:   hosts[i].tag,
+					label: hosts[i].label,
+					host:  hosts[i].url,
+					code:  code,
+					tls:   appconnect,
+					ok:    ok,
+					reason: ok ? null :
+					        (rc === '6')  ? 'dns' :
+					        (rc === '7')  ? 'refused' :
+					        (rc === '28') ? 'timeout' :
+					        (rc in ['35', '51', '53', '56', '58', '59', '60']) ? 'tls' : 'fail'
+				});
+			}
+			system(`rm -rf ${tmp} 2>/dev/null; true`);
+
+			system(`pkill -f 'ciadpi.*${test_port}' 2>/dev/null; true`);
+			system(restore_cmd);
+
+			return {
+				result: passed === length(hosts),
+				passed: passed,
+				total:  length(hosts),
+				method: 'curl',
+				results: results
+			};
+		}
+	},
+
+	curl_status: {
+		call: function(req) {
+			const installed = !!access('/usr/bin/curl');
+			let pkg_manager = null;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk')) pkg_manager = 'apk';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg')) pkg_manager = 'opkg';
+			return { installed, pkg_manager };
+		}
+	},
+
+	curl_install: {
+		call: function(req) {
+			let cmd;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk'))
+				cmd = 'apk add curl 2>&1';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg'))
+				cmd = 'opkg install curl 2>&1';
+			else
+				return { result: false, error: 'No package manager found' };
+			let pipe = popen(cmd, 'r');
+			let output = pipe.read('all');
+			let rc = pipe.close();
+			return { result: rc === 0, error: rc !== 0 ? trim(output) : null };
+		}
+	},
+
+	curl_remove: {
+		call: function(req) {
+			let cmd;
+			if (access('/usr/bin/apk') || access('/sbin/apk') || access('/usr/sbin/apk'))
+				cmd = 'apk del curl 2>&1';
+			else if (access('/bin/opkg') || access('/usr/bin/opkg'))
+				cmd = 'opkg remove curl 2>&1';
+			else
+				return { result: false, error: 'No package manager found' };
+			let pipe = popen(cmd, 'r');
+			let output = pipe.read('all');
+			let rc = pipe.close();
+			return { result: rc === 0, error: rc !== 0 ? trim(output) : null };
+		}
+	},
+
+	/* Reachability of every configured node, not just the selected one.
+	 *
+	 * clash_active_node can only report the node currently in use, because the running
+	 * config contains only that one. So the question people actually have — "which of
+	 * these still work?" — could only be answered by switching to each in turn and
+	 * watching, which is both slow and disruptive. Two of the subscription's nodes turned
+	 * out to be dead for a week before anyone established that.
+	 *
+	 * A throwaway core on a spare port, its own config, its own Clash API, killed when
+	 * finished — the running service is not touched. Split into start + poll because the
+	 * whole sweep outlasts a ubus call.
+	 *
+	 * The nodes are measured in parallel. Sequentially a dead node costs the full timeout
+	 * and twelve of them would take a minute and a half, which nobody waits for; in
+	 * parallel the sweep costs about as long as its slowest node. Each worker appends one
+	 * short line, and O_APPEND makes writes under a pipe buffer atomic, so they cannot
+	 * interleave. */
+	nodes_probe_start: {
+		args: { targets: 'targets' },
+		call: function(req) {
+			const core = get_active_core();
+			if (!core)
+				return { result: false, error: 'no core installed' };
+
+			system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_RUNNING} ${NP_LOG} ${NP_CFG}`);
+
+			if (system(`ucode ${LC_DIR}/scripts/generate_client.uc probe ${NP_PORT} ${NP_SOCKS} >${NP_CFG} 2>/dev/null`, 20000) !== 0 || !access(NP_CFG))
+				return { result: false, error: 'could not build a probe config' };
+
+			const cfg = readfile(NP_CFG) || '';
+			let tags = [];
+			for (let m in match(cfg, /"tag": "(cfg-[^"]+-out)"/g))
+				push(tags, m[1]);
+
+			/* The probe config carries every node either way — building one per tab would
+			 * cost more than it saves, and an outbound nobody dials is free. What the tab
+			 * decides is which of them get measured, so the caller's list is intersected
+			 * with what the config actually holds rather than trusted on its own. */
+			const want = trim(req?.args?.targets || '');
+			if (length(want)) {
+				let wanted = [];
+				for (let t in split(want, ' ')) {
+					if (!length(t)) continue;
+					if (!match(t, /^[A-Za-z0-9_-]+$/))
+						return { result: false, error: 'bad target' };
+					push(wanted, `cfg-${t}-out`);
+				}
+				tags = filter(tags, (t) => !!(t in wanted));
+			}
+
+			if (!length(tags))
+				return { result: false, error: 'no nodes configured' };
+
+			/* Warm, through the probe core's SOCKS port (see warm_cmd). Without curl the
+			 * Clash API is still asked, as before. */
+			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
+			/* One worker per node. A TCP or ICMP ping goes straight to the node and needs
+			 * neither curl nor the probe core; the rest are measured through the core. */
+			const pc = ping_conf();
+			let workers = '';
+			for (let T in tags) {
+				const direct = direct_cmd(tag_sid(T), pc);
+				workers += direct
+					? `( R=$(${direct}); echo "${T} warm $R" >> ${NP_RESULT} ) &\nWORKERS="$WORKERS $!"\n`
+					: `					(
+						if [ -n "$CURL" ]; then
+							R=$(${warm_cmd(NP_SOCKS, T)})
+							echo "${T} warm $R" >> ${NP_RESULT}
+						else
+							D=$(wget -qO- --timeout=12 "http://127.0.0.1:${NP_PORT}/proxies/${T}/delay?timeout=8000&url=${url}" 2>/dev/null | sed -n 's/.*"delay":\\([0-9]*\\).*/\\1/p')
+							if [ -n "$D" ]; then echo "${T} $D" >> ${NP_RESULT}
+							else echo "${T} FAIL" >> ${NP_RESULT}; fi
+						fi
+					) &
+WORKERS="$WORKERS $!"\n`;
+			}
+			const script = `
+				kill $(ps w | grep '[-]c ${NP_CFG}' | awk '{print $1}') 2>/dev/null
+				${shellquote(core.path)} run -c ${NP_CFG} >${NP_LOG} 2>&1 &
+				CORE=$!
+				i=0
+				while [ $i -lt 30 ]; do
+					wget -qO- --timeout=2 http://127.0.0.1:${NP_PORT}/proxies >/dev/null 2>&1 && break
+					i=$((i+1)); sleep 1
+				done
+				CURL=$(command -v curl)
+				WORKERS=""
+${workers}
+				# Only the workers. A bare wait also waits on the core, which is a server and
+				# never exits — the sweep then finished, the results were all there, and the
+				# poller kept reporting "running" forever with a stray core still up.
+				[ -n "$WORKERS" ] && wait $WORKERS
+				kill $CORE 2>/dev/null
+				rm -f ${NP_CFG}
+				: > ${NP_DONE}
+			`;
+
+			/* Set before the spawn, not after: the first poll can arrive while sh is still
+			 * starting, and a marker written afterwards would read as "already finished". */
+			writefile(NP_RUNNING, '');
+
+			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
+			if (rc !== 0) {
+				system(`rm -f ${NP_RUNNING}`);
+				return { result: false, error: 'could not start the probe core' };
+			}
+
+			return { result: true, total: length(tags) };
+		}
+	},
+
+	nodes_probe_status: {
+		call: function() {
+			let results = [];
+			for (let line in split(trim(readfile(NP_RESULT) || ''), '\n')) {
+				line = trim(line);
+				let m = match(line, /^cfg-(.+)-out (FAIL|[0-9]+)$/);
+				if (m) {
+					push(results, { section: m[1], delay: (m[2] === 'FAIL') ? null : int(m[2]) });
+					continue;
+				}
+
+				m = match(line, /^cfg-(.+)-out warm ?(.*)$/);
+				if (m)
+					push(results, { section: m[1], delay: warm_delay(m[2]) });
+			}
+
+			/* access() answers true or null, and null travels over ubus as a JSON null that
+			 * reads as neither running nor finished. Force it to a boolean. */
+			const running = !!access(NP_RUNNING) && !access(NP_DONE);
+			if (!running)
+				system(`rm -f ${NP_RESULT} ${NP_DONE} ${NP_RUNNING} ${NP_LOG} ${NP_CFG}`);
+
+			return { running, results };
+		}
+	},
+
+	/* Re-measure a URLTest group now, and let it re-choose on the result.
+	 *
+	 * The pool tests itself on its own interval, which is fine until someone is standing
+	 * in front of the page asking why it is on the node it is on: the delays on show can
+	 * be minutes old and were taken at different moments, so they do not even compare with
+	 * each other.
+	 *
+	 * This used to ask the core for /group/<tag>/delay, on the assumption that it walks the
+	 * group's members. It does not. A group dials whichever member it has selected, so that
+	 * endpoint dials once and answers with at most one entry — the active node — and with
+	 * nothing at all whenever that single dial times out. Everything absent was then read
+	 * as a failure, so a healthy pool came back all red, the node carrying traffic at that
+	 * moment included, and the only way to get one number out of it was to press the button
+	 * until the active node happened to answer. Watching one node fail eleven times over is
+	 * not a test of the pool.
+	 *
+	 * The members are walked here instead — one delay request each, in parallel, so a dead
+	 * node costs its own timeout and not the sweep's. Each answer is also written into that
+	 * node's history inside the core, and history is what URLTest re-selects on, so this is
+	 * still both the explanation and the fix for "it is sitting on the wrong node". */
+	clash_group_test: {
+		args: { tag: 'tag' },
+		call: function(req) {
+			const tag = req?.args?.tag || 'main-out';
+			if (!match(tag, /^[A-Za-z0-9_-]+$/))
+				return { result: false, error: 'bad group tag' };
+
+			const read_proxies = () => {
+				const fd = popen('wget -qO- --timeout=5 http://127.0.0.1:9090/proxies 2>/dev/null');
+				if (!fd)
+					return null;
+				const raw = trim(fd.read('all'));
+				fd.close();
+				if (!length(raw))
+					return null;
+				let data;
+				try { data = json(raw); } catch(e) { return null; }
+				return data?.proxies || null;
+			};
+
+			const isGroup = (proxies, name) => {
+				const t = proxies?.[name]?.type;
+				return t === 'URLTest' || t === 'Fallback' || t === 'Selector';
+			};
+
+			/* The pool behind the tag, not the tag itself. main-out is a selector over the
+			 * URLTest pool and its members once the node can be pinned by hand, and sweeping
+			 * a selector's members would ask the pool for a delay as though it were a node —
+			 * one dial through whichever member it holds — and leave every real node
+			 * unmeasured. The members that matter are always one level in. */
+			const pool_of = (proxies, start) => {
+				if (proxies[start]?.type !== 'Selector')
+					return start;
+				for (let name in proxies[start].all || [])
+					if (proxies[name]?.type === 'URLTest' || proxies[name]?.type === 'Fallback')
+						return name;
+				return start;
+			};
+
+			/* The node actually carrying traffic, however many groups deep it sits. */
+			const leaf_of = (proxies, start) => {
+				let seen = {}, leaf = start;
+				while (leaf && isGroup(proxies, leaf) && proxies[leaf].now && !seen[leaf]) {
+					seen[leaf] = true;
+					leaf = proxies[leaf].now;
+				}
+				return leaf;
+			};
+
+			const proxies_before = read_proxies();
+			const before = proxies_before?.[tag];
+			if (!before)
+				return { result: false, error: 'Clash API not reachable' };
+
+			const pool_tag = pool_of(proxies_before, tag);
+			const all = proxies_before[pool_tag]?.all || [];
+			if (!length(all))
+				return { result: true, now: leaf_of(proxies_before, tag), results: [] };
+
+			/* The names come out of the core's own config, but they are spliced into a shell
+			 * command below, so they are checked here rather than trusted for being ours. */
+			let members = [];
+			for (let name in all)
+				if (match(name, /^[A-Za-z0-9_.:-]+$/))
+					push(members, name);
+			if (!length(members))
+				return { result: false, error: 'no usable group members' };
+
+			const url = 'http%3A%2F%2Fwww.gstatic.com%2Fgenerate_204';
+
+			/* One short line per worker, written straight down the pipe: each is a single
+			 * echo well under PIPE_BUF, so concurrent writes cannot interleave.
+			 *
+			 * Read through popen rather than run through system. The sweep has to outlive
+			 * the shell that launches it, and the shell's own `wait` cannot be relied on to
+			 * hold it there — under rpcd the workers were reaped out from under it, so the
+			 * call returned while most of them were still in flight and the pool came back
+			 * almost entirely dead. The pipe has no such opinion: it closes only once every
+			 * worker holding its end has exited, so reading it to EOF is the wait.
+			 *
+			 * The worker also hands its answer over whole, to be picked apart on this side
+			 * rather than by a sed in the pipeline. A backslash in such a sed has to survive
+			 * both this template string and the shell, and getting that by one level wrong
+			 * costs nothing visible: the expression stops matching, every worker reports an
+			 * empty answer, and the page declares a dead pool that is perfectly healthy —
+			 * which is the very failure this function exists to stop misreporting. */
+			let script = 'W=""; ';
+			for (let name in members)
+				script += `( R=$(wget -qO- --timeout=20 "http://127.0.0.1:9090/proxies/${name}/delay?timeout=8000&url=${url}" 2>/dev/null); ` +
+				          `echo "${name} $R" ) & W="$W $!"; `;
+
+			/* The figures shown are taken warm (see warm_cmd), through a throwaway core of
+			 * the same kind the node list uses — the running core has no way to be asked for
+			 * one member over a kept connection. Started alongside the API sweep, so it adds
+			 * the probe core's start-up and not a second sweep. Its output must not reach the
+			 * pipe, or the read below would wait on the core as well as the workers. */
+			const core = get_active_core();
+			if (core && system(`command -v curl >/dev/null`) === 0 &&
+			    system(`ucode ${LC_DIR}/scripts/generate_client.uc probe ${GT_PORT} ${GT_SOCKS} >${GT_CFG} 2>/dev/null`, 20000) === 0) {
+				script += `kill $(ps w | grep '[-]c ${GT_CFG}' | awk '{print $1}') 2>/dev/null; ` +
+				          `${shellquote(core.path)} run -c ${GT_CFG} >/dev/null 2>&1 </dev/null & CORE=$!; ` +
+				          `i=0; while [ $i -lt 10 ]; do wget -qO- --timeout=1 http://127.0.0.1:${GT_PORT}/proxies >/dev/null 2>&1 && break; i=$((i+1)); sleep 1; done; `;
+				for (let name in members)
+					script += `( R=$(${measure_cmd(tag_sid(name), GT_SOCKS, name)}); echo "WARM ${name} $R" ) & W="$W $!"; `;
+				script += `wait $W; kill $CORE 2>/dev/null; rm -f ${GT_CFG}`;
+			} else {
+				script += 'wait $W';
+			}
+
+			const sfd = popen(`sh -c ${shellquote(script)} 2>/dev/null`);
+			if (!sfd)
+				return { result: false, error: 'failed to run the sweep' };
+			const sraw = sfd.read('all') || '';
+			sfd.close();
+
+			/* A node that failed answers {"message":"Timeout"} instead, and one that could
+			 * not be reached at all answers nothing — neither carries a delay, so both are
+			 * left absent here and read as a failure below. */
+			let delays = {}, warm = {};
+			for (let line in split(trim(sraw), '\n')) {
+				const w = match(trim(line), /^WARM ([A-Za-z0-9_.:-]+) ?(.*)$/);
+				if (w) {
+					const d = warm_delay(w[2]);
+					if (d != null)
+						warm[w[1]] = d;
+					continue;
+				}
+				const m = match(trim(line), /^([A-Za-z0-9_.:-]+) (.*)$/);
+				if (!m) continue;
+				const d = match(m[2], /"delay" *: *([0-9]+)/);
+				if (d)
+					delays[m[1]] = int(d[1]);
+			}
+
+			/* Read the group back afterwards: the fresh numbers are exactly what makes
+			 * URLTest reconsider, so the node marked "in use" has to be the one it holds
+			 * now, not the one it held before the sweep. */
+			const now = leaf_of(read_proxies() || proxies_before, tag);
+
+			let results = [];
+			for (let name in all) {
+				const m = match(name, /^cfg-(.+)-out$/);
+				push(results, {
+					outbound: name,
+					section: m ? m[1] : null,
+					/* Warm where it answered; the API's cold figure only when the warm
+					 * probe had nothing for this node. */
+					delay: (name in warm) ? warm[name] : (name in delays) ? delays[name] : null,
+					selected: (name === now)
+				});
+			}
+
+			return { result: true, now, results };
+		}
+	},
+
+	/* Pin the main group to one node by hand, or hand the choice back to URLTest.
+	 *
+	 * URLTest measures latency and nothing else, so a node that answers quickly and carries
+	 * traffic badly wins the pool on every re-test, and a single spike is enough to move
+	 * traffic onto a worse exit until the next round. Until now the only answer to that was
+	 * to leave URLTest and name a single node, which also gives up the failover that is the
+	 * reason to run a pool at all. Selecting the pool itself here is what returns the group
+	 * to choosing on its own.
+	 *
+	 * A URLTest group will not take a choice — the core's API refuses anything that is not a
+	 * selector — which is why main-out is generated as a selector over [pool, ...nodes] and
+	 * the name passed here is either the pool's tag or one of its members.
+	 *
+	 * The choice is live: it takes effect on the running core with no restart and no config
+	 * regeneration, and it is kept across restarts by the core's cache file. */
+	clash_select_node: {
+		args: { tag: 'tag', name: 'name' },
+		call: function(req) {
+			const tag  = req?.args?.tag || 'main-out';
+			const name = req?.args?.name;
+			if (!match(tag, /^[A-Za-z0-9_.:-]+$/) || !name || !match(name, /^[A-Za-z0-9_.:-]+$/))
+				return { result: false, error: 'bad tag or node name' };
+
+			const body = `{"name":"${name}"}`;
+			const request = `PUT /proxies/${tag} HTTP/1.1\r\nHost: 127.0.0.1\r\n` +
+			                `Content-Type: application/json\r\nContent-Length: ${length(body)}\r\n` +
+			                `Connection: close\r\n\r\n${body}`;
+			const tmp = '/tmp/limcore_select.out';
+
+			/* The core takes the choice over its HTTP API and nowhere else, and that API
+			 * wants a PUT — which the router's wget cannot send: both BusyBox wget and
+			 * uclient-fetch speak GET only. The request is therefore written straight down a
+			 * socket with nc, which every build has, and curl is kept only as the fallback
+			 * for one whose nc cannot open a port. */
+			let rc = system(`printf %s ${shellquote(request)} | nc 127.0.0.1 9090 > ${tmp} 2>/dev/null`, 5000);
+			if (rc !== 0 && access('/usr/bin/curl'))
+				system(`curl -s -o /dev/null -X PUT -H 'Content-Type: application/json' ` +
+				       `-d ${shellquote(body)} http://127.0.0.1:9090/proxies/${tag} > ${tmp} 2>/dev/null`, 5000);
+			system(`rm -f ${tmp}`);
+
+			/* Read the group back rather than trust the reply: a 204 with the group still on
+			 * its old node would be reported here as a pin that never happened, and the page
+			 * would then be the only thing claiming the traffic had moved. */
+			const fd = popen('wget -qO- --timeout=3 http://127.0.0.1:9090/proxies 2>/dev/null');
+			let raw = '';
+			if (fd) { raw = trim(fd.read('all')); fd.close(); }
+			if (!length(raw))
+				return { result: false, error: 'Clash API not reachable' };
+			let data;
+			try { data = json(raw); } catch(e) { return { result: false, error: 'invalid JSON from Clash API' }; }
+
+			const group = data?.proxies?.[tag];
+			if (!group)
+				return { result: false, error: 'no such group in the running configuration' };
+			if (group.type !== 'Selector')
+				return { result: false, error: 'the running configuration cannot be switched by hand — save and apply the settings first' };
+			if (group.now !== name)
+				return { result: false, error: 'the core did not accept the choice' };
+
+			return { result: true, now: group.now };
+		}
+	},
+
+	/* Throughput, as opposed to the reachability the node sweep reports. Same start+poll
+	 * split and for the same reason: a run takes half a minute, a ubus call does not. */
+	speedtest_start: {
+		args: { targets: 'targets' },
+		call: function(req) {
+			const core = get_active_core();
+			if (!core)
+				return { result: false, error: 'no core installed' };
+			if (!access('/usr/bin/curl'))
+				return { result: false, error: 'curl is not installed' };
+
+			/* A space-separated list, because the caller is a tab and a tab is a set of
+			 * nodes: the page asks for the subscription in front of it rather than for
+			 * everything configured, which on a long list is the difference between half a
+			 * minute and a quarter of an hour. Empty still means every node. */
+			let target = trim(req?.args?.targets || '');
+			for (let t in split(target, ' ')) {
+				if (!length(t)) continue;
+				if (!match(t, /^[A-Za-z0-9_-]+$/))
+					return { result: false, error: 'bad target' };
+			}
+
+			if (!!access(ST_RUNNING)) {
+				/* A stale marker outlives a reboot and would lock the button out for good;
+				 * anything older than a sweep could possibly take is not a running test.
+				 * The marker is touched as each node starts, so a long sweep keeps itself
+				 * alive and only a genuinely abandoned one ages out. */
+				const st = lstat(ST_RUNNING);
+				if (st && (time() - st.mtime) < ST_MAX_RUN) {
+					/* Queued, not refused. Two sweeps cannot run at once — they would share
+					 * the uplink and measure each other — but "press it on the other tab and
+					 * it does nothing" is not an answer either: the second press used to
+					 * attach to the running sweep, so those nodes were never tested and the
+					 * page showed somebody else's tab filling in. The running sweep picks
+					 * this list up when it finishes its own. */
+					if (length(target)) {
+						let queued = readfile(ST_QUEUE) || '';
+						if (!(target in split(trim(queued), '
+')))
+							writefile(ST_QUEUE, queued + target + '
+');
+						return { result: true, queued: true, running: true, targets: target };
+					}
+					/* Flagged, not just worded: a sweep outlives the page that started it,
+					 * so a caller with nothing of its own to add wants to attach to it
+					 * rather than be told off, and it can only tell this refusal apart from
+					 * a real failure if we say so in a field. */
+					return { result: false, running: true, error: 'a speed test is already running' };
+				}
+			}
+
+			system(`rm -f ${ST_RESULT} ${ST_LOG} ${ST_CFG} ${ST_QUEUE} ${ST_PID}`);
+			writefile(ST_RUNNING, '');
+
+			/* setsid puts this shell in a session and process group of its own, and the
+			 * pid recorded here is that group: stopping the sweep means signalling the
+			 * whole group, because the work is not in this shell but in the core, the
+			 * curl streams and the script it spawns. Killing the script alone would leave
+			 * four transfers running on the uplink with nothing left to stop them. */
+			const script = `
+				echo $$ > ${ST_PID}
+				sh ${LC_DIR}/scripts/speedtest.sh ${shellquote(core.path)} ${ST_PORT} ${shellquote(target)} ${ST_RESULT} ${ST_CFG} ${ST_LOG} ${ST_QUEUE} ${ST_RUNNING}
+				rm -f ${ST_RUNNING} ${ST_QUEUE} ${ST_PID}
+			`;
+			const rc = system(`setsid sh -c ${shellquote(script)} >/dev/null 2>&1 &`);
+			if (rc !== 0) {
+				system(`rm -f ${ST_RUNNING}`);
+				return { result: false, error: 'could not start the speed test' };
+			}
+
+			return { result: true, targets: target };
+		}
+	},
+
+	speedtest_status: {
+		call: function() {
+			/* NDJSON, one object per node, because the sweep publishes each node as it
+			 * finishes rather than the lot at the end — a table that fills in is the whole
+			 * point of measuring them one at a time. The last line is the node in hand and
+			 * carries a stage word instead of numbers. */
+			let results = [];
+			for (let line in split(trim(readfile(ST_RESULT) || ''), '
+')) {
+				if (!length(trim(line))) continue;
+				let row;
+				try { row = json(line); } catch(e) { continue; }
+				if (row) push(results, row);
+			}
+
+			const st = lstat(ST_RUNNING);
+			const running = !!access(ST_RUNNING) && st && (time() - st.mtime) < ST_MAX_RUN;
+			if (!running)
+				system(`rm -f ${ST_RUNNING} ${ST_QUEUE}`);
+
+			/* What is still waiting its turn, so a page whose nodes were queued behind
+			 * another tab's sweep can say so instead of looking stalled. */
+			let pending = [];
+			for (let line in split(trim(readfile(ST_QUEUE) || ''), '
+'))
+				for (let t in split(trim(line), ' '))
+					if (length(t)) push(pending, t);
+
+			return { running: !!running, results, pending };
+		}
+	},
+
+	/* Abandon a sweep in flight. A run is minutes long on a list of any size, and the
+	 * only way out of one used to be to wait it out: the button was disabled, the queue
+	 * kept feeding it, and the transfers held the uplink the whole time.
+	 *
+	 * The queue goes with it. Someone stopping the test does not mean "stop this node and
+	 * carry on with the rest", and leaving a queue behind would restart the sweep the
+	 * moment it was cleared. Results already measured are kept — they are what the run
+	 * was for, and the page is still showing them. */
+	speedtest_stop: {
+		call: function() {
+			const pid = int(trim(readfile(ST_PID) || '')) || 0;
+			if (pid > 1) {
+				/* The negative pid is the point: signal the whole process group, so the
+				 * core and the curl streams go too, not just the shell that started them. */
+				system(`kill -TERM -${pid} 2>/dev/null; sleep 1; kill -KILL -${pid} 2>/dev/null`, 15000);
+			}
+
+			/* A core from a run started before this feature, or one orphaned by a kill
+			 * that raced its own startup, is still holding the SOCKS port. */
+			system(`kill $(ps w | grep '[-]c ${ST_CFG}' | awk '{print $1}') 2>/dev/null`);
+			system(`rm -f ${ST_RUNNING} ${ST_QUEUE} ${ST_PID} ${ST_CFG}`);
+
+			return { result: true };
+		}
+	},
+
+	/* Installed version of the LuCI app versus the newest release. Both halves are needed
+	 * in one place: showing only the latest tag left people guessing whether it was the one
+	 * they already had. */
+	/* Versions of everything actually installed, in one call. Only installed components
+	 * are queried: there is no point asking GitHub about ByeDPI on a router that does not
+	 * have it, and the unauthenticated API allows 60 requests an hour per address — a
+	 * budget four components would chew through if the page were reloaded a few times.
+	 * Hence the short-lived cache: repeated page loads reuse it instead of spending quota,
+	 * and the Check button can force a refresh. */
+	check_all_updates: {
+		args: { refresh: 'refresh' },
+		call: function(req) {
+			const CACHE = '/tmp/limcore-update-check.json';
+			const TTL = 900;   /* 15 minutes */
+
+			if (!req.args?.refresh && access(CACHE)) {
+				const st = lstat(CACHE);
+				if (st && (time() - st.mtime) < TTL) {
+					let cached;
+					try { cached = json(readfile(CACHE) || ''); } catch(e) { cached = null; }
+					if (cached) { cached.cached = true; return cached; }
+				}
+			}
+
+			/* Retried once: api.github.com is itself on the blocked-domain list, so this
+			 * request travels through the proxy and occasionally does not make the
+			 * deadline. A single miss was enough to report "latest: null" for a component
+			 * that was perfectly reachable a second later — observed on consecutive runs. */
+			const latest_tag = (repo) => {
+				for (let attempt = 0; attempt < 2; attempt++) {
+					const fd = popen(`wget -qO- --timeout=12 https://api.github.com/repos/${repo}/releases/latest 2>/dev/null`);
+					if (!fd) continue;
+					const raw = trim(fd.read('all')); fd.close();
+					if (!length(raw)) continue;
+					let d;
+					try { d = json(raw); } catch(e) { continue; }
+					if (d?.tag_name) return replace(d.tag_name, /^v/, '');
+				}
+				return null;
+			};
+
+			/* Packages installed from PKG_REPO: its rolling release for the package is
+			 * titled with the version it holds, which is what an install would get. */
+			const copy_tag = (pkg) => {
+				for (let attempt = 0; attempt < 2; attempt++) {
+					const fd = popen(`wget -qO- --timeout=12 https://api.github.com/repos/${PKG_REPO}/releases/tags/${pkg} 2>/dev/null`);
+					if (!fd) continue;
+					const raw = trim(fd.read('all')); fd.close();
+					if (!length(raw)) continue;
+					let d;
+					try { d = json(raw); } catch(e) { continue; }
+					if (d?.name) return replace(d.name, /^v/, '');
+				}
+				return null;
+			};
+
+			/* No regex here on purpose: ucode's regexp() does not honour the \S
+			 * shorthand, and a pattern built with it silently matches nothing — which is
+			 * how this first shipped reporting "installed: null" for a package that was
+			 * plainly installed. Splitting on whitespace needs no escaping to get wrong.
+			 *   apk : "luci-app-limcore-2026.08.10-r26 noarch {...} [installed]"
+			 *   opkg: "luci-app-limcore - 2026.08.10-r26" */
+			const pkg_version = (name) => {
+				let fd = popen(`apk list -I ${name} 2>/dev/null | head -1`);
+				if (fd) {
+					const first = split(trim(fd.read('all')), ' ')[0] || '';
+					fd.close();
+					if (substr(first, 0, length(name) + 1) === name + '-')
+						return substr(first, length(name) + 1);
+				}
+				fd = popen(`opkg list-installed ${name} 2>/dev/null | head -1`);
+				if (fd) {
+					const parts = split(trim(fd.read('all')), ' ');
+					fd.close();
+					if (length(parts) >= 3 && parts[1] === '-')
+						return parts[2];
+				}
+				return null;
+			};
+
+			const binary_version = (path, re) => {
+				if (!access(path)) return null;
+				const fd = popen(`${shellquote(path)} version 2>/dev/null`);
+				if (!fd) return null;
+				const out = fd.read('all'); fd.close();
+				const m = match(out, re);
+				return m ? m[1] : null;
+			};
+
+			let components = [];
+
+			/* The LuCI app itself — always present, that is what is running this. */
+			components = [ ...components, {
+				name: 'LimCore App',
+				installed: pkg_version('luci-app-limcore'),
+				latest: latest_tag('l-limon-l/LimCoreWRT')
+			} ];
+
+			if (access('/usr/bin/sing-box'))
+				push(components, {
+					name: 'sing-box-extended',
+					installed: binary_version('/usr/bin/sing-box', /version v?(\S+)/),
+					latest: latest_tag('shtorm-7/sing-box-extended')
+				});
+
+			if (access('/usr/bin/ciadpi'))
+				push(components, {
+					name: 'ByeDPI',
+					installed: pkg_version('byedpi'),
+					latest: copy_tag('byedpi')
+				});
+
+			if (access('/opt/zapret2/nfq2/nfqws2'))
+				push(components, {
+					name: 'Zapret 2',
+					installed: pkg_version('zapret2'),
+					latest: copy_tag('zapret2')
+				});
+
+			let any = false, unknown = false;
+			for (let c in components) {
+				/* Inequality, not ordering: these tags mix date stamps and semver, and any
+				 * ordering rule would eventually rank one of them backwards. */
+				c.update_available = (c.installed !== null && c.latest !== null && c.installed !== c.latest);
+				if (c.update_available) any = true;
+				if (c.latest === null) unknown = true;
+			}
+
+			const result = {
+				components,
+				update_available: any,
+				incomplete: unknown,
+				checked_at: time()
+			};
+			/* Only an answer worth keeping is kept. A check that ran while the connection
+			 * was down - LimCore restarting after an update, say - got nothing from GitHub,
+			 * and cached, it went on saying "GitHub unreachable" for the next 15 minutes
+			 * with GitHub answering fine. */
+			if (length(filter(result.components || [], (c) => c.latest == null)))
+				system(`rm -f ${CACHE}`);
+			else
+				writefile(CACHE, sprintf('%J', result));
+			return result;
+		}
+	},
+
+	app_check_update: {
+		call: function() {
+			let installed = null;
+
+			/* apk prints "luci-app-limcore-<version> noarch {...}", opkg prints
+			 * "luci-app-limcore - <version>". */
+			let fd = popen('apk list -I luci-app-limcore 2>/dev/null | head -1');
+			if (fd) {
+				const line = trim(fd.read('all')); fd.close();
+				const m = match(line, /^luci-app-limcore-(\S+)/);
+				if (m) installed = m[1];
+			}
+			if (!installed) {
+				fd = popen('opkg list-installed luci-app-limcore 2>/dev/null | head -1');
+				if (fd) {
+					const line = trim(fd.read('all')); fd.close();
+					const m = match(line, /^luci-app-limcore\s+-\s+(\S+)/);
+					if (m) installed = m[1];
+				}
+			}
+
+			fd = popen('wget -qO- --timeout=10 https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest 2>/dev/null');
+			if (!fd)
+				return { installed, error: 'could not reach GitHub' };
+			const raw = trim(fd.read('all')); fd.close();
+			if (!length(raw))
+				return { installed, error: 'no response from GitHub — blocked, or rate limited' };
+
+			let data;
+			try { data = json(raw); } catch(e) { data = null; }
+			if (!data?.tag_name)
+				return { installed, error: 'could not read the release tag from GitHub' };
+
+			/* Tags are "v2.0", package versions "2.0". */
+			const latest = replace(data.tag_name, /^v/, '');
+			return {
+				installed,
+				latest,
+				/* String inequality, not ordering: a plain comparison would mis-rank 2.0.9
+				 * against 2.0.24, and v2.0 deliberately sorts below the old date tags. */
+				update_available: (installed !== null) && (installed !== latest)
+			};
+		}
+	},
+
+	/* The auto-update switch lives on the status page, which has no Save & Apply — and
+	 * must not: applying the limcore config restarts the core, and a core that fails to
+	 * come back takes the whole network with it. So the switch saves itself: write the
+	 * three options and the cron line (the same line init.d writes at start), then
+	 * restart cron only. The core is left alone. */
+	app_auto_update_set: {
+		args: { enabled: false, days: 'days', hour: 'hour' },
+		call: function(req) {
+			const enabled = (req.args?.enabled === true);
+			const days = `${req.args?.days ?? '3'}`;
+			const hour = `${req.args?.hour ?? '4'}`;
+			if (!(days in ['1', '3', '7', '14']))
+				return { result: false, error: 'invalid days' };
+			if (!match(hour, /^([0-9]|1[0-9]|2[0-3])$/))
+				return { result: false, error: 'invalid hour' };
+
+			const uci = cursor();
+			uci.load('limcore');
+			uci.set('limcore', 'config', 'app_auto_update', enabled ? '1' : '0');
+			uci.set('limcore', 'config', 'app_auto_update_days', days);
+			uci.set('limcore', 'config', 'app_auto_update_hour', hour);
+			uci.commit('limcore');
+
+			const CRONTAB = '/etc/crontabs/root';
+			const lines = filter(split(readfile(CRONTAB) || '', '\n'),
+				(l) => length(l) && index(l, '#limcore_appupdate') < 0);
+			if (enabled)
+				push(lines, `0 ${hour} */${days} * * /usr/bin/limcore-update --if-newer >/tmp/limcore-update.log 2>&1 #limcore_appupdate`);
+			writefile(CRONTAB, join('\n', lines) + '\n');
+			system('/etc/init.d/cron restart >/dev/null 2>&1');
+
+			return { result: true, enabled };
+		}
+	},
+
+	app_update: {
+		call: function(req) {
+			if (!access(UPDATE_BIN))
+				return { result: false, error: 'limcore-update is not installed' };
+
+			system(`rm -f ${UPDATE_LOG} ${UPDATE_PID}`);
+
+			/* setsid is mandatory, not a nicety: install.sh restarts rpcd, and a plain
+			 * background child of rpcd is reaped with it — the update would die halfway
+			 * through, every time, which is exactly the "Update LimCore does nothing"
+			 * symptom. setsid detaches into its own session, reparented to init, so it
+			 * outlives both the rpcd restart and the package upgrade that triggers it.
+			 *
+			 * Invoked through `sh` rather than executed directly: the updater shipped
+			 * without its execute bit once already, and setsid's only symptom was
+			 * "Permission denied" in the log. The interpreter is explicit here so
+			 * packaging can't disable self-update again. */
+			const cmd = access('/usr/bin/setsid')
+				? `setsid sh ${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`
+				: `sh ${UPDATE_BIN} >${UPDATE_LOG} 2>&1 &`;
+
+			const rc = system(cmd);
+			return { result: rc === 0, detached: !!access('/usr/bin/setsid') };
+		}
+	},
+
+	app_update_status: {
+		call: function(req) {
+			const log = (access(UPDATE_LOG) ? readfile(UPDATE_LOG) : '') || '';
+
+			/* The updater's last line is LIMCORE_UPDATE_RC=<code>. Its presence means the
+			 * run reached the end under its own power; without it a not-running updater
+			 * was killed mid-flight, which must NOT be reported as success. */
+			const m = match(log, /LIMCORE_UPDATE_RC=([0-9]+)/);
+			const finished = !!m;
+			const exit_code = m ? int(m[1]) : null;
+
+			/* Liveness from the updater's own PID file, never a process-list pattern: a
+			 * `pgrep -f limcore-update` also matches the shell rpcd spawns to run the
+			 * check, so `running` was permanently true and the page span forever.
+			 * The digit guard matters — access('/proc/' + '') is TRUE (that's /proc). */
+			let running = false;
+			const pid = trim(readfile(UPDATE_PID) || '');
+			if (length(pid) > 0 && match(pid, /^[0-9]+$/))
+				running = !!access(`/proc/${pid}`);
+
+			return {
+				running,
+				finished,
+				exit_code,
+				/* killed mid-run: not running, but never wrote its completion marker */
+				interrupted: (!running && length(log) > 0 && !finished),
+				log
+			};
+		}
+	},
+
+	/* Device Control — see the np_* helpers above. */
+
+	devices: {
+		call: function() {
+			const leases = np_read_leases();
+			const arp = np_read_arp();
+			const cfg = np_read_config();
+			const static_names = np_read_static_names();
+
+			/* Union of all three: a paused or renamed device that has gone offline
+			   must stay listed, or there is no way to reach it from the page. */
+			let seen = {};
+			for (let mac in leases) seen[mac] = true;
+			for (let mac in arp) seen[mac] = true;
+			for (let mac in cfg) seen[mac] = true;
+
+			let devices = [];
+			for (let mac in seen) {
+				/* A DHCP hostname is what the device calls itself; a static lease
+				   name is what someone typed on the DHCP page. Prefer the lease
+				   file, since that is the live one. */
+				const hostname = leases[mac]?.name ?? static_names[mac];
+				const label = cfg[mac]?.label;
+
+				push(devices, {
+					mac: mac,
+					/* What the router calls it, kept separate from what the user
+					   calls it so the page can show both. */
+					hostname: hostname,
+					label: label,
+					note: cfg[mac]?.note,
+					display: label ?? hostname ?? mac,
+					ip: arp[mac]?.ip ?? leases[mac]?.ip ?? null,
+					online: arp[mac]?.online ?? false,
+					paused: cfg[mac]?.paused ?? false,
+					/* Explains an entry that has nothing but a MAC to show. */
+					randomised: np_randomised_mac(mac)
+				});
+			}
+
+			sort(devices, (a, b) => {
+				if (a.paused != b.paused) return a.paused ? -1 : 1;
+				if (a.online != b.online) return a.online ? -1 : 1;
+				return (lc(a.display) < lc(b.display)) ? -1 : 1;
+			});
+
+			return { devices: devices };
+		}
+	},
+
+	set_paused: {
+		args: { mac: 'mac', paused: true },
+		call: function(req) {
+			const mac = np_normalise_mac(req.args?.mac);
+			if (!np_valid_mac(mac))
+				return { success: false, error: 'invalid mac address' };
+
+			const want = (req.args?.paused === true);
+
+			const uci = cursor();
+			uci.load(NP_CONFIG);
+
+			let section = np_find_section(uci, mac);
+
+			if (want) {
+				if (!section) {
+					section = uci.add(NP_CONFIG, 'device');
+					uci.set(NP_CONFIG, section, 'mac', mac);
+				}
+				uci.set(NP_CONFIG, section, 'paused', '1');
+			}
+			else if (section) {
+				uci.set(NP_CONFIG, section, 'paused', '0');
+				np_prune(uci, section);
+			}
+
+			uci.commit(NP_CONFIG);
+
+			return { success: (np_apply_ruleset() === 0), mac: mac, paused: want };
+		}
+	},
+
+	set_info: {
+		args: { mac: 'mac', label: 'label', note: 'note' },
+		call: function(req) {
+			const mac = np_normalise_mac(req.args?.mac);
+			if (!np_valid_mac(mac))
+				return { success: false, error: 'invalid mac address' };
+
+			if (length(req.args?.label ?? '') > NP_TEXT_MAX || length(req.args?.note ?? '') > NP_TEXT_MAX)
+				return { success: false, error: 'label or note too long' };
+
+			const label = np_clean_text(req.args?.label);
+			const note = np_clean_text(req.args?.note);
+
+			const uci = cursor();
+			uci.load(NP_CONFIG);
+
+			let section = np_find_section(uci, mac);
+
+			/* Clearing both fields on a device that is not paused should not
+			   create a section just to hold nothing. */
+			if (!section) {
+				if (!label && !note)
+					return { success: true, mac: mac, label: null, note: null };
+
+				section = uci.add(NP_CONFIG, 'device');
+				uci.set(NP_CONFIG, section, 'mac', mac);
+			}
+
+			if (label)
+				uci.set(NP_CONFIG, section, 'label', label);
+			else
+				uci.delete(NP_CONFIG, section, 'label');
+
+			if (note)
+				uci.set(NP_CONFIG, section, 'note', note);
+			else
+				uci.delete(NP_CONFIG, section, 'note');
+
+			np_prune(uci, section);
+			uci.commit(NP_CONFIG);
+
+			/* Labels never enter the ruleset, so nothing needs reloading here. */
+			return { success: true, mac: mac, label: label, note: note };
+		}
+	},
+
+	resume_all: {
+		call: function() {
+			const uci = cursor();
+			uci.load(NP_CONFIG);
+
+			let sections = [];
+			uci.foreach(NP_CONFIG, 'device', (d) => {
+				if (d.paused === '1')
+					push(sections, d['.name']);
+			});
+
+			for (let s in sections) {
+				uci.set(NP_CONFIG, s, 'paused', '0');
+				np_prune(uci, s);
+			}
+
+			uci.commit(NP_CONFIG);
+
+			return { success: (np_apply_ruleset() === 0), resumed: length(sections) };
+		}
+	}
+};
+
+return { 'luci.limcore': methods };

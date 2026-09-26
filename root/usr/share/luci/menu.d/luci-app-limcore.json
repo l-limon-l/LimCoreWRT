@@ -1,0 +1,107 @@
+{
+	"admin/services/limcore": {
+		"title": "LimCore",
+		"order": 10,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-limcore" ],
+			"uci": { "limcore": true }
+		}
+	},
+	"admin/services/limcore/overview": {
+		"title": "Overview",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "limcore/overview"
+		}
+	},
+	"admin/services/limcore/node": {
+		"title": "Nodes",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "limcore/node"
+		}
+	},
+	"admin/services/limcore/routing": {
+		"title": "Routing",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "limcore/routing"
+		}
+	},
+	"admin/services/limcore/dns": {
+		"title": "DNS",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "limcore/dns"
+		}
+	},
+	"admin/services/limcore/dpi": {
+		"title": "DPI bypass",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "limcore/dpi"
+		}
+	},
+	"admin/services/limcore/devices": {
+		"title": "Devices",
+		"order": 60,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/services/limcore/devices/control": {
+		"title": "Device Control",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "limcore/devices"
+		}
+	},
+	"admin/services/limcore/devices/access": {
+		"title": "Access policies",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "limcore/access"
+		}
+	},
+	"admin/services/limcore/system": {
+		"title": "System tools",
+		"order": 70,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/services/limcore/system/core": {
+		"title": "Core and updates",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "limcore/status"
+		}
+	},
+	"admin/services/limcore/system/server": {
+		"title": "Server Settings",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "limcore/server"
+		}
+	},
+	"admin/services/limcore/system/diagnostics": {
+		"title": "Diagnostics",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "limcore/diagnostics"
+		}
+	}
+}

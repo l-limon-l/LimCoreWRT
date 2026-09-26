@@ -1,0 +1,128 @@
+#!/bin/sh
+# LimCore Auto-Updater for OpenWrt
+# https://github.com/l-limon-l/LimCoreWRT
+#
+# Runs install.sh in --auto mode. Launched either by hand or by the LuCI page through
+# rpcd; in the rpcd case app_update starts it with setsid, because install.sh restarts
+# rpcd and would otherwise kill this script (its own parent's child) mid-update.
+#
+# The last line of the log is always LIMCORE_UPDATE_RC=<code>, which is how the LuCI
+# page tells a finished-and-failed update from a finished-and-succeeded one. The PID
+# file lets it tell "still working" from "died without finishing" without pattern
+# matching on process lists.
+#
+# With --if-newer the script first compares the installed release against the latest one
+# on GitHub and does nothing when they match. That mode is for the cron job: install.sh
+# re-downloads the ~24 MB core on every run, which is a lot of traffic to spend every
+# three days to arrive back at the version already installed. The button on the status
+# page stays unconditional on purpose — pressing it is also how a half-finished install
+# gets repaired, and that has to work when the version has not moved.
+
+G='\033[0;32m'; R='\033[0;31m'; C='\033[0;36m'; N='\033[0m'
+
+PIDFILE="/tmp/limcore-update.pid"
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT INT TERM
+
+echo -e "${C}=== LimCore Auto-Updater ===${N}"
+
+if [ "$(id -u)" != 0 ]; then
+	echo -e "${R}Ошибка: запустите от root.${N}"
+	echo "LIMCORE_UPDATE_RC=1"
+	exit 1
+fi
+
+# Зеркало GitHub, если основной домен заблокирован (то же значение использует бэкенд).
+GH_MIRROR="${GH_MIRROR:-$(uci -q get limcore.config.github_mirror)}"
+export GH_MIRROR
+
+SRC="https://raw.githubusercontent.com/l-limon-l/LimCoreWRT/main/install.sh"
+TMP="/tmp/limcore-install.sh"
+
+fetch() {
+	wget -qO "$TMP" --timeout=20 "$1" 2>/dev/null && [ -s "$TMP" ]
+}
+
+installed_version() {
+	# apk prints "luci-app-limcore-<version> noarch {...}", opkg "luci-app-limcore - <version>".
+	apk list -I luci-app-limcore 2>/dev/null | head -1 | sed -n 's/^luci-app-limcore-\([^ ]*\).*/\1/p'
+	opkg list-installed luci-app-limcore 2>/dev/null | head -1 | sed -n 's/^luci-app-limcore *- *\([^ ]*\).*/\1/p'
+}
+
+latest_version() {
+	API="https://api.github.com/repos/l-limon-l/LimCoreWRT/releases/latest"
+	# api.github.com goes out through the proxy and answers with an error or a rate limit
+	# often enough that a single attempt is not a verdict. Same one retry the backend does.
+	for _ in 1 2; do
+		BODY=$(wget -qO- --timeout=15 "$API" 2>/dev/null)
+		[ -n "$BODY" ] && break
+		if [ -n "$GH_MIRROR" ]; then
+			BODY=$(wget -qO- --timeout=15 "$(echo "$API" | sed "s#https://api.github.com#${GH_MIRROR%/}#")" 2>/dev/null)
+			[ -n "$BODY" ] && break
+		fi
+		sleep 3
+	done
+	# Tags are "v2.0", package versions "2.0" — drop the "v" before comparing.
+	echo "$BODY" | sed -n 's/.*"tag_name" *: *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1
+}
+
+if [ "$1" = "--if-newer" ]; then
+	INSTALLED=$(installed_version | head -1)
+	LATEST=$(latest_version)
+
+	if [ -z "$INSTALLED" ] || [ -z "$LATEST" ]; then
+		# Not knowing is not a reason to reinstall. Skip and let the next run decide.
+		echo -e "${R}Не удалось сравнить версии (установлено: '${INSTALLED:-?}', доступно: '${LATEST:-?}') — пропускаю.${N}"
+		echo "LIMCORE_UPDATE_RC=0"
+		exit 0
+	fi
+
+	# Inequality, not ordering: a plain string comparison would rank 2.0.9 above 2.0.30,
+	# and the move from date-based tags (2026.08.11-r30) to 2.0 went "down" by design.
+	if [ "$INSTALLED" = "$LATEST" ]; then
+		echo -e "${G}Установлена последняя версия ($INSTALLED) — обновлять нечего.${N}"
+		echo "LIMCORE_UPDATE_RC=0"
+		exit 0
+	fi
+
+	echo -e "${C}Установлено $INSTALLED, доступно $LATEST — обновляю.${N}"
+fi
+
+echo -e "${C}Скачиваю установщик...${N}"
+rm -f "$TMP"
+if ! fetch "$SRC"; then
+	MIRRORED=""
+	[ -n "$GH_MIRROR" ] && MIRRORED=$(echo "$SRC" | sed "s#https://raw.githubusercontent.com#${GH_MIRROR%/}#")
+	if [ -z "$MIRRORED" ] || ! fetch "$MIRRORED"; then
+		echo -e "${R}Не удалось скачать install.sh (GitHub недоступен?).${N}"
+		echo "Подсказка: задайте зеркало — uci set limcore.config.github_mirror=https://...; uci commit limcore"
+		rm -f "$TMP"
+		echo "LIMCORE_UPDATE_RC=1"
+		exit 1
+	fi
+fi
+
+# Минимальная проверка, что скачали скрипт, а не HTML-заглушку провайдера/зеркала.
+if ! head -1 "$TMP" | grep -q '^#!/bin/sh'; then
+	echo -e "${R}Скачанный файл не похож на install.sh — обновление прервано.${N}"
+	head -3 "$TMP"
+	rm -f "$TMP"
+	echo "LIMCORE_UPDATE_RC=1"
+	exit 1
+fi
+
+echo -e "${C}Запускаю обновление LimCore...${N}"
+sh "$TMP" --auto
+RC=$?
+rm -f "$TMP"
+
+if [ "$RC" = 0 ]; then
+	echo -e "${G}=== Обновление LimCore завершено! ===${N}"
+else
+	echo -e "${R}=== Обновление LimCore завершилось с ошибкой (код $RC) ===${N}"
+fi
+
+# Маркер читает app_update_status — он же признак того, что процесс дошёл до конца,
+# а не был убит на середине.
+echo "LIMCORE_UPDATE_RC=$RC"
+exit "$RC"

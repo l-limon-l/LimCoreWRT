@@ -1,0 +1,29 @@
+{
+	"luci-app-limcore": {
+		"description": "Grant access to limcore configuration",
+		"read": {
+			"file": {
+				"/etc/limcore/scripts/update_subscriptions.uc": [ "exec" ],
+				"/usr/bin/ucode": [ "exec" ],
+				"/etc/limcore/zapret_candidates.json": [ "read" ],
+				"/var/run/limcore/daemon.log": [ "read" ],
+				"/var/run/limcore/core.log": [ "read" ]
+			},
+			"ubus": {
+				"service": [ "list" ],
+				"rc": [ "list" ],
+				"luci.limcore": [ "*" ]
+			},
+			"uci": [ "limcore" ]
+		},
+		"write": {
+			"file": {
+				"/tmp/limcore_certificate.tmp": [ "write" ]
+			},
+			"ubus": {
+				"rc": [ "init" ]
+			},
+			"uci": [ "limcore" ]
+		}
+	}
+}

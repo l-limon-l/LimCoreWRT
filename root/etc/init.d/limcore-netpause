@@ -1,0 +1,49 @@
+#!/bin/sh /etc/rc.common
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Device Control — keeps the per-device pause rules loaded.
+#
+# Ported into LimCore from Device-Control (luci-app-netpause) by Yany1944:
+# https://github.com/Yany1944/Device-Control
+#
+# Deliberately a service of its own rather than part of /etc/init.d/limcore: a
+# paused device must stay paused while the proxy is stopped, and stopping the
+# proxy to update subscriptions does exactly that several times a day.
+
+# fw4 starts at 19. Ordering does not actually matter here — this owns a separate
+# nftables table and never touches fw4's — but starting right after it keeps the
+# rules in place before any client finishes associating.
+START=21
+STOP=89
+
+APPLY="/usr/share/limcore/scripts/netpause_apply.uc"
+
+EXTRA_COMMANDS="status"
+EXTRA_HELP="	status	Show the currently paused devices"
+
+start() {
+	/usr/bin/ucode "$APPLY"
+}
+
+stop() {
+	/usr/sbin/nft delete table inet limcore_netpause 2>/dev/null
+	return 0
+}
+
+reload() {
+	/usr/bin/ucode "$APPLY"
+}
+
+restart() {
+	reload
+}
+
+status() {
+	if /usr/sbin/nft list table inet limcore_netpause >/dev/null 2>&1; then
+		/usr/sbin/nft list set inet limcore_netpause paused 2>/dev/null | \
+			sed -n 's/.*elements = { \(.*\) }.*/paused: \1/p'
+		[ $? -eq 0 ] || echo "paused: none"
+	else
+		echo "limcore netpause: no devices paused (table not loaded)"
+	fi
+}

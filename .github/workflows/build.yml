@@ -1,0 +1,260 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - 'master'
+      - 'main'
+    paths:
+      - 'htdocs/**'
+      - 'po/**'
+      - 'root/**'
+      - 'Makefile'
+      - '.github/**'
+      - '!.github/ISSUE_TEMPLATE/**'
+
+  pull_request:
+    branches:
+      - 'master'
+      - 'main'
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - 'htdocs/**'
+      - 'po/**'
+      - 'root/**'
+      - 'Makefile'
+      - '.github/**'
+      - '!.github/ISSUE_TEMPLATE/**'
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      APK_SIGN_KEY: ''
+
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout apk
+        uses: actions/checkout@v6
+        with:
+          repository: 'alpinelinux/apk-tools'
+          path: 'apk-tools'
+          fetch-depth: 0
+          ref: 'b5a31c0d865342ad80be10d68f1bb3d3ad9b0866'
+
+      - name: Checkout po2lmo
+        uses: actions/checkout@v6
+        with:
+          repository: 'openwrt/luci'
+          path: 'po2lmo'
+          sparse-checkout: 'modules/luci-base/src'
+
+      - name: Setup dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E rm -rf /var/lib/man-db/auto-update
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y build-essential curl fakeroot libssl-dev lua5.1 meson ninja-build
+
+          pushd apk-tools
+          meson setup build \
+            -Db_lto=true \
+            -Dcompressed-help=false \
+            -Ddocs=disabled \
+            -Dhelp=enabled \
+            -Dlua_version=5.1 \
+            -Ddefault_library=static \
+            -Durl_backend=wget \
+            -Dzstd=false \
+            -Dpython=disabled \
+            -Dtests=disabled \
+            -Dcrypto_backend=openssl
+          ninja -C build
+          sudo -E meson install -C build --strip
+          popd
+
+          pushd po2lmo/modules/luci-base/src
+          make po2lmo
+          sudo -E install -m0755 -s po2lmo /usr/local/bin/po2lmo
+          popd
+
+          curl -fLO "https://raw.githubusercontent.com/openwrt/openwrt/master/scripts/ipkg-build"
+          sudo install -m0755 ipkg-build /usr/local/bin/ipkg-build
+
+      # The tag comes from PKG_VERSION in the Makefile, which is bumped by hand. A push
+      # that leaves the version alone builds the packages but publishes nothing: the
+      # same version number must never stand for two different builds, or routers
+      # that already have it would never be offered the new one.
+      - name: Generate release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(awk -F 'PKG_VERSION:=' 'NF > 1 {print $2}' Makefile | xargs)"
+          echo "release_tag=$tag" >> $GITHUB_OUTPUT
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "publish=false" >> $GITHUB_OUTPUT
+            echo "::notice::Release $tag already exists — bump PKG_VERSION in the Makefile to publish a new one."
+          else
+            echo "publish=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup APK signing key
+        run: |
+          # The private key file MUST be named LimCoreWRT: apk records the signer's key
+          # name in the package and looks for a matching file under /etc/apk/keys/ when
+          # verifying. install.sh installs the public half as /etc/apk/keys/LimCoreWRT.pub,
+          # so signing with /tmp/apk-signing.key would have produced packages nobody could
+          # verify — apk would silently fall back to --allow-untrusted and signing would
+          # have bought nothing.
+          if [ -n "${{ secrets.APK_SIGNING_KEY }}" ]; then
+            echo "${{ secrets.APK_SIGNING_KEY }}" > /tmp/LimCoreWRT
+            chmod 600 /tmp/LimCoreWRT
+            openssl rsa -in /tmp/LimCoreWRT -pubout -out .github/LimCoreWRT.pub 2>/dev/null || \
+            openssl ec  -in /tmp/LimCoreWRT -pubout -out .github/LimCoreWRT.pub 2>/dev/null || true
+            if [ ! -s .github/LimCoreWRT.pub ]; then
+              echo "::error::APK_SIGNING_KEY is set but no public key could be derived from it."
+              exit 1
+            fi
+            echo "APK_SIGN_KEY=/tmp/LimCoreWRT" >> $GITHUB_ENV
+            echo "Signing enabled; public key derived."
+          else
+            echo "No APK_SIGNING_KEY secret set — building unsigned package"
+          fi
+
+      - name: Build ipk file
+        run: |
+          pushd .github
+          fakeroot bash build-ipk.sh apk "${{ github.event_name }}"
+          fakeroot bash build-ipk.sh ipk "${{ github.event_name }}"
+          echo "APK_ASSET_NAME=$(ls luci-app-limcore_*_all.apk)" >> $GITHUB_ENV
+          echo "IPK_ASSET_NAME=$(ls luci-app-limcore_*_all.ipk)" >> $GITHUB_ENV
+          echo "I18N_APK_ASSET_NAME=$(ls luci-i18n-limcore-ru_*_all.apk)" >> $GITHUB_ENV
+          echo "I18N_IPK_ASSET_NAME=$(ls luci-i18n-limcore-ru_*_all.ipk)" >> $GITHUB_ENV
+          echo "I18N_ZH_APK_ASSET_NAME=$(ls luci-i18n-limcore-zh-cn_*_all.apk)" >> $GITHUB_ENV
+          echo "I18N_ZH_IPK_ASSET_NAME=$(ls luci-i18n-limcore-zh-cn_*_all.ipk)" >> $GITHUB_ENV
+          echo "I18N_FA_APK_ASSET_NAME=$(ls luci-i18n-limcore-fa_*_all.apk)" >> $GITHUB_ENV
+          echo "I18N_FA_IPK_ASSET_NAME=$(ls luci-i18n-limcore-fa_*_all.ipk)" >> $GITHUB_ENV
+          popd
+
+      - name: Build legacy IPK (OpenWRT 23.05)
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          pushd .github
+          fakeroot bash build-ipk.sh ipk "${{ github.event_name }}" legacy
+          popd
+
+      - name: Publishing APK files to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.APK_ASSET_NAME }}
+          path: .github/${{ env.APK_ASSET_NAME }}
+
+      - name: Publishing IPK files to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.IPK_ASSET_NAME }}
+          path: .github/${{ env.IPK_ASSET_NAME }}
+
+      - name: Publishing i18n APK to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.I18N_APK_ASSET_NAME }}
+          path: .github/${{ env.I18N_APK_ASSET_NAME }}
+
+      - name: Publishing i18n IPK to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.I18N_IPK_ASSET_NAME }}
+          path: .github/${{ env.I18N_IPK_ASSET_NAME }}
+
+      - name: Publishing i18n zh-cn APK to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.I18N_ZH_APK_ASSET_NAME }}
+          path: .github/${{ env.I18N_ZH_APK_ASSET_NAME }}
+
+      - name: Publishing i18n zh-cn IPK to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.I18N_ZH_IPK_ASSET_NAME }}
+          path: .github/${{ env.I18N_ZH_IPK_ASSET_NAME }}
+
+      - name: Publishing i18n fa APK to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.I18N_FA_APK_ASSET_NAME }}
+          path: .github/${{ env.I18N_FA_APK_ASSET_NAME }}
+
+      - name: Publishing i18n fa IPK to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release'
+        with:
+          name: ${{ env.I18N_FA_IPK_ASSET_NAME }}
+          path: .github/${{ env.I18N_FA_IPK_ASSET_NAME }}
+
+      - name: Publishing signing public key to GitHub Artifacts
+        uses: actions/upload-artifact@v7
+        if: github.event_name != 'release' && env.APK_SIGN_KEY != ''
+        with:
+          name: LimCoreWRT.pub
+          path: .github/LimCoreWRT.pub
+
+      - name: Publishing draft pre-release to GitHub Releases
+        uses: svenstaro/upload-release-action@v2
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.tag.outputs.publish == 'true'
+        with:
+          repo_token: ${{ github.token }}
+          file: .github/*.{apk,ipk,pub}
+          file_glob: true
+          tag: ${{ steps.tag.outputs.release_tag }}
+          release_name: LimCore ${{ steps.tag.outputs.release_tag }}
+          prerelease: false
+          draft: false
+          overwrite: true
+          body: "LimCore v2. Standard builds (.apk and .ipk for OpenWrt 24.10+) and legacy builds (-legacy.ipk for OpenWrt 23.05)."
+          make_latest: true
+
+      # Only one release is kept on GitHub: the one just published. Older releases and
+      # their tags are removed so the list does not grow by one on every push. The
+      # updater and install.sh only ever read /releases/latest, so nothing depends on them.
+      - name: Remove older releases
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.tag.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ steps.tag.outputs.release_tag }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName' |
+          while read -r tag; do
+            [ "$tag" = "$KEEP" ] && continue
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          done
+
+      - name: Publishing to GitHub Releases
+        uses: svenstaro/upload-release-action@v2
+        if: github.event_name == 'release'
+        with:
+          repo_token: ${{ github.token }}
+          file: .github/*.{apk,ipk,pub}
+          file_glob: true
+          tag: ${{ github.ref }}
+

@@ -1,0 +1,2093 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * Copyright (C) 2022-2025 ImmortalWrt.org
+ */
+
+'use strict';
+'require dom';
+'require form';
+'require fs';
+'require network';
+'require poll';
+'require rpc';
+'require ui';
+'require uci';
+'require validation';
+'require view';
+'require baseclass';
+
+'require limcore';
+'require tools.firewall as fwtool';
+'require tools.widgets as widgets';
+
+const callActiveNode = rpc.declare({
+	object: 'luci.limcore',
+	method: 'clash_active_node',
+	params: ['tag'],
+	expect: { '': {} }
+});
+
+const callGroupTest = rpc.declare({
+	object: 'luci.limcore',
+	method: 'clash_group_test',
+	params: ['tag'],
+	expect: { '': {} }
+});
+
+const callSelectNode = rpc.declare({
+	object: 'luci.limcore',
+	method: 'clash_select_node',
+	params: ['tag', 'name'],
+	expect: { '': {} }
+});
+
+const callReadDomainList = rpc.declare({
+	object: 'luci.limcore',
+	method: 'acllist_read',
+	params: ['type'],
+	expect: { '': {} }
+});
+
+const callWriteDomainList = rpc.declare({
+	object: 'luci.limcore',
+	method: 'acllist_write',
+	params: ['type', 'content'],
+	expect: { '': {} }
+});
+
+let stubValidator = {
+	factory: validation,
+	apply(type, value, args) {
+		if (value != null)
+			this.value = value;
+
+		return validation.types[type].apply(this, args);
+	},
+	assert(condition) {
+		return !!condition;
+	}
+};
+
+/* Which top-level tabs of the settings form each menu page shows. See renderPage() in
+ * limcore.js for why every page still builds all of them. */
+const PAGES = {
+	routing: { title: _('Routing'),         tabs: [ 'routing', 'ru_rules', 'lists', 'routing_node', 'routing_rule', 'ruleset' ] },
+	dns:     { title: _('DNS'),             tabs: [ 'dns_main', 'dns', 'dns_server', 'dns_rule' ] },
+	access:  { title: _('Access policies'), tabs: [ 'access' ] }
+};
+
+const SettingsView = view.extend({
+	load() {
+		return Promise.all([
+			uci.load('limcore'),
+			uci.load('luci'),
+			limcore.getBuiltinFeatures(),
+			network.getHostHints()
+		]);
+	},
+
+	render(data) {
+		let m, s, o, ss, so;
+
+		let features = data[2],
+		    hosts = data[3]?.hosts;
+
+		/* Cache all configured proxy nodes, they will be called multiple times */
+		let proxy_nodes = {};
+		uci.sections(data[0], 'node', (res) => {
+			/* A server inside a provider's auto-select group is used through the group. */
+			if (res.member_of)
+				return;
+			let nodeaddr = ((res.type === 'direct') ? res.override_address : res.address) || '',
+			    nodeport = ((res.type === 'direct') ? res.override_port : res.port) || '';
+
+			proxy_nodes[res['.name']] = res.label || ((stubValidator.apply('ip6addr', nodeaddr) ?
+				String.format('[%s]', nodeaddr) : nodeaddr) + ':' + nodeport);
+		});
+
+		m = new form.Map('limcore', PAGES[this.page].title);
+
+		s = m.section(form.NamedSection, 'config', 'limcore');
+
+		s.tab('routing', _('Routing Settings'));
+		s.tab('dns_main', _('Resolvers'));
+
+		/* The main node is chosen on the overview. It stays in the form, hidden, rather than
+		 * leaving it: the pool options below depend on it, and LuCI drops an option whose
+		 * dependency it cannot find from the config on save (see renderPage in limcore.js). */
+		o = s.taboption('routing', form.HiddenValue, 'main_node', _('Main node'));
+		o.default = 'nil';
+		o.depends({'routing_mode': /^((?!custom).)+$/});
+		o.rmempty = false;
+		o.render = function() {
+			return form.HiddenValue.prototype.render.apply(this, arguments).then((el) => {
+				el.style.display = 'none';
+				return el;
+			});
+		};
+
+		/* Live: which node URLTest currently has selected, and the pick that overrides it.
+		 * Only shown in URLTest mode (depends on main_node='urltest'); hidden when a
+		 * specific node is the main node.
+		 *
+		 * The pool chooses on latency alone, so one spike is enough to move traffic onto a
+		 * worse exit and keep it there until the next round — and the only way out of that
+		 * used to be leaving URLTest for a single named node, which also throws away the
+		 * failover the pool exists for. The dropdown holds traffic on one node without
+		 * leaving the mode, and handing the choice back is picking automatic again. */
+		o = s.taboption('routing', form.DummyValue, '_active_urltest_node', _('Active URLTest node'),
+			_('Automatic: the pool picks by latency itself.<br>Choose a node to hold traffic on it — useful when the fastest node by ping is not the best one to use.<br>Applies at once, without a restart, and survives one.'));
+		o.depends('main_node', 'urltest');
+		o.cfgvalue = function() {
+			/* The pool's own tag inside the main selector — see generate_client.uc. */
+			const AUTO = 'main-urltest-out';
+
+			const el  = E('span', { 'style': 'color:gray' }, '—');
+			const sel = E('select', { 'class': 'cbi-input-select', 'style': 'margin-top:.5em' }, []);
+			const msg = E('span', { 'style': 'margin-left:.5em' }, '');
+			/* Hidden until the poll confirms the running core actually has a selector. */
+			const row = E('div', { 'style': 'display:none' }, [ sel, msg ]);
+
+			const nodeLabel = function(tag) {
+				if (tag === AUTO) return _('Automatic (URLTest picks)');
+				const m = tag.match(/^cfg-(.+)-out$/);
+				return (m && proxy_nodes[m[1]]) ? proxy_nodes[m[1]] : tag;
+			};
+
+			/* Rebuilt only when the running pool's membership actually changes, so the poll
+			 * cannot drop the list out from under a click, and never while the dropdown is
+			 * open — reselecting the current value under the pointer is how a page picks a
+			 * node the reader did not ask for. */
+			let rendered = null, busy = false;
+			const fill = function(options, selected) {
+				const key = options.join('\x00');
+				if (key !== rendered) {
+					rendered = key;
+					dom.content(sel, options.map(function(tag) {
+						return E('option', { 'value': tag }, nodeLabel(tag));
+					}));
+				}
+				if (!busy && document.activeElement !== sel && selected && sel.value !== selected)
+					sel.value = selected;
+			};
+
+			sel.addEventListener('change', function() {
+				const want = sel.value;
+				busy = true;
+				msg.style.color = '';
+				msg.textContent = _('Switching…');
+				L.resolveDefault(callSelectNode('main-out', want), {}).then(function(ret) {
+					busy = false;
+					if (ret && ret.result === true) {
+						msg.style.color = '';
+						msg.textContent = (want === AUTO) ? _('The pool chooses again.')
+						                                  : _('Traffic is held on this node.');
+					} else {
+						msg.style.color = 'red';
+						msg.textContent = ret?.error || _('Could not switch');
+					}
+				});
+			});
+
+			poll.add(L.bind(function() {
+				/* Ask about main-out by name. Left to itself the call follows the core's
+				 * GLOBAL group, which in a config with several groups can land on the
+				 * URLTest pool directly — and a pool is not where the pin lives, so the
+				 * page would report the node correctly and then hide the control for
+				 * changing it. */
+				return L.resolveDefault(callActiveNode('main-out'), {}).then(function(ret) {
+					if (ret && !ret.error && ret.node) {
+						const m = ret.node.match(/^cfg-(.+)-out$/);
+						const name = (m && proxy_nodes[m[1]]) ? proxy_nodes[m[1]] : ret.node;
+						const type = ret.type ? ' (' + ret.type + ')' : '';
+						/* Bands come from the shared helper, so this figure is the
+						   colour the node grid gives it: they used to disagree, and
+						   270 ms green here against 270 ms orange there is read as a
+						   bug in whichever page the reader trusts less. 65535 ms is
+						   URLTest's timeout sentinel, and no delay at all is
+						   unmeasured (gray, no number). */
+						const dBand = limcore.delayBand(ret.delay);
+						const dColor = limcore.delayColor(ret.delay);
+						let dStr = '';
+						if (dBand === 'dead') dStr = ' — ' + _('timeout');
+						else if (dBand !== 'none') dStr = ' — ' + ret.delay + ' ms';
+						el.textContent = name + type + dStr;
+						el.style.color = dColor;
+					} else {
+						el.textContent = _('No active node');
+						el.style.color = 'gray';
+					}
+
+					/* No selector in the running core means a pool saved before this
+					 * existed, or one edited but not applied yet — there is nothing to
+					 * switch, and offering names the core would refuse is worse than
+					 * offering nothing, so the control stays away until there is. */
+					if (ret && ret.selector && ret.options?.length) {
+						row.style.display = '';
+						fill(ret.options, ret.selected);
+					} else {
+						row.style.display = 'none';
+					}
+				});
+			}));
+
+			return E('div', {}, [ el, row ]);
+		};
+
+		/* A pin is absolute — the core sits on the chosen node while it answers slowly, and
+		 * goes on sitting on it while it answers not at all — so it is watched rather than
+		 * made conditional: pin_watch.sh measures the pinned node and the rest of the pool
+		 * on the pool's own interval and hands the choice back when the pin stops being the
+		 * right one. Off by default, because someone who pins a node usually means it. */
+		o = s.taboption('routing', form.Flag, 'pin_auto_return', _('Return to automatic by itself'),
+			_('Watches the node picked by hand and hands the choice back to URLTest when it stops answering or falls too far behind the best node in the pool.<br>Without this a hand-picked node stays, whatever happens to it.'));
+		o.depends('main_node', 'urltest');
+		o.default = '0';
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Value, 'pin_auto_return_margin', _('Return threshold'),
+			_('How far (ms) the pinned node may fall behind the best node in the pool before the choice goes back to URLTest. Checked on the test interval below.<br>A node that stops answering is always given back; 0 means only that counts and any latency is tolerated.'));
+		o.value('0', _('0 — only when the node stops answering'));
+		o.value('100', _('100 ms — react early'));
+		o.value('150', _('150 ms — balanced'));
+		o.value('250', _('250 ms — tolerate a slow node'));
+		o.datatype = 'uinteger';
+		o.default = '150';
+		o.depends({'main_node': 'urltest', 'pin_auto_return': '1'});
+		o.rmempty = false;
+
+		/* The pool's own numbers, taken in one pass, next to the node it settled on.
+		 * Without this the page showed a single delay for the selected node and the Nodes
+		 * page showed a different figure for another one, measured minutes apart by a
+		 * different probe — from which nobody could tell whether URLTest was choosing
+		 * badly or the two numbers simply did not compare. Re-testing is also what makes
+		 * the group re-choose, so the button answers the question and settles it. */
+		o = s.taboption('routing', form.DummyValue, '_urltest_recheck', _('Re-test the pool'),
+			_('Measures every node in the pool one after another and lets URLTest pick again on the fresh numbers.'));
+		o.depends('main_node', 'urltest');
+		o.cfgvalue = function() {
+			const out = E('div', { 'style': 'margin-top:.5em' }, '');
+			const btn = E('button', {
+				'class': 'btn cbi-button cbi-button-action',
+				'click': ui.createHandlerFn(this, function() {
+					out.style.color = '';
+					out.textContent = _('Testing…');
+					return L.resolveDefault(callGroupTest('main-out'), {}).then(function(ret) {
+						if (!ret || ret.result !== true) {
+							out.style.color = 'red';
+							out.textContent = ret?.error || _('Test failed');
+							return;
+						}
+
+						const rows = (ret.results || []).map(function(r) {
+							const name = (r.section && proxy_nodes[r.section]) ? proxy_nodes[r.section] : r.outbound;
+							/* A node that did not answer has no figure at all here,
+							   which is not the same as URLTest's 65535 sentinel; every
+							   real number is banded by the shared helper. */
+							let color, text;
+							if (r.delay == null) { color = '#c00'; text = _('no answer'); }
+							else { color = limcore.delayColor(r.delay); text = r.delay + ' ms'; }
+
+							return E('tr', { 'class': 'tr' }, [
+								E('td', { 'class': 'td' }, r.selected ? E('b', {}, name) : name),
+								E('td', { 'class': 'td', 'style': 'color:' + color }, text),
+								E('td', { 'class': 'td' }, r.selected ? _('in use') : '')
+							]);
+						});
+
+						/* The core answers with the pool it is running, not the one on
+						   screen: a pool edited but not applied yet is still a single
+						   node in the running config, and it comes back with no members
+						   at all. Saying only "no nodes" left the reader looking at a
+						   full list of them wondering which of the two was lying. */
+						if (!rows.length) {
+							out.style.color = '#c80';
+							out.textContent = _('The running configuration has no pool — save and apply the settings, then test again.');
+							return;
+						}
+						dom.content(out, E('table', { 'class': 'table' }, rows));
+					});
+				})
+			}, [ _('Test now') ]);
+
+			return E('div', {}, [ btn, out ]);
+		};
+
+		o = s.taboption('routing', form.DummyValue, '_urltest_info', _('URLTest'),
+			_('Automatically picks the fastest node by periodically measuring latency. Traffic is sent through the lowest-latency node in the pool, as long as it beats the node in use by more than the test tolerance below.<br>Latency is all this measures: a node can answer quickly and still carry traffic badly, so if one keeps stalling, test its speed on the Nodes page and take it out of the pool.<br>If you have connection problems and a node stays orange/grey for a long time, try removing it from the URLTest pool.'));
+		o.depends('main_node', 'urltest');
+		o.rawhtml = true;
+		o.cfgvalue = function() { return ''; };
+
+		o = s.taboption('routing', limcore.CBIStaticList, 'main_urltest_nodes', _('URLTest nodes'),
+			_('List of nodes to test.'));
+		for (let i in proxy_nodes)
+			o.value(i, proxy_nodes[i]);
+		o.depends('main_node', 'urltest');
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Value, 'main_urltest_interval', _('Test interval'),
+			_('How often each node is tested (seconds). Lower = faster failover, higher = less overhead.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '180';
+		o.depends('main_node', 'urltest');
+
+		o = s.taboption('routing', form.Value, 'main_urltest_tolerance', _('Test tolerance'),
+			_('How much faster (ms) a node must be before traffic moves to it.<br>It is a head start for the node in use: at 150 ms a 90 ms node does not take over from a 200 ms one.<br>Empty — switch on any improvement. Raise it only if the pool flaps between equally good nodes.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '1';
+		o.depends('main_node', 'urltest');
+
+		o = s.taboption('routing', form.ListValue, 'main_udp_node', _('Main UDP node'));
+		o.value('nil', _('Disable'));
+		o.value('same', _('Same as main node'));
+		o.value('urltest', _('URLTest'));
+		for (let i in proxy_nodes)
+			o.value(i, proxy_nodes[i]);
+		o.value('byedpi-out', _('ByeDPI'));
+		o.value('zapret-out', _('Zapret'));
+		o.default = 'nil';
+		o.depends({'routing_mode': /^((?!custom|proxy_banned_ru).)+$/, 'proxy_mode': /^((?!redirect$).)+$/});
+		o.rmempty = false;
+
+		o = s.taboption('routing', limcore.CBIStaticList, 'main_udp_urltest_nodes', _('URLTest nodes'),
+			_('List of nodes to test.'));
+		for (let i in proxy_nodes)
+			o.value(i, proxy_nodes[i]);
+		o.depends('main_udp_node', 'urltest');
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Value, 'main_udp_urltest_interval', _('Test interval'),
+			_('The test interval in seconds.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '180';
+		o.depends('main_udp_node', 'urltest');
+
+		o = s.taboption('routing', form.Value, 'main_udp_urltest_tolerance', _('Test tolerance'),
+			_('The test tolerance in milliseconds.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '150';
+		o.depends('main_udp_node', 'urltest');
+
+		o = s.taboption('dns_main', form.Value, 'dns_server', _('DNS server'),
+			_('Support UDP, TCP, DoH, DoQ, DoT. TCP protocol will be used if not specified.'));
+		o.value('wan', _('WAN DNS (read from interface)'));
+		o.value('1.1.1.1', _('CloudFlare Public DNS (1.1.1.1)'));
+		o.value('208.67.222.222', _('Cisco Public DNS (208.67.222.222)'));
+		o.value('8.8.8.8', _('Google Public DNS (8.8.8.8)'));
+		o.value('', '---');
+		o.value('223.5.5.5', _('Aliyun Public DNS (223.5.5.5)'));
+		o.value('119.29.29.29', _('Tencent Public DNS (119.29.29.29)'));
+		o.value('117.50.10.10', _('ThreatBook Public DNS (117.50.10.10)'));
+		o.default = '8.8.8.8';
+		o.rmempty = false;
+		o.depends('routing_mode', 'global');
+		o.validate = function(section_id, value) {
+			if (section_id && !['wan'].includes(value)) {
+				if (!value)
+					return _('Expecting: %s').format(_('non-empty value'));
+
+				let ipv6_support = this.section.formvalue(section_id, 'ipv6_support');
+				try {
+					let url = new URL(value.replace(/^.*:\/\//, 'http://'));
+					if (stubValidator.apply('hostname', url.hostname))
+						return true;
+					else if (stubValidator.apply('ip4addr', url.hostname))
+						return true;
+					else if ((ipv6_support === '1') && stubValidator.apply('ip6addr', url.hostname.match(/^\[(.+)\]$/)?.[1]))
+						return true;
+					else
+						return _('Expecting: %s').format(_('valid DNS server address'));
+				} catch(e) {}
+
+				if (!stubValidator.apply((ipv6_support === '1') ? 'ipaddr' : 'ip4addr', value))
+					return _('Expecting: %s').format(_('valid DNS server address'));
+			}
+
+			return true;
+		}
+
+		o = s.taboption('dns_main', form.Value, 'china_dns_server', _('China DNS server'),
+			_('The dns server for resolving China domains. Support UDP, TCP, DoH, DoQ, DoT.'));
+		o.value('wan', _('WAN DNS (read from interface)'));
+		o.value('223.5.5.5', _('Aliyun Public DNS (223.5.5.5)'));
+		o.value('210.2.4.8', _('CNNIC Public DNS (210.2.4.8)'));
+		o.value('119.29.29.29', _('Tencent Public DNS (119.29.29.29)'));
+		o.value('117.50.10.10', _('ThreatBook Public DNS (117.50.10.10)'));
+		o.depends('routing_mode', 'bypass_cn');
+		o.default = '223.5.5.5';
+		o.rmempty = false;
+		o.validate = function(section_id, value) {
+			if (section_id && !['wan'].includes(value)) {
+				if (!value)
+					return _('Expecting: %s').format(_('non-empty value'));
+
+				try {
+					let url = new URL(value.replace(/^.*:\/\//, 'http://'));
+					if (stubValidator.apply('hostname', url.hostname))
+						return true;
+					else if (stubValidator.apply('ip4addr', url.hostname))
+						return true;
+					else if (stubValidator.apply('ip6addr', url.hostname.match(/^\[(.+)\]$/)?.[1]))
+						return true;
+					else
+						return _('Expecting: %s').format(_('valid DNS server address'));
+				} catch(e) {}
+
+				if (!stubValidator.apply('ipaddr', value))
+					return _('Expecting: %s').format(_('valid DNS server address'));
+			}
+
+			return true;
+		}
+
+		o = s.taboption('dns_main', form.Value, 'iran_dns_server', _('Iran DNS server'),
+			_('The Domain Name Server for resolving Iran Domestic domains only. Your Internet Provider sees these queries in plain text.'));
+		o.value('wan', _('WAN DNS (read from interface)'));
+		o.value('178.22.122.100', _('Shecan (178.22.122.100)'));
+		o.value('185.51.200.2', _('Shecan secondary (185.51.200.2)'));
+		o.value('78.157.42.100', _('Electro/Begzar (78.157.42.100)'));
+		o.value('78.157.42.101', _('Electro/Begzar secondary (78.157.42.101)'));
+		o.value('10.202.10.202', _('403.online (10.202.10.202)'));
+		o.value('10.202.10.102', _('403.online secondary (10.202.10.102)'));
+		o.value('10.202.10.10', _('Radar (10.202.10.10)'));
+		o.value('10.202.10.11', _('Radar secondary (10.202.10.11)'));
+		o.depends('routing_mode', 'bypass_ir');
+		o.default = '178.22.122.100';
+		o.rmempty = false;
+		o.validate = function(section_id, value) {
+			if (section_id && !['wan'].includes(value)) {
+				if (!value)
+					return _('Expecting: %s').format(_('non-empty value'));
+
+				try {
+					let url = new URL(value.replace(/^.*:\/\//, 'http://'));
+					if (stubValidator.apply('hostname', url.hostname))
+						return true;
+					else if (stubValidator.apply('ip4addr', url.hostname))
+						return true;
+					else if (stubValidator.apply('ip6addr', url.hostname.match(/^\[(.+)\]$/)?.[1]))
+						return true;
+					else
+						return _('Expecting: %s').format(_('valid DNS server address'));
+				} catch(e) {}
+
+				if (!stubValidator.apply('ipaddr', value))
+					return _('Expecting: %s').format(_('valid DNS server address'));
+			}
+
+			return true;
+		}
+
+		/* This resolver answers for everything the routing mode sends direct, which makes it
+		   more than a speed choice: an unblocking ("smart") DNS returns its own proxy's
+		   addresses for the services it covers, so those services work without the tunnel at
+		   all — on every device in the LAN, phones included, and without the proxy's speed
+		   cost. That is how Gemini and Antigravity are usually made to work from a Russian
+		   address, since Google decides those by account and location rather than by the
+		   address the request came from, and a proxy alone does not settle it.
+
+		   The trade-off belongs next to the choice: this server sees every direct lookup the
+		   network makes, and can answer anything it likes for any name. Worth pointing only
+		   at an operator you are willing to trust with that. */
+		o = s.taboption('dns_main', form.Value, 'russia_dns_server', _('Russia DNS server'),
+			_('Resolves the domains that go direct, without the proxy.<br><b>Comss</b> (unblocking DNS) also makes services that refuse Russian addresses work — on every device, without the tunnel.<br><b>WAN DNS</b> uses the resolver the ISP gave the router: closest, fastest and right about domestic CDNs, but the ISP sees every direct name.<br>An encrypted address can be typed in too (https:// for DoH, tls:// for DoT).<br>Whichever server you pick sees every direct lookup on your network.'));
+		o.value('wan', _('WAN DNS — the ISP resolver, read from the interface'));
+		o.value('77.88.8.8', _('Yandex DNS (77.88.8.8)'));
+		o.value('193.58.251.251', _('SkyDNS (193.58.251.251)'));
+		o.value('83.220.169.155', _('Comss.one (83.220.169.155)'));
+		/* Encrypted rather than its plain 111.88.96.54/.55: plain DNS to these addresses is
+		 * being cut on UDP 53. DoH over 443 rather than DoT: 853 is a port of its own and as
+		 * easy to cut as 53, while 443 is every HTTPS connection at once. */
+		o.value('https://xbox-dns.ru/dns-query', _('Xbox DNS — encrypted, DoH (xbox-dns.ru)'));
+		o.value('1.1.1.1', _('Cloudflare DNS UDP (1.1.1.1)'));
+		o.value('8.8.8.8', _('Google DNS UDP (8.8.8.8)'));
+		o.depends('routing_mode', 'proxy_banned_ru');
+		o.default = '77.88.8.8';
+		o.rmempty = false;
+		/* Same shapes the generator accepts: a bare IP, or a URL naming the protocol.
+		   Listing only one address per operator is not an omission — a sing-box DNS server
+		   carries exactly one address and does not fail over between servers, so a second
+		   entry would be a choice, never a backup. The encrypted forms are the way to get
+		   both addresses at once: the hostname resolves to every address the operator runs,
+		   and the query is hidden from the ISP on top. */
+		o.validate = function(section_id, value) {
+			if (section_id && value && value !== 'wan') {
+				const url = value.match(/^(https|tls|quic|h3|udp|tcp):\/\/(.+)$/);
+				if (url) {
+					if (!url[2].replace(/\/.*$/, '').length)
+						return _('Expecting: %s').format(_('valid DNS server address'));
+					return true;
+				}
+				if (!stubValidator.apply('ip4addr', value) && !stubValidator.apply('ip6addr', value))
+					return _('Expecting: %s').format(_('valid DNS server address'));
+			}
+			return true;
+		}
+
+		o = s.taboption('dns_main', form.Value, 'secure_dns_server', _('Secure DNS server'),
+			_('Resolves blocked domains via proxy — your ISP cannot see which sites you look up. Uses encrypted DNS (DoH/DoT = DNS over HTTPS/TLS).'));
+		o.value('https://cloudflare-dns.com/dns-query', _('Cloudflare DoH'));
+		o.value('https://dns.quad9.net/dns-query', _('Quad9 DoH'));
+		o.value('https://dns.adguard-dns.com/dns-query', _('AdGuard DoH'));
+		o.value('https://dns.google/dns-query', _('Google DoH'));
+		o.value('tls://cloudflare-dns.com', _('Cloudflare DoT'));
+		o.value('tls://dns.quad9.net', _('Quad9 DoT'));
+		o.value('tls://dns.google', _('Google DoT'));
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
+		o.default = 'https://cloudflare-dns.com/dns-query';
+		o.rmempty = false;
+		o.validate = function(section_id, value) {
+			if (section_id && value) {
+				try {
+					let url = new URL(value.replace(/^.*:\/\//, 'http://'));
+					if (stubValidator.apply('hostname', url.hostname) || stubValidator.apply('ipaddr', url.hostname))
+						return true;
+				} catch(e) {}
+				return _('Expecting: %s').format(_('valid DNS server address'));
+			}
+			return true;
+		}
+
+		o = s.taboption('routing', form.Flag, 'proxy_calls',
+			_('Proxy calls'),
+			_('Route VoIP call ports (WhatsApp, Telegram, FaceTime, etc.) through the proxy.'));
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
+		o.default = o.enabled;
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Flag, 'no_proxy_torrents',
+			_('Do not proxify torrents'),
+			_('Force torrent traffic (BitTorrent protocol + common ports) to bypass the proxy.'));
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
+		o.default = o.enabled;
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.Flag, 'show_advanced_rules',
+			_('Advanced custom rules'),
+			_('Show Routing Nodes and Routing Rules tabs for additional custom rules.'));
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
+		o.default = o.disabled;
+		o.rmempty = false;
+
+		o = s.taboption('routing', form.ListValue, 'routing_mode', _('Routing mode'));
+		o.value('proxy_banned_ru', _('Russia (Proxy Banned)'));
+		o.value('bypass_cn', _('China (bypass mainland)'));
+		o.value('bypass_ir', _('Iran (bypass domestic)'));
+		o.value('global', _('Global'));
+		o.value('custom', _('Custom routing'));
+		o.value('custom_json', _('Custom JSON'));
+		const _lang_section = (uci.sections('luci', 'internal') || []).find(s => s['.name'] === 'languages');
+		const _lang_codes = _lang_section ? Object.keys(_lang_section).filter(k => /^[a-z]/.test(k)) : [];
+		o.default = _lang_codes.includes('ru') ? 'proxy_banned_ru' :
+		            _lang_codes.some(k => k.startsWith('zh')) ? 'bypass_cn' :
+		            _lang_codes.some(k => k.startsWith('fa')) ? 'bypass_ir' :
+		            'proxy_banned_ru';
+		o.rmempty = false;
+		o.onchange = function(ev, section_id, value) {
+			if (section_id && (value === 'custom' || value === 'custom_json'))
+				this.map.save(null, true);
+		}
+
+		o = s.taboption('routing', form.Value, 'routing_port', _('Routing ports'),
+			_('Specify target ports to be proxied. Multiple ports must be separated by commas.'));
+		o.value('', _('All ports'));
+		o.value('common', _('Common ports only (bypass P2P traffic)'));
+		/* Same list as "common" plus Cloudflare's alternate HTTPS ports. Kept as a named
+		 * preset rather than something to paste in by hand: typing the ports into the field
+		 * works, but the next visit to this dropdown silently replaces them, and the media
+		 * that stops loading afterwards is nowhere near this setting. */
+		o.value('common_media', _('Common ports + media on Cloudflare (2053, 2083, 2087, 2096)'));
+		o.validate = function(section_id, value) {
+			if (section_id && value && value !== 'common' && value !== 'common_media') {
+
+				let ports = [];
+				for (let i of value.split(',')) {
+					if (!stubValidator.apply('port', i) && !stubValidator.apply('portrange', i))
+						return _('Expecting: %s').format(_('valid port value'));
+					if (ports.includes(i))
+						return _('Port %s alrealy exists!').format(i);
+					ports = ports.concat(i);
+				}
+			}
+
+			return true;
+		}
+		o.depends({'routing_mode': 'custom_json', '!reverse': true});
+
+		o = s.taboption('routing', form.ListValue, 'proxy_mode', _('Proxy mode'));
+		o.value('redirect', _('Redirect TCP'));
+		if (features.lc_has_tproxy)
+			o.value('redirect_tproxy', _('Redirect TCP + TProxy UDP'));
+		if (features.lc_has_tun) {
+			o.value('redirect_tun', _('Redirect TCP + Tun UDP'));
+			o.value('tun', _('Tun TCP/UDP'));
+		} else {
+			o.description = _('To enable Tun support, you need to install <code>kmod-tun</code>');
+		}
+		o.default = 'redirect_tproxy';
+		o.rmempty = false;
+		o.depends({'routing_mode': 'custom_json', '!reverse': true});
+
+		o = s.taboption('routing', form.Flag, 'ipv6_support', _('IPv6 support'));
+		o.default = o.enabled;
+		o.rmempty = false;
+		o.depends({'routing_mode': 'custom_json', '!reverse': true});
+		o.cfgvalue = function(section_id) {
+			const stored = uci.get('limcore', section_id, 'ipv6_support');
+			if (stored != null) return stored;
+			return (uci.get('limcore', section_id, 'routing_mode') === 'proxy_banned_ru')
+				? this.disabled : this.enabled;
+		};
+
+		/* Custom routing settings start */
+		/* Routing settings start */
+		o = s.taboption('routing', form.SectionValue, '_routing', form.NamedSection, 'routing', 'limcore');
+		o.depends('routing_mode', 'custom');
+
+		ss = o.subsection;
+		so = ss.option(form.ListValue, 'tcpip_stack', _('TCP/IP stack'),
+			_('TCP/IP stack.'));
+		if (features.with_gvisor) {
+			so.value('mixed', _('Mixed'));
+			so.value('gvisor', _('gVisor'));
+		}
+		so.value('system', _('System'));
+		so.default = 'system';
+		so.depends('limcore.config.proxy_mode', 'redirect_tun');
+		so.depends('limcore.config.proxy_mode', 'tun');
+		so.rmempty = false;
+		so.onchange = function(ev, section_id, value) {
+			let desc = ev.target.nextElementSibling;
+			if (value === 'mixed')
+				desc.innerHTML = _('Mixed <code>system</code> TCP stack and <code>gVisor</code> UDP stack.')
+			else if (value === 'gvisor')
+				desc.innerHTML = _('Based on google/gvisor.');
+			else if (value === 'system')
+				desc.innerHTML = _('Less compatibility and sometimes better performance.');
+		}
+
+		so = ss.option(form.Flag, 'endpoint_independent_nat', _('Enable endpoint-independent NAT'),
+			_('Performance may degrade slightly, so it is not recommended to enable on when it is not needed.'));
+		so.default = so.enabled;
+		so.depends('tcpip_stack', 'mixed');
+		so.depends('tcpip_stack', 'gvisor');
+		so.rmempty = false;
+
+		so = ss.option(form.Value, 'udp_timeout', _('UDP NAT expiration time'),
+			_('In seconds.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '300';
+		so.depends('limcore.config.proxy_mode', 'redirect_tproxy');
+		so.depends('limcore.config.proxy_mode', 'redirect_tun');
+		so.depends('limcore.config.proxy_mode', 'tun');
+
+		so = ss.option(form.Flag, 'bypass_cn_traffic', _('Bypass CN traffic'),
+			_('Bypass mainland China traffic via firewall rules by default.'));
+		so.rmempty = false;
+
+		so = ss.option(form.ListValue, 'domain_strategy', _('Domain strategy'),
+			_('If set, the requested domain name will be resolved to IP before routing.'));
+		for (let i in limcore.dns_strategy)
+			so.value(i, limcore.dns_strategy[i]);
+
+		so = ss.option(form.ListValue, 'default_outbound', _('Default outbound'),
+			_('Default outbound for connections not matched by any routing rules.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('nil', _('Disable (the service)'));
+			this.value('direct-out', _('Direct'));
+			this.value('block-out', _('Block'));
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.default = 'nil';
+		so.rmempty = false;
+
+		so = ss.option(form.ListValue, 'default_outbound_dns', _('Default outbound DNS'),
+			_('Default DNS server for resolving domain name in the server address.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			const _rm = uci.get(data[0], 'config', 'routing_mode');
+			if (_rm === 'proxy_banned_ru') {
+				this.value('russia-dns', _('Russia DNS server'));
+				this.value('secure-dns', _('Secure DNS server'));
+			} else if (/^bypass_(cn|ir)$/.test(_rm)) {
+				this.value('region-dns', _('Region DNS'));
+				this.value('secure-dns', _('Secure DNS server'));
+			}
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.default = 'default-dns';
+		so.rmempty = false;
+		/* Routing settings end */
+
+		/* Proxy Rules start (per-service overrides — RU forward + CN/IR reverse) */
+		s.tab('ru_rules', _('Proxy Rules'));
+		/* A table, one line per rule: what, through which node, on or off. The rules used to
+		 * be stacked field by field, three rows and a Delete button each, so a handful of
+		 * services ran to several screens. A separate URLTest's own settings open in the
+		 * rule's edit dialog. */
+		o = s.taboption('ru_rules', form.SectionValue, '_ru_rules', form.GridSection, 'proxy_ru_rule');
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/});
+
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.anonymous = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		/* The edit dialog is titled with the service it is for, not with the page's name. */
+		ss.modaltitle = function(section_id) {
+			const src = section_id ? uci.get('limcore', section_id, 'source') : null;
+			const opt = src ? this.children.find((c) => c.option === 'source') : null;
+			const name = (opt && opt.keylist.includes(src)) ? opt.vallist[opt.keylist.indexOf(src)] : null;
+			return name ? _('Rule: %s').format(name) : _('New rule');
+		};
+		/* Forward (RU) vs reverse (CN/IR) invert the meaning of these rules, so the
+		 * description must follow the current mode. */
+		const _rmode_rules = uci.get('limcore', 'config', 'routing_mode');
+		if (_rmode_rules === 'bypass_cn' || _rmode_rules === 'bypass_ir') {
+			const _region_name = (_rmode_rules === 'bypass_cn') ? _('China') : _('Iran');
+			ss.description = _('Default route is through the proxy. %s domains and IPs (geosite + geoip) automatically go Direct. Rules added here are per-service overrides applied before that baseline — e.g. force a specific service Direct, or send it through a separate node.').format(_region_name);
+		} else {
+			ss.description = _('Default route is Direct. Added rules are proxied, with automatic priority:<br>1. Smaller lists (YouTube, Discord etc.)<br>2. <b>Russia Inside</b> (1000+ domains, itdoginfo) — the in-Russia must-have set (YouTube, Discord, Telegram, Meta…) routed through the proxy<br>3. <b>Re-filter</b> (60000+ domains + 25000+ IPs) — community blocklist of domains and IPs banned in Russia (Roskomnadzor)');
+		}
+
+		so = ss.option(form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.option(form.ListValue, 'source', _('Source'));
+		/* "Add" stages a section with no options at all — LuCI writes the changeset before
+		 * anything is filled in — and a section outlives the tab that edits it: switch the
+		 * routing mode away and back and the empty row is still there. Without an empty
+		 * choice the select then shows whatever comes first and saving writes it as if it
+		 * had been picked. First here is Re-filter, so an untouched leftover row quietly
+		 * turned into the heaviest list in the app. */
+		so.value('', _('— not selected —'));
+		/* Russia bulk lists are RU-forward only; CN/IR get geosite/geoip baked into the
+		 * engine baseline, so here they only need per-service overrides. */
+		if (_rmode_rules === 'proxy_banned_ru') {
+			so.value('refilter', _('Re-filter (Russia blocklist: 60000+ banned domains + 25000+ IPs)'));
+			so.value('russia-inside', _('itdoginfo/allow-domains - Russia Inside (1000+ entries)'));
+		}
+		so.value('youtube', _('YouTube'));
+		so.value('twitter', _('Twitter/X'));
+		so.value('tiktok', _('TikTok'));
+		so.value('telegram', _('Telegram'));
+		so.value('spotify', _('Spotify'));
+		so.value('roblox', _('Roblox'));
+		so.value('porn', _('Adult content'));
+		so.value('ovh', _('OVH (France cloud hosting)'));
+		so.value('news', _('International news sites'));
+		so.value('meta', _('Meta (Facebook, Instagram)'));
+		so.value('hodca', _('HODCA'));
+		so.value('hetzner', _('Hetzner (Germany cloud hosting)'));
+		so.value('hdrezka', _('HDRezka'));
+		so.value('google_ai', _('Google AI services'));
+		so.value('google_play', _('Google Play'));
+		so.value('geoblock', _('GeoBlock services'));
+		so.value('anime', _('Anime streaming'));
+		so.value('ai', _('AI services (ChatGPT, Claude)'));
+		so.value('cloudflare', _('Cloudflare CDN'));
+		so.value('cloudfront', _('CloudFront CDN'));
+		so.value('discord', _('Discord'));
+		so.value('digitalocean', _('DigitalOcean cloud hosting'));
+		so.value('epicgames', _('Epic Games (launcher, store, EOS)'));
+		so.rmempty = false;
+		so.editable = true;
+		so.validate = function(section_id, value) {
+			if (!value)
+				return _('Pick a service for this rule, or delete the rule');
+			for (const sid of this.section.cfgsections()) {
+				if (sid !== section_id && this.cfgvalue(sid) === value)
+					return _('Duplicate source — only the first rule will take effect');
+			}
+			return true;
+		};
+
+		so = ss.option(form.ListValue, 'node', _('Node'));
+		so.value('main-out', _('Same as main node'));
+		so.value('urltest', _('Separate URLTest'));
+		for (let i in proxy_nodes)
+			so.value(i, proxy_nodes[i]);
+		so.value('byedpi-out', _('ByeDPI'));
+		so.value('zapret-out', _('Zapret'));
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.option(limcore.CBIStaticList, 'urltest_nodes', _('URLTest nodes'),
+			_('List of nodes to test.'));
+		for (let i in proxy_nodes)
+			so.value(i, proxy_nodes[i]);
+		so.depends('node', 'urltest');
+		so.rmempty = false;
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'urltest_interval', _('Test interval'),
+			_('The test interval in seconds.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '180';
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'urltest_tolerance', _('Test tolerance'),
+			_('The test tolerance in milliseconds.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '150';
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+		/* RU Proxy Rules end */
+
+		s.tab('lists', _('Own lists'));
+
+		/* Routing nodes start */
+		s.tab('routing_node', _('Routing Nodes'));
+		o = s.taboption('routing_node', form.SectionValue, '_routing_node', form.GridSection, 'routing_node');
+		o.depends('routing_mode', 'custom');
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/, 'show_advanced_rules': '1'});
+
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.rowcolors = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		ss.modaltitle = L.bind(limcore.loadModalTitle, this, _('Routing node'), _('Add a routing node'), data[0]);
+		ss.sectiontitle = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		ss.renderSectionAdd = L.bind(limcore.renderSectionAdd, this, ss);
+
+		so = ss.option(form.Value, 'label', _('Label'));
+		so.load = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		so.validate = L.bind(limcore.validateUniqueValue, this, data[0], 'routing_node', 'label');
+		so.modalonly = true;
+
+		so = ss.option(form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.option(form.ListValue, 'node', _('Node'),
+			_('Outbound node'));
+		/* "Same as main node" exists in every mode EXCEPT custom routing and custom JSON */
+		const _rmode = uci.get('limcore', 'config', 'routing_mode');
+		if (_rmode !== 'custom' && _rmode !== 'custom_json')
+			so.value('main-out', _('Same as main node'));
+		so.value('urltest', _('URLTest'));
+		for (let i in proxy_nodes)
+			so.value(i, proxy_nodes[i]);
+		so.validate = L.bind(limcore.validateUniqueValue, this, data[0], 'routing_node', 'node');
+		so.editable = true;
+
+		so = ss.option(form.ListValue, 'domain_resolver', _('Domain resolver'),
+			_('For resolving domain name in the server address.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('Default'));
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			const _rm = uci.get(data[0], 'config', 'routing_mode');
+			if (_rm === 'proxy_banned_ru') {
+				this.value('russia-dns', _('Russia DNS server'));
+				this.value('secure-dns', _('Secure DNS server'));
+			} else if (/^bypass_(cn|ir)$/.test(_rm)) {
+				this.value('region-dns', _('Region DNS'));
+				this.value('secure-dns', _('Secure DNS server'));
+			}
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.depends({'node': 'urltest', '!reverse': true});
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'domain_strategy', _('Domain strategy'),
+			_('The domain strategy for resolving the domain name in the address.'));
+		for (let i in limcore.dns_strategy)
+			so.value(i, limcore.dns_strategy[i]);
+		so.depends({'node': 'urltest', '!reverse': true});
+		so.modalonly = true;
+
+		so = ss.option(widgets.DeviceSelect, 'bind_interface', _('Bind interface'),
+			_('The network interface to bind to.'));
+		so.multiple = false;
+		so.noaliases = true;
+		so.depends({'outbound': '', 'node': /^((?!urltest$).)+$/});
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'outbound', _('Outbound'),
+			_('The tag of the upstream outbound.<br/>Other dial fields will be ignored when enabled.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('Direct'));
+			if (/^(proxy_banned_ru|bypass_cn|bypass_ir)$/.test(uci.get(data[0], 'config', 'routing_mode')))
+				this.value('main-out', _('Same as main node'));
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (res['.name'] !== section_id && res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.validate = function(section_id, value) {
+			if (section_id && value) {
+				let node = this.section.formvalue(section_id, 'node');
+
+				let conflict = false;
+				uci.sections(data[0], 'routing_node', (res) => {
+					if (res['.name'] !== section_id) {
+						if (res.outbound === section_id && res['.name'] == value)
+							conflict = true;
+						else if (res.node === 'urltest' && res.urltest_nodes?.includes(node) && res['.name'] == value)
+							conflict = true;
+					}
+				});
+				if (conflict)
+					return _('Recursive outbound detected!');
+			}
+
+			return true;
+		}
+		so.depends({'node': 'urltest', '!reverse': true});
+		so.editable = true;
+
+		so = ss.option(limcore.CBIStaticList, 'urltest_nodes', _('URLTest nodes'),
+			_('List of nodes to test.'));
+		for (let i in proxy_nodes)
+			so.value(i, proxy_nodes[i]);
+		so.depends('node', 'urltest');
+		so.validate = function(section_id) {
+			let value = this.section.formvalue(section_id, 'urltest_nodes');
+			if (section_id && !value.length)
+				return _('Expecting: %s').format(_('non-empty value'));
+
+			return true;
+		}
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'urltest_url', _('Test URL'),
+			_('The URL to test.'));
+		so.placeholder = 'https://www.gstatic.com/generate_204';
+		so.validate = function(section_id, value) {
+			if (section_id && value) {
+				try {
+					let url = new URL(value);
+					if (!url.hostname)
+						return _('Expecting: %s').format(_('valid URL'));
+				}
+				catch(e) {
+					return _('Expecting: %s').format(_('valid URL'));
+				}
+			}
+
+			return true;
+		}
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'urltest_interval', _('Test interval'),
+			_('The test interval in seconds.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '180';
+		so.validate = function(section_id, value) {
+			if (section_id && value) {
+				let idle_timeout = this.section.formvalue(section_id, 'idle_timeout') || '1800';
+				if (parseInt(value) > parseInt(idle_timeout))
+					return _('Test interval must be less or equal than idle timeout.');
+			}
+
+			return true;
+		}
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'urltest_tolerance', _('Test tolerance'),
+			_('The test tolerance in milliseconds.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '50';
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'urltest_idle_timeout', _('Idle timeout'),
+			_('The idle timeout in seconds.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '1800';
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+
+		so = ss.option(form.Flag, 'urltest_interrupt_exist_connections', _('Interrupt existing connections'),
+			_('Interrupt existing connections when the selected outbound has changed.'));
+		so.depends('node', 'urltest');
+		so.modalonly = true;
+		/* Routing nodes end */
+
+		/* Routing rules start */
+		s.tab('routing_rule', _('Routing Rules'));
+		o = s.taboption('routing_rule', form.SectionValue, '_routing_rule', form.GridSection, 'routing_rule');
+		o.depends('routing_mode', 'custom');
+		o.depends({'routing_mode': /^(proxy_banned_ru|bypass_cn|bypass_ir)$/, 'show_advanced_rules': '1'});
+
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.rowcolors = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		ss.modaltitle = L.bind(limcore.loadModalTitle, this, _('Routing rule'), _('Add a routing rule'), data[0]);
+		ss.sectiontitle = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		ss.renderSectionAdd = L.bind(limcore.renderSectionAdd, this, ss);
+
+		ss.tab('field_other', _('Other fields'));
+		ss.tab('field_host', _('Host/IP fields'));
+		ss.tab('field_port', _('Port fields'));
+		ss.tab('fields_process', _('Process fields'));
+
+		so = ss.taboption('field_other', form.Value, 'label', _('Label'));
+		so.load = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		so.validate = L.bind(limcore.validateUniqueValue, this, data[0], 'routing_rule', 'label');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'mode', _('Mode'),
+			_('The default rule uses the following matching logic:<br/>' +
+			'<code>(domain || domain_suffix || domain_keyword || domain_regex || ip_cidr || ip_is_private)</code> &&<br/>' +
+			'<code>(port || port_range)</code> &&<br/>' +
+			'<code>(source_ip_cidr || source_ip_is_private)</code> &&<br/>' +
+			'<code>(source_port || source_port_range)</code> &&<br/>' +
+			'<code>other fields</code>.<br/>' +
+			'Additionally, included rule sets can be considered merged rather than as a single rule sub-item.'));
+		so.value('default', _('Default'));
+		so.default = 'default';
+		so.rmempty = false;
+		so.readonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'ip_version', _('IP version'),
+			_('4 or 6. Not limited if empty.'));
+		so.value('4', _('IPv4'));
+		so.value('6', _('IPv6'));
+		so.value('', _('Both'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.MultiValue, 'protocol', _('Protocol'),
+			_('Sniffed protocol, see <a target="_blank" href="https://sing-box.sagernet.org/configuration/route/sniff/">Sniff</a> for details.'));
+		so.value('bittorrent', _('BitTorrent'));
+		so.value('dns', _('DNS'));
+		so.value('dtls', _('DTLS'));
+		so.value('http', _('HTTP'));
+		so.value('quic', _('QUIC'));
+		so.value('rdp', _('RDP'));
+		so.value('ssh', _('SSH'));
+		so.value('stun', _('STUN'));
+		so.value('tls', _('TLS'));
+
+		so = ss.taboption('field_other', form.Value, 'client', _('Client'),
+			_('Sniffed client type (QUIC client type or SSH client name).'));
+		so.value('chromium', _('Chromium / Cronet'));
+		so.value('firefox', _('Firefox / uquic firefox'));
+		so.value('quic-go', _('quic-go / uquic chrome'));
+		so.value('safari', _('Safari / Apple Network API'));
+		so.depends('protocol', 'quic');
+		so.depends('protocol', 'ssh');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'network', _('Network'));
+		so.value('tcp', _('TCP'));
+		so.value('udp', _('UDP'));
+		so.value('', _('Both'));
+
+		so = ss.taboption('field_other', limcore.CBIStaticList, 'inbound', _('Inbound'),
+			_('Match inbound tag.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('dns-in', _('DNS inbound'));
+			this.value('mixed-in', _('Mixed (SOCKS/HTTP) inbound'));
+			this.value('redirect-in', _('Redirect inbound'));
+			this.value('tproxy-in', _('TProxy inbound'));
+			this.value('tun-in', _('TUN inbound'));
+
+			uci.sections(data[0], 'server', (res) => {
+				if (res.enabled === '1')
+					this.value('cfg-' + res['.name'] + '-in', res.label || res['.name']);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.DynamicList, 'user', _('User'),
+			_('Match user name.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', limcore.CBIStaticList, 'rule_set', _('Rule set'),
+			_('Match rule set.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			uci.sections(data[0], 'ruleset', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'rule_set_ip_cidr_match_source', _('Rule set IP CIDR as source IP'),
+			_('Make IP CIDR in rule set used to match the source IP.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'invert', _('Invert'),
+			_('Invert match result.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'action', _('Action'));
+		so.value('route', _('Route'));
+		so.value('route-options', _('Route options'));
+		so.value('reject', _('Reject'));
+		so.value('resolve', _('Resolve'));
+		so.default = 'route';
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'outbound', _('Outbound'),
+			_('Tag of the target outbound.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('direct-out', _('Direct'));
+			/* "Same as main node" (main-out) exists only OUTSIDE custom mode: custom mode
+			 * hides the main-node selector and the generator never emits a main-out there
+			 * (its default/final is default_outbound). So gate it on the mode, not on a
+			 * possibly-stale main_node value, to avoid offering a tag that won't exist. */
+			if (uci.get(data[0], 'config', 'routing_mode') !== 'custom' &&
+			    uci.get(data[0], 'config', 'main_node'))
+				this.value('main-out', _('Same as main node'));
+			/* byedpi-out, by contrast, IS emitted in every routing mode whenever ByeDPI is
+			 * enabled — so a custom-mode rule can target it directly, no routing node needed. */
+			if (uci.get(data[0], 'config', 'byedpi_enabled') === '1')
+				this.value('byedpi-out', _('ByeDPI'));
+			if (uci.get(data[0], 'config', 'zapret_enabled') === '1')
+				this.value('zapret-out', _('Zapret'));
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.rmempty = false;
+		so.depends('action', 'route');
+		so.editable = true;
+
+		so = ss.taboption('field_other', form.Value, 'override_address', _('Override address'),
+			_('Override the connection destination address.'));
+		so.datatype = 'ipaddr';
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'override_port', _('Override port'),
+			_('Override the connection destination port.'));
+		so.datatype = 'port';
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'udp_disable_domain_unmapping', _('Disable UDP domain unmapping'),
+			_('If enabled, for UDP proxy requests addressed to a domain, the original packet address will be sent in the response instead of the mapped domain.'));
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'udp_connect', _('connect UDP connections'),
+			_('If enabled, attempts to connect UDP connection to the destination instead of listen.'));
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'udp_timeout', _('UDP timeout'),
+			_('Timeout for UDP connections.<br/>Setting a larger value than the UDP timeout in inbounds will have no effect.'));
+		so.datatype = 'uinteger';
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'tls_record_fragment', _('TLS record fragment'),
+			_('Fragment TLS handshake into multiple TLS records.'));
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'tls_fragment', _('TLS fragment'),
+			_('Fragment TLS handshakes. Due to poor performance, try <code>%s</code> first.').format(
+				_('TLS record fragment')));
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'tls_fragment_fallback_delay', _('Fragment fallback delay'),
+			_('The fallback value in milliseconds used when TLS segmentation cannot automatically determine the wait time.'));
+		so.datatype = 'uinteger';
+		so.placeholder = '500';
+		so.depends('tls_fragment', '1');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'resolve_server', _('DNS server'),
+			_('Specifies DNS server tag to use instead of selecting through DNS routing.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('Default'));
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.depends('action', 'resolve');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'reject_method', _('Method'));
+		so.value('default', _('Reply with TCP RST / ICMP port unreachable'));
+		so.value('drop', _('Drop packets'));
+		so.depends('action', 'reject');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'reject_no_drop', _('Don\'t drop packets'),
+			_('<code>%s</code> will be temporarily overwritten to <code>%s</code> after 50 triggers in 30s if not enabled.').format(
+			_('Method'), _('Drop packets')));
+		so.depends('reject_method', 'default');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'resolve_strategy', _('Resolve strategy'),
+			_('Domain strategy for resolving the domain names.'));
+		for (let i in limcore.dns_strategy)
+			so.value(i, limcore.dns_strategy[i]);
+		so.depends('action', 'resolve');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'resolve_disable_cache', _('Disable DNS cache'),
+			_('Disable DNS cache in this query.'));
+		so.depends('action', 'resolve');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'resolve_rewrite_ttl', _('Rewrite TTL'),
+			_('Rewrite TTL in DNS responses.'));
+		so.datatype = 'uinteger';
+		so.depends('action', 'resolve');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'resolve_client_subnet', _('EDNS Client subnet'),
+			_('Append a <code>edns0-subnet</code> OPT extra record with the specified IP prefix to every query by default.<br/>' +
+			'If value is an IP address instead of prefix, <code>/32</code> or <code>/128</code> will be appended automatically.'));
+		so.datatype = 'or(cidr, ipaddr)';
+		so.depends('action', 'resolve');
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain', _('Domain name'),
+			_('Match full domain.'));
+		so.datatype = 'hostname';
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain_suffix', _('Domain suffix'),
+			_('Match domain suffix.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain_keyword', _('Domain keyword'),
+			_('Match domain using keyword.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain_regex', _('Domain regex'),
+			_('Match domain using regular expression.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'source_ip_cidr', _('Source IP CIDR'),
+			_('Match source IP CIDR.'));
+		so.datatype = 'or(cidr, ipaddr)';
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.Flag, 'source_ip_is_private', _('Match private source IP'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'ip_cidr', _('IP CIDR'),
+			_('Match IP CIDR.'));
+		so.datatype = 'or(cidr, ipaddr)';
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.Flag, 'ip_is_private', _('Match private IP'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'source_port', _('Source port'),
+			_('Match source port.'));
+		so.datatype = 'port';
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'source_port_range', _('Source port range'),
+			_('Match source port range. Format as START:/:END/START:END.'));
+		so.validate = limcore.validatePortRange;
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'port', _('Port'),
+			_('Match port.'));
+		so.datatype = 'port';
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'port_range', _('Port range'),
+			_('Match port range. Format as START:/:END/START:END.'));
+		so.validate = limcore.validatePortRange;
+		so.modalonly = true;
+
+		so = ss.taboption('fields_process', form.DynamicList, 'process_name', _('Process name'),
+			_('Match process name.'));
+		so.modalonly = true;
+
+		so = ss.taboption('fields_process', form.DynamicList, 'process_path', _('Process path'),
+			_('Match process path.'));
+		so.modalonly = true;
+
+		so = ss.taboption('fields_process', form.DynamicList, 'process_path_regex', _('Process path (regex)'),
+			_('Match process path using regular expression.'));
+		so.modalonly = true;
+		/* Routing rules end */
+
+		/* DNS settings start */
+		s.tab('dns', _('DNS Settings'));
+		o = s.taboption('dns', form.SectionValue, '_dns', form.NamedSection, 'dns', 'limcore');
+		o.depends('routing_mode', 'custom');
+
+		ss = o.subsection;
+		so = ss.option(form.ListValue, 'default_strategy', _('Default DNS strategy'),
+			_('The DNS strategy for resolving the domain name in the address.'));
+		for (let i in limcore.dns_strategy)
+			so.value(i, limcore.dns_strategy[i]);
+
+		so = ss.option(form.ListValue, 'default_server', _('Default DNS server'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			const _rm = uci.get(data[0], 'config', 'routing_mode');
+			if (_rm === 'proxy_banned_ru') {
+				this.value('russia-dns', _('Russia DNS server'));
+				this.value('secure-dns', _('Secure DNS server'));
+			} else if (/^bypass_(cn|ir)$/.test(_rm)) {
+				this.value('region-dns', _('Region DNS'));
+				this.value('secure-dns', _('Secure DNS server'));
+			}
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.default = 'default-dns';
+		so.rmempty = false;
+
+		so = ss.option(form.Flag, 'disable_cache', _('Disable DNS cache'));
+
+		so = ss.option(form.Flag, 'disable_cache_expire', _('Disable cache expire'));
+		so.depends('disable_cache', '0');
+
+		so = ss.option(form.Flag, 'independent_cache', _('Independent cache per server'),
+			_('Make each DNS server\'s cache independent for special purposes. If enabled, will slightly degrade performance.'));
+		so.depends('disable_cache', '0');
+
+		so = ss.option(form.Value, 'client_subnet', _('EDNS Client subnet'),
+			_('Append a <code>edns0-subnet</code> OPT extra record with the specified IP prefix to every query by default.<br/>' +
+			'If value is an IP address instead of prefix, <code>/32</code> or <code>/128</code> will be appended automatically.'));
+		so.datatype = 'or(cidr, ipaddr)';
+
+		so = ss.option(form.Flag, 'cache_file_store_rdrc', _('Store RDRC'),
+			_('Store rejected DNS response cache.<br/>' +
+			'The check results of <code>Address filter DNS rule items</code> will be cached until expiration.'));
+
+		so = ss.option(form.Value, 'cache_file_rdrc_timeout', _('RDRC timeout'),
+			_('Timeout of rejected DNS response cache in seconds. <code>604800 (7d)</code> is used by default.'));
+		so.datatype = 'uinteger';
+		so.depends('cache_file_store_rdrc', '1');
+		/* DNS settings end */
+
+		/* DNS servers start */
+		s.tab('dns_server', _('DNS Servers'));
+		o = s.taboption('dns_server', form.SectionValue, '_dns_server', form.GridSection, 'dns_server');
+		o.depends('routing_mode', 'custom');
+
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.rowcolors = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		ss.modaltitle = L.bind(limcore.loadModalTitle, this, _('DNS server'), _('Add a DNS server'), data[0]);
+		ss.sectiontitle = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		ss.renderSectionAdd = L.bind(limcore.renderSectionAdd, this, ss);
+
+		so = ss.option(form.Value, 'label', _('Label'));
+		so.load = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		so.validate = L.bind(limcore.validateUniqueValue, this, data[0], 'dns_server', 'label');
+		so.modalonly = true;
+
+		so = ss.option(form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.option(form.ListValue, 'type', _('Type'));
+		so.value('udp', _('UDP'));
+		so.value('tcp', _('TCP'));
+		so.value('tls', _('TLS'));
+		so.value('https', _('HTTPS'));
+		so.value('h3', _('HTTP/3'));
+		so.value('quic', _('QUIC'));
+		so.default = 'udp';
+		so.rmempty = false;
+
+		so = ss.option(form.Value, 'server', _('Address'),
+			_('The address of the dns server.'));
+		so.datatype = 'or(hostname, ipaddr)';
+		so.rmempty = false;
+
+		so = ss.option(form.Value, 'server_port', _('Port'),
+			_('The port of the DNS server.'));
+		so.placeholder = 'auto';
+		so.datatype = 'port';
+
+		so = ss.option(form.Value, 'path', _('Path'),
+			_('The path of the DNS server.'));
+		so.placeholder = '/dns-query';
+		so.depends('type', 'https');
+		so.depends('type', 'h3');
+		so.modalonly = true;
+
+		so = ss.option(form.DynamicList, 'headers', _('Headers'),
+			_('Additional headers to be sent to the DNS server.'));
+		so.depends('type', 'https');
+		so.depends('type', 'h3');
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'tls_sni', _('TLS SNI'),
+			_('Used to verify the hostname on the returned certificates.'));
+		so.depends('type', 'tls');
+		so.depends('type', 'https');
+		so.depends('type', 'h3');
+		so.depends('type', 'quic');
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'address_resolver', _('Address resolver'),
+			_('Tag of a another server to resolve the domain name in the address. Required if address contains domain.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('None'));
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res['.name'] !== section_id && res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.validate = function(section_id, value) {
+			if (section_id && value) {
+				let conflict = false;
+				uci.sections(data[0], 'dns_server', (res) => {
+					if (res['.name'] !== section_id)
+						if (res.address_resolver === section_id && res['.name'] == value)
+							conflict = true;
+				});
+				if (conflict)
+					return _('Recursive resolver detected!');
+			}
+
+			return true;
+		}
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'address_strategy', _('Address strategy'),
+			_('The domain strategy for resolving the domain name in the address.'));
+		for (let i in limcore.dns_strategy)
+			so.value(i, limcore.dns_strategy[i]);
+		so.depends({'address_resolver': '', '!reverse': true});
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'outbound', _('Outbound'),
+			_('Tag of an outbound for connecting to the dns server.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('direct-out', _('Direct'));
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.default = 'direct-out';
+		so.rmempty = false;
+		so.editable = true;
+		/* DNS servers end */
+
+		/* DNS rules start */
+		s.tab('dns_rule', _('DNS Rules'));
+		o = s.taboption('dns_rule', form.SectionValue, '_dns_rule', form.GridSection, 'dns_rule');
+		o.depends('routing_mode', 'custom');
+
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.rowcolors = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		ss.modaltitle = L.bind(limcore.loadModalTitle, this, _('DNS rule'), _('Add a DNS rule'), data[0]);
+		ss.sectiontitle = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		ss.renderSectionAdd = L.bind(limcore.renderSectionAdd, this, ss);
+
+		ss.tab('field_other', _('Other fields'));
+		ss.tab('field_host', _('Host/IP fields'));
+		ss.tab('field_port', _('Port fields'));
+		ss.tab('fields_process', _('Process fields'));
+
+		so = ss.taboption('field_other', form.Value, 'label', _('Label'));
+		so.load = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		so.validate = L.bind(limcore.validateUniqueValue, this, data[0], 'dns_rule', 'label');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'mode', _('Mode'),
+			_('The default rule uses the following matching logic:<br/>' +
+			'<code>(domain || domain_suffix || domain_keyword || domain_regex)</code> &&<br/>' +
+			'<code>(port || port_range)</code> &&<br/>' +
+			'<code>(source_ip_cidr || source_ip_is_private)</code> &&<br/>' +
+			'<code>(source_port || source_port_range)</code> &&<br/>' +
+			'<code>other fields</code>.<br/>' +
+			'Additionally, included rule sets can be considered merged rather than as a single rule sub-item.'));
+		so.value('default', _('Default'));
+		so.default = 'default';
+		so.rmempty = false;
+		so.readonly = true;
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'ip_version', _('IP version'));
+		so.value('4', _('IPv4'));
+		so.value('6', _('IPv6'));
+		so.value('', _('Both'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.DynamicList, 'query_type', _('Query type'),
+			_('Match query type.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'network', _('Network'));
+		so.value('tcp', _('TCP'));
+		so.value('udp', _('UDP'));
+		so.value('', _('Both'));
+
+		so = ss.taboption('field_other', form.MultiValue, 'protocol', _('Protocol'),
+			_('Sniffed protocol, see <a target="_blank" href="https://sing-box.sagernet.org/configuration/route/sniff/">Sniff</a> for details.'));
+		so.value('bittorrent', _('BitTorrent'));
+		so.value('dtls', _('DTLS'));
+		so.value('http', _('HTTP'));
+		so.value('quic', _('QUIC'));
+		so.value('rdp', _('RDP'));
+		so.value('ssh', _('SSH'));
+		so.value('stun', _('STUN'));
+		so.value('tls', _('TLS'));
+
+		so = ss.taboption('field_other', form.DynamicList, 'user', _('User'),
+			_('Match user name.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', limcore.CBIStaticList, 'rule_set', _('Rule set'),
+			_('Match rule set.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			uci.sections(data[0], 'ruleset', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'rule_set_ip_cidr_match_source', _('Rule set IP CIDR as source IP'),
+			_('Make IP CIDR in rule sets match the source IP.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'rule_set_ip_cidr_accept_empty', _('Accept empty query response'),
+			_('Make IP CIDR in rule-sets accept empty query response.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'invert', _('Invert'),
+			_('Invert match result.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'action', _('Action'));
+		so.value('route', _('Route'));
+		so.value('route-options', _('Route options'));
+		so.value('reject', _('Reject'));
+		so.value('predefined', _('Predefined'));
+		so.default = 'route';
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'server', _('Server'),
+			_('Tag of the target dns server.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('default-dns', _('Default DNS (issued by WAN)'));
+			this.value('system-dns', _('System DNS'));
+			const _rm = uci.get(data[0], 'config', 'routing_mode');
+			if (_rm === 'proxy_banned_ru') {
+				this.value('russia-dns', _('Russia DNS server'));
+				this.value('secure-dns', _('Secure DNS server'));
+			} else if (/^bypass_(cn|ir)$/.test(_rm)) {
+				this.value('region-dns', _('Region DNS'));
+				this.value('secure-dns', _('Secure DNS server'));
+			}
+			uci.sections(data[0], 'dns_server', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.rmempty = false;
+		so.editable = true;
+		so.depends('action', 'route');
+
+		so = ss.taboption('field_other', form.ListValue, 'domain_strategy', _('Domain strategy'),
+			_('Set domain strategy for this query.'));
+		for (let i in limcore.dns_strategy)
+			so.value(i, limcore.dns_strategy[i]);
+		so.depends('action', 'route');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'dns_disable_cache', _('Disable dns cache'),
+			_('Disable cache and save cache in this query.'));
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'rewrite_ttl', _('Rewrite TTL'),
+			_('Rewrite TTL in DNS responses.'));
+		so.datatype = 'uinteger';
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Value, 'client_subnet', _('EDNS Client subnet'),
+			_('Append a <code>edns0-subnet</code> OPT extra record with the specified IP prefix to every query by default.<br/>' +
+			'If value is an IP address instead of prefix, <code>/32</code> or <code>/128</code> will be appended automatically.'));
+		so.datatype = 'or(cidr, ipaddr)';
+		so.depends('action', 'route');
+		so.depends('action', 'route-options');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'reject_method', _('Method'));
+		so.value('default', _('Reply with REFUSED'));
+		so.value('drop', _('Drop requests'));
+		so.default = 'default';
+		so.depends('action', 'reject');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.Flag, 'reject_no_drop', _('Don\'t drop requests'),
+			_('<code>%s</code> will be temporarily overwritten to <code>%s</code> after 50 triggers in 30s if not enabled.').format(
+				_('Method'), _('Drop requests')));
+		so.depends('reject_method', 'default');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.ListValue, 'predefined_rcode', _('RCode'),
+			_('The response code.'));
+		so.value('NOERROR');
+		so.value('FORMERR');
+		so.value('SERVFAIL');
+		so.value('NXDOMAIN');
+		so.value('NOTIMP');
+		so.value('REFUSED');
+		so.default = 'NOERROR';
+		so.depends('action', 'predefined');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.DynamicList, 'predefined_answer', _('Answer'),
+			_('List of text DNS record to respond as answers.'));
+		so.depends('action', 'predefined');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.DynamicList, 'predefined_ns', _('NS'),
+			_('List of text DNS record to respond as name servers.'));
+		so.depends('action', 'predefined');
+		so.modalonly = true;
+
+		so = ss.taboption('field_other', form.DynamicList, 'predefined_extra', _('Extra records'),
+			_('List of text DNS record to respond as extra records.'));
+		so.depends('action', 'predefined');
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain', _('Domain name'),
+			_('Match full domain.'));
+		so.datatype = 'hostname';
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain_suffix', _('Domain suffix'),
+			_('Match domain suffix.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain_keyword', _('Domain keyword'),
+			_('Match domain using keyword.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'domain_regex', _('Domain regex'),
+			_('Match domain using regular expression.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'source_ip_cidr', _('Source IP CIDR'),
+			_('Match source IP CIDR.'));
+		so.datatype = 'or(cidr, ipaddr)';
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.Flag, 'source_ip_is_private', _('Match private source IP'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.DynamicList, 'ip_cidr', _('IP CIDR'),
+			_('Match IP CIDR with query response. Current rule will be skipped if not match.'));
+		so.datatype = 'or(cidr, ipaddr)';
+		so.modalonly = true;
+
+		so = ss.taboption('field_host', form.Flag, 'ip_is_private', _('Match private IP'),
+			_('Match private IP with query response.'));
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'source_port', _('Source port'),
+			_('Match source port.'));
+		so.datatype = 'port';
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'source_port_range', _('Source port range'),
+			_('Match source port range. Format as START:/:END/START:END.'));
+		so.validate = limcore.validatePortRange;
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'port', _('Port'),
+			_('Match port.'));
+		so.datatype = 'port';
+		so.modalonly = true;
+
+		so = ss.taboption('field_port', form.DynamicList, 'port_range', _('Port range'),
+			_('Match port range. Format as START:/:END/START:END.'));
+		so.validate = limcore.validatePortRange;
+		so.modalonly = true;
+
+		so = ss.taboption('fields_process', form.DynamicList, 'process_name', _('Process name'),
+			_('Match process name.'));
+		so.modalonly = true;
+
+		so = ss.taboption('fields_process', form.DynamicList, 'process_path', _('Process path'),
+			_('Match process path.'));
+		so.modalonly = true;
+
+		so = ss.taboption('fields_process', form.DynamicList, 'process_path_regex', _('Process path (regex)'),
+			_('Match process path using regular expression.'));
+		so.modalonly = true;
+		/* DNS rules end */
+		/* Custom routing settings end */
+
+		/* Rule set settings start */
+		s.tab('ruleset', _('Rule Set'));
+		o = s.taboption('ruleset', form.SectionValue, '_ruleset', form.GridSection, 'ruleset');
+		o.depends('routing_mode', 'custom');
+
+		ss = o.subsection;
+		ss.addremove = true;
+		ss.rowcolors = true;
+		ss.sortable = true;
+		ss.nodescriptions = true;
+		ss.modaltitle = L.bind(limcore.loadModalTitle, this, _('Rule set'), _('Add a rule set'), data[0]);
+		ss.sectiontitle = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		ss.renderSectionAdd = L.bind(limcore.renderSectionAdd, this, ss);
+
+		so = ss.option(form.Value, 'label', _('Label'));
+		so.load = L.bind(limcore.loadDefaultLabel, this, data[0]);
+		so.validate = L.bind(limcore.validateUniqueValue, this, data[0], 'ruleset', 'label');
+		so.modalonly = true;
+
+		so = ss.option(form.Flag, 'enabled', _('Enable'));
+		so.default = so.enabled;
+		so.rmempty = false;
+		so.editable = true;
+
+		so = ss.option(form.ListValue, 'type', _('Type'));
+		so.value('local', _('Local'));
+		so.value('remote', _('Remote'));
+		so.default = 'remote';
+		so.rmempty = false;
+
+		so = ss.option(form.ListValue, 'format', _('Format'));
+		so.value('binary', _('Binary file'));
+		so.value('source', _('Source file'));
+		so.default = 'binary';
+		so.rmempty = false;
+
+		so = ss.option(form.Value, 'path', _('Path'));
+		so.datatype = 'file';
+		so.placeholder = '/etc/limcore/ruleset/example.json';
+		so.rmempty = false;
+		so.depends('type', 'local');
+		so.modalonly = true;
+
+		so = ss.option(form.Value, 'url', _('Rule set URL'));
+		so.validate = function(section_id, value) {
+			if (section_id) {
+				if (!value)
+					return _('Expecting: %s').format(_('non-empty value'));
+
+				try {
+					let url = new URL(value);
+					if (!url.hostname)
+						return _('Expecting: %s').format(_('valid URL'));
+				}
+				catch(e) {
+					return _('Expecting: %s').format(_('valid URL'));
+				}
+			}
+
+			return true;
+		}
+		so.rmempty = false;
+		so.depends('type', 'remote');
+		so.modalonly = true;
+
+		so = ss.option(form.ListValue, 'outbound', _('Outbound'),
+			_('Tag of the outbound to download rule set.'));
+		so.load = function(section_id) {
+			delete this.keylist;
+			delete this.vallist;
+
+			this.value('', _('Default'));
+			this.value('direct-out', _('Direct'));
+			uci.sections(data[0], 'routing_node', (res) => {
+				if (res.enabled === '1')
+					this.value(res['.name'], res.label);
+			});
+
+			return this.super('load', section_id);
+		}
+		so.depends('type', 'remote');
+
+		so = ss.option(form.Value, 'update_interval', _('Update interval'),
+			_('Update interval of rule set.'));
+		so.placeholder = '1d';
+		so.depends('type', 'remote');
+		/* Rule set settings end */
+
+		/* ACL settings start */
+		s.tab('access', _('Access Control'));
+
+		o = s.taboption('access', form.SectionValue, '_control', form.NamedSection, 'control', 'limcore');
+		ss = o.subsection;
+
+		/* LAN IP policy start */
+		ss.tab('lan_ip_policy', _('LAN IP Policy'));
+
+		so = ss.taboption('lan_ip_policy', form.ListValue, 'lan_proxy_mode', _('Proxy mode for devices'));
+		so.value('disabled', _('Disable'));
+		so.value('listed_only', _('Proxy listed only'));
+		so.value('except_listed', _('Proxy all except listed'));
+		so.default = 'disabled';
+		so.rmempty = false;
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_direct_ipv4_ips', _('Direct IPv4 IP-s'), null, 'ipv4', hosts, true);
+		so.depends('lan_proxy_mode', 'except_listed');
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_direct_ipv6_ips', _('Direct IPv6 IP-s'), null, 'ipv6', hosts, true);
+		so.depends({'lan_proxy_mode': 'except_listed', 'limcore.config.ipv6_support': '1'});
+
+		so = fwtool.addMACOption(ss, 'lan_ip_policy', 'lan_direct_mac_addrs', _('Direct MAC-s'), null, hosts);
+		so.depends('lan_proxy_mode', 'except_listed');
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_proxy_ipv4_ips', _('Proxy IPv4 IP-s'), null, 'ipv4', hosts, true);
+		so.depends('lan_proxy_mode', 'listed_only');
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_proxy_ipv6_ips', _('Proxy IPv6 IP-s'), null, 'ipv6', hosts, true);
+		so.depends({'lan_proxy_mode': 'listed_only', 'limcore.config.ipv6_support': '1'});
+
+		so = fwtool.addMACOption(ss, 'lan_ip_policy', 'lan_proxy_mac_addrs', _('Proxy MAC-s'), null, hosts);
+		so.depends('lan_proxy_mode', 'listed_only');
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_gaming_mode_ipv4_ips', _('Gaming mode IPv4 IP-s'), _('In gaming mode, only TCP traffic from the selected device is proxied.'), 'ipv4', hosts, true);
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_gaming_mode_ipv6_ips', _('Gaming mode IPv6 IP-s'), null, 'ipv6', hosts, true);
+		so.depends('limcore.config.ipv6_support', '1');
+
+		so = fwtool.addMACOption(ss, 'lan_ip_policy', 'lan_gaming_mode_mac_addrs', _('Gaming mode MAC-s'), null, hosts);
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_global_proxy_ipv4_ips', _('Global proxy IPv4 IP-s'), _('In global proxy mode, all traffic from the selected device goes through the proxy.'), 'ipv4', hosts, true);
+		so.depends({'limcore.config.routing_mode': 'custom', '!reverse': true});
+
+		so = fwtool.addIPOption(ss, 'lan_ip_policy', 'lan_global_proxy_ipv6_ips', _('Global proxy IPv6 IP-s'), null, 'ipv6', hosts, true);
+		so.depends({'limcore.config.routing_mode': /^((?!custom).)+$/, 'limcore.config.ipv6_support': '1'});
+
+		so = fwtool.addMACOption(ss, 'lan_ip_policy', 'lan_global_proxy_mac_addrs', _('Global proxy MAC-s'), null, hosts);
+		so.depends({'limcore.config.routing_mode': 'custom', '!reverse': true});
+		/* LAN IP policy end */
+
+		/* Interface control start */
+		ss.tab('interface', _('Interface Control'));
+
+		so = ss.taboption('interface', widgets.DeviceSelect, 'listen_interfaces', _('Listen interfaces'),
+			_('Only process traffic from specific interfaces. Leave empty for all.'));
+		so.multiple = true;
+		so.noaliases = true;
+
+		so = ss.taboption('interface', widgets.DeviceSelect, 'bind_interface', _('Bind interface'),
+			_('Bind outbound traffic to specific interface. Leave empty to auto detect.'));
+		so.multiple = false;
+		so.noaliases = true;
+		/* Interface control end */
+
+		/* The same UCI section again, for the lists that decide where traffic goes rather
+		 * than whose traffic is handled: those belong with routing. (Its tab is declared
+		 * next to Proxy Rules, which is where it sits in the tab bar.) */
+		o = s.taboption('lists', form.SectionValue, '_control_lists', form.NamedSection, 'control', 'limcore');
+		ss = o.subsection;
+
+		/* WAN IP policy start */
+		ss.tab('wan_ip_policy', _('WAN IP Policy'));
+
+		so = ss.taboption('wan_ip_policy', form.DynamicList, 'wan_proxy_ipv4_ips', _('Proxy IPv4 IP-s'));
+		so.datatype = 'or(ip4addr, cidr4)';
+
+		so = ss.taboption('wan_ip_policy', form.DynamicList, 'wan_proxy_ipv6_ips', _('Proxy IPv6 IP-s'));
+		so.datatype = 'or(ip6addr, cidr6)';
+		so.depends('limcore.config.ipv6_support', '1');
+
+		so = ss.taboption('wan_ip_policy', form.DynamicList, 'wan_direct_ipv4_ips', _('Direct IPv4 IP-s'));
+		so.datatype = 'or(ip4addr, cidr4)';
+
+		so = ss.taboption('wan_ip_policy', form.DynamicList, 'wan_direct_ipv6_ips', _('Direct IPv6 IP-s'));
+		so.datatype = 'or(ip6addr, cidr6)';
+		so.depends('limcore.config.ipv6_support', '1');
+		/* WAN IP policy end */
+
+		/* Proxy domain list start */
+		ss.tab('proxy_domain_list', _('Proxy Domain List'));
+
+		so = ss.taboption('proxy_domain_list', form.TextValue, '_proxy_domain_list');
+		so.rows = 10;
+		so.monospace = true;
+		so.datatype = 'hostname';
+		so.depends({'limcore.config.routing_mode': 'custom', '!reverse': true});
+		so.load = function(/* ... */) {
+			return L.resolveDefault(callReadDomainList('proxy_list'), {}).then((res) => {
+				return res.content ?? null;
+			});
+		}
+		so.write = function(_section_id, value) {
+			return callWriteDomainList('proxy_list', value);
+		}
+		so.remove = function(/* ... */) {
+			let routing_mode = this.section.formvalue('config', 'routing_mode');
+			if (routing_mode !== 'custom')
+				return callWriteDomainList('proxy_list', '');
+			return true;
+		}
+		so.validate = function(section_id, value) {
+			if (section_id && value)
+				for (let i of value.split('\n'))
+					if (i && !stubValidator.apply('hostname', i))
+						return _('Expecting: %s').format(_('valid hostname'));
+
+			return true;
+		}
+		/* Proxy domain list end */
+
+		/* Direct domain list start */
+		ss.tab('direct_domain_list', _('Direct Domain List'));
+
+		so = ss.taboption('direct_domain_list', form.TextValue, '_direct_domain_list');
+		so.rows = 10;
+		so.monospace = true;
+		so.datatype = 'hostname';
+		so.depends({'limcore.config.routing_mode': 'custom', '!reverse': true});
+		so.load = function(/* ... */) {
+			return L.resolveDefault(callReadDomainList('direct_list'), {}).then((res) => {
+				return res.content ?? null;
+			});
+		}
+		so.write = function(_section_id, value) {
+			return callWriteDomainList('direct_list', value);
+		}
+		so.remove = function(/* ... */) {
+			let routing_mode = this.section.formvalue('config', 'routing_mode');
+			if (routing_mode !== 'custom')
+				return callWriteDomainList('direct_list', '');
+			return true;
+		}
+		so.validate = function(section_id, value) {
+			if (section_id && value)
+				for (let i of value.split('\n'))
+					if (i && !stubValidator.apply('hostname', i))
+						return _('Expecting: %s').format(_('valid hostname'));
+
+			return true;
+		}
+		/* Direct domain list end */
+
+		/* ACL settings end */
+
+		return limcore.renderPage(m, s, PAGES[this.page].tabs);
+	}
+});
+
+return baseclass.extend({
+	page(page) {
+		return SettingsView.extend({ page: page });
+	}
+});
