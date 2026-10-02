@@ -4592,6 +4592,10 @@ msgstr "Epic Games (лаунчер, магазин, EOS)"
 msgid "AnyDesk (relay network)"
 msgstr "AnyDesk (сеть ретрансляторов)"
 
+#: htdocs/luci-static/resources/limcore/settings.js:815
+msgid "GitHub (site, git, releases)"
+msgstr "GitHub (сайт, git, релизы)"
+
 #: htdocs/luci-static/resources/view/limcore/client.js:878
 msgid "Pick a service for this rule, or delete the rule"
 msgstr "Выберите сервис для этого правила или удалите правило"

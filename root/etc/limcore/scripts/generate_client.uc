@@ -2041,6 +2041,8 @@ if (!isEmpty(main_node)) {
 				? ['lc-ru-spotify', 'lc-ru-spotify-ip']
 				: (cfg.source === 'ai')
 				? ['lc-ru-ai', 'lc-ru-ai-ip']
+				: (cfg.source === 'github')
+				? ['lc-ru-github', 'lc-ru-github-ip']
 				: ['lc-ru-' + cfg.source];
 			push(config.route.rules, {
 				rule_set: rule_sets,
@@ -2143,6 +2145,29 @@ if (!isEmpty(main_node)) {
 						tag: 'lc-ru-anydesk',
 						format: 'binary',
 						url: 'https://github.com/l-limon-l/routing/releases/latest/download/anydesk.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
+			} else if (cfg.source === 'github') {
+				/* GitHub is not on the RKN list but DPI throttles it, and Re-filter carries only
+				 * api.github.com and Copilot — github.com, raw and release downloads stay direct.
+				 * Unlike Epic and AnyDesk, GitHub owns its space (AS36459), so the IP half is
+				 * safe to pin whole; it is what catches git over SSH, which has no SNI. */
+				if (!has_ruleset('lc-ru-github'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'lc-ru-github',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/github.srs',
+						download_detour: ruleset_detour,
+						update_interval: '1d'
+					});
+				if (!has_ruleset('lc-ru-github-ip'))
+					push(config.route.rule_set, {
+						type: 'remote',
+						tag: 'lc-ru-github-ip',
+						format: 'binary',
+						url: 'https://github.com/l-limon-l/routing/releases/latest/download/github_ip.srs',
 						download_detour: ruleset_detour,
 						update_interval: '1d'
 					});

@@ -812,6 +812,7 @@ const SettingsView = view.extend({
 		so.value('digitalocean', _('DigitalOcean cloud hosting'));
 		so.value('epicgames', _('Epic Games (launcher, store, EOS)'));
 		so.value('anydesk', _('AnyDesk (relay network)'));
+		so.value('github', _('GitHub (site, git, releases)'));
 		so.rmempty = false;
 		so.editable = true;
 		so.validate = function(section_id, value) {
