@@ -1,0 +1,78 @@
+{
+  "version": "2.1.0",
+  "date": "2026-10-09",
+  "notes": {
+    "ru": "- Обновления скачиваются из файлов репозитория LimCoreWRT, а не из GitHub Releases.\n- Пакеты проверяются по размеру и SHA-256 перед установкой.\n- Сохранение настроек, обновление и добавление подписок больше не перезапускают firewall и DNS: ядро перечитывает конфиг без остановки.\n- Если в подписке ничего не изменилось, соединение не прерывается.\n- При переподключении WAN перезапускается только ядро.",
+    "en": "- Updates are downloaded from the LimCoreWRT repository files instead of GitHub Releases.\n- Packages are checked by size and SHA-256 before installing.\n- Saving settings, updating and adding subscriptions no longer restart the firewall and DNS: the core rereads its config without stopping.\n- A subscription that has not changed no longer interrupts the connection.\n- A WAN reconnect restarts only the core."
+  },
+  "packages": {
+    "apk": {
+      "file": "packages/luci-app-limcore_all.apk",
+      "size": 326149,
+      "sha256": "581854b233a20ca80861796fb852dd60d22eae999df67bb87a222c494662e0d2"
+    },
+    "ipk": {
+      "file": "packages/luci-app-limcore_all.ipk",
+      "size": 326206,
+      "sha256": "9c960ab742efe4443abe440776746b2f7e79856c143a6c1c48fcef0232a8dd26"
+    },
+    "ipk_legacy": {
+      "file": "packages/luci-app-limcore_all-legacy.ipk",
+      "size": 326278,
+      "sha256": "a92e1282fa9fd430ba516b43e6dc40d9ff734c83f6f79e8cd0f6861a3c0c3f14"
+    }
+  },
+  "i18n": {
+    "ru": {
+      "apk": {
+        "file": "packages/luci-i18n-limcore-ru_all.apk",
+        "size": 33281,
+        "sha256": "40a3c2cd471da7ca87ad556af9102845964234d3c24f7a4673cb40d3346755aa"
+      },
+      "ipk": {
+        "file": "packages/luci-i18n-limcore-ru_all.ipk",
+        "size": 34349,
+        "sha256": "5157cccf7388dbe00c25184f64f302a48b9332f8b1eacd4977f3f8ebc3c480b5"
+      },
+      "ipk_legacy": {
+        "file": "packages/luci-i18n-limcore-ru_all-legacy.ipk",
+        "size": 34349,
+        "sha256": "5157cccf7388dbe00c25184f64f302a48b9332f8b1eacd4977f3f8ebc3c480b5"
+      }
+    },
+    "zh_cn": {
+      "apk": {
+        "file": "packages/luci-i18n-limcore-zh-cn_all.apk",
+        "size": 15724,
+        "sha256": "04ae346333785631b2e0b0f7a8eace24f6c585e17d9a01f78521834307c4f0fd"
+      },
+      "ipk": {
+        "file": "packages/luci-i18n-limcore-zh-cn_all.ipk",
+        "size": 15723,
+        "sha256": "3c0b42e395d691ceed5076f50976add90918d139e805d74d6710646f16d826ec"
+      },
+      "ipk_legacy": {
+        "file": "packages/luci-i18n-limcore-zh-cn_all-legacy.ipk",
+        "size": 15723,
+        "sha256": "3c0b42e395d691ceed5076f50976add90918d139e805d74d6710646f16d826ec"
+      }
+    },
+    "fa": {
+      "apk": {
+        "file": "packages/luci-i18n-limcore-fa_all.apk",
+        "size": 17031,
+        "sha256": "71707d39055e2780e70a8805ce904a1fe61ffe557ebc911845cdd458ea40fb9b"
+      },
+      "ipk": {
+        "file": "packages/luci-i18n-limcore-fa_all.ipk",
+        "size": 17348,
+        "sha256": "7a2a8ccd67c0f1a0062a16e9295d623947be67888693ec056535a08332a8ec79"
+      },
+      "ipk_legacy": {
+        "file": "packages/luci-i18n-limcore-fa_all-legacy.ipk",
+        "size": 17348,
+        "sha256": "7a2a8ccd67c0f1a0062a16e9295d623947be67888693ec056535a08332a8ec79"
+      }
+    }
+  }
+}
