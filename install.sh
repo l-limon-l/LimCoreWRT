@@ -256,7 +256,8 @@ if [ "$DLSIZE" -gt 0 ]; then
 else
 	warn "  размер пакета неизвестен — скачиваю без сверки длины."
 fi
-DLRES=$(ucode "$CM" download_pkg "$DLURL" "$TMP" "$DLSIZE")
+DLSHA=$(jget "$PREP" sha256)
+DLRES=$(ucode "$CM" download_pkg "$DLURL" "$TMP" "$DLSIZE" "$DLSHA")
 if ! jtrue "$DLRES"; then
 	core_fail "не удалось скачать ядро: $(jget "$DLRES" error)" || CORE_OK=0
 fi
