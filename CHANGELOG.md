@@ -1,5 +1,12 @@
 # Изменения
 
+## 2.3.0 — 2026-10-10
+
+- Ядро sing-box-extended ставится из сборки LimCore с поддержкой AmneziaWG 3.1.
+- Добавлены параметры AmneziaWG RandomTrailers и DisableCookies.
+- Исправлено подключение к серверам AmneziaWG 3.1 с включённым RandomTrailers.
+- PersistentKeepalive переносится при импорте .conf, диапазон заменяется первым числом.
+
 ## 2.2.1 — 2026-10-10
 
 - Добавлено правило AWS: игровые серверы на Amazon (EC2, GameLift) через VPN.

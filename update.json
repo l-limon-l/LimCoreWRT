@@ -1,77 +1,77 @@
 {
-  "version": "2.2.1",
+  "version": "2.3.0",
   "date": "2026-10-10",
   "notes": {
-    "ru": "- Добавлено правило AWS: игровые серверы на Amazon (EC2, GameLift) через VPN.\n- Comss.one подключается по DoH и сам следует за сменой серверов.\n- Удалён Xbox DNS, заблокированный Роскомнадзором. Выбранный Xbox DNS заменяется на Comss.one.",
-    "en": "- Added an AWS rule: game servers on Amazon (EC2, GameLift) through the VPN.\n- Comss.one is used over DoH and follows its server changes by itself.\n- Removed Xbox DNS, blocked by Roskomnadzor. Where it was selected, Comss.one takes its place."
+    "ru": "- Ядро sing-box-extended ставится из сборки LimCore с поддержкой AmneziaWG 3.1.\n- Добавлены параметры AmneziaWG RandomTrailers и DisableCookies.\n- Исправлено подключение к серверам AmneziaWG 3.1 с включённым RandomTrailers.\n- PersistentKeepalive переносится при импорте .conf, диапазон заменяется первым числом.",
+    "en": "- The sing-box-extended core is installed from LimCore's build with AmneziaWG 3.1 support.\n- Added the AmneziaWG options RandomTrailers and DisableCookies.\n- Fixed connecting to AmneziaWG 3.1 servers with RandomTrailers on.\n- PersistentKeepalive is carried over when importing a .conf, a range is replaced by its first number."
   },
   "packages": {
     "apk": {
       "file": "packages/luci-app-limcore_all.apk",
-      "size": 331718,
-      "sha256": "2af5174edd3b9224d44689d1c6c082af8c17d0eabb486911e006ba9bbfd57a25"
+      "size": 332994,
+      "sha256": "366b75e8c64cb1e3dcf2f3883b02280e214da688f51ecccbc0a74fae7e2f65f1"
     },
     "ipk": {
       "file": "packages/luci-app-limcore_all.ipk",
-      "size": 331701,
-      "sha256": "63c0b8e2bebcf9cb37e90a57179825440fd285a02d2ecf9e213aa63884df06d2"
+      "size": 333302,
+      "sha256": "0c5e9904eabad93037e6c0e3483815157ab4a84c2ae459a220d73888d853d84c"
     },
     "ipk_legacy": {
       "file": "packages/luci-app-limcore_all-legacy.ipk",
-      "size": 331775,
-      "sha256": "0d98c2ec5efed16cff56ac1019b62c15beb0ba5f4aa3a117620cd7f4555392c2"
+      "size": 333381,
+      "sha256": "7fd738b87593ec008e1b85997e44aa5ca3daf649f201279956aecbc8f211c7ed"
     }
   },
   "i18n": {
     "ru": {
       "apk": {
         "file": "packages/luci-i18n-limcore-ru_all.apk",
-        "size": 34026,
-        "sha256": "6252e422d4c89a84846368c3d0eed69bfe20c69399becb1cba2489153c6f92ab"
+        "size": 34250,
+        "sha256": "cfa616c023c40e8acf63f2b08bc88f6248b9460bd269bae8807edb6bb0d7bf30"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-ru_all.ipk",
-        "size": 35122,
-        "sha256": "4a9facd736c6a4825670765bdc02c8cb2891c70ff815c9b718ad92892f38c1e1"
+        "size": 35361,
+        "sha256": "f6503e370ffb3e7b0d8ed3d99eb93b3acd684e6954d0bfc8c6a03dbfd1ca3a13"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-ru_all-legacy.ipk",
-        "size": 35118,
-        "sha256": "3219f016c1a5cdf2830a0c31375d6720de277dd0ab6ee1e3ecdf248565d4208f"
+        "size": 35361,
+        "sha256": "f6503e370ffb3e7b0d8ed3d99eb93b3acd684e6954d0bfc8c6a03dbfd1ca3a13"
       }
     },
     "zh_cn": {
       "apk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.apk",
-        "size": 15720,
-        "sha256": "2d271d95de8897bad5779b619593d26275324d0cb113b6c94388b38d8a72fccf"
+        "size": 15721,
+        "sha256": "a82406b1e5b9409acf162b0bb30c7bd361d847b77558e35e1a90fb8f60f0f2e7"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.ipk",
-        "size": 15721,
-        "sha256": "21f2ce0a717911e1cc96c618074a1329df76661402b34e2d89171e4aecdf74d9"
+        "size": 15723,
+        "sha256": "e700d0aae9b870b8032049f45876d285e68f7170e272ffb4dcd834c935ff4cbe"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-zh-cn_all-legacy.ipk",
-        "size": 15727,
-        "sha256": "3694c3bc1c64eedea0450f49d3bebed70a5c8307eba26684e221189a9f5f9950"
+        "size": 15723,
+        "sha256": "e700d0aae9b870b8032049f45876d285e68f7170e272ffb4dcd834c935ff4cbe"
       }
     },
     "fa": {
       "apk": {
         "file": "packages/luci-i18n-limcore-fa_all.apk",
-        "size": 17033,
-        "sha256": "c1c8ed37e33a1e8a3ab7a50c72e0506168e79702eb391ede7255599b8fc0b7fc"
+        "size": 17030,
+        "sha256": "b01be101543a34af812ca1f161ec281101e05599cbcac98fa6e1e068adcaa283"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-fa_all.ipk",
-        "size": 17348,
-        "sha256": "120e44dfdecc7528a006eb274faa5529bb6463aa6d82844a761ec8b01b3e11ed"
+        "size": 17342,
+        "sha256": "9b3f75c5d499935a9394b907c58a422653e7e1e6a3ccfe9b15b2c744dbee8e2e"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-fa_all-legacy.ipk",
-        "size": 17352,
-        "sha256": "61c52967e4c48cb423531e3053d92faba681f1e24ae652bb811b03c61513a5f8"
+        "size": 17342,
+        "sha256": "9b3f75c5d499935a9394b907c58a422653e7e1e6a3ccfe9b15b2c744dbee8e2e"
       }
     }
   }
