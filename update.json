@@ -1,77 +1,77 @@
 {
-  "version": "2.1.0",
-  "date": "2026-10-09",
+  "version": "2.2.0",
+  "date": "2026-10-10",
   "notes": {
-    "ru": "- Обновления скачиваются из файлов репозитория LimCoreWRT, а не из GitHub Releases.\n- Пакеты проверяются по размеру и SHA-256 перед установкой.\n- Сохранение настроек, обновление и добавление подписок больше не перезапускают firewall и DNS: ядро перечитывает конфиг без остановки.\n- Если в подписке ничего не изменилось, соединение не прерывается.\n- При переподключении WAN перезапускается только ядро.",
-    "en": "- Updates are downloaded from the LimCoreWRT repository files instead of GitHub Releases.\n- Packages are checked by size and SHA-256 before installing.\n- Saving settings, updating and adding subscriptions no longer restart the firewall and DNS: the core rereads its config without stopping.\n- A subscription that has not changed no longer interrupts the connection.\n- A WAN reconnect restarts only the core."
+    "ru": "- Добавлены папки для своих узлов: импорт ссылок и .conf сразу в папку, перенос узла в окне «Изменить».\n- Вкладки групп на обзоре можно перетаскивать, порядок сохраняется.\n- Вкладка с активным узлом отмечена точкой, вкладки стали заметнее.\n- На плитке узла добавлена проверка задержки одного узла.\n- В режиме «Россия» без правил прокси сразу добавляется «Russia Inside», на обзоре показывается предупреждение.\n- Добавлены параметры AmneziaWG 3.x.\n- Исправлен запуск ядра с узлом AmneziaWG, у которого заданы J1–J3 или ITime.",
+    "en": "- Added folders for own nodes: links and .conf files import straight into a folder, a node moves in its edit dialog.\n- Group tabs on the overview can be dragged into any order, the order is kept.\n- The tab with the active node is marked with a dot, tabs are easier to see.\n- Added a delay check for a single node on its tile.\n- Russia mode without proxy rules now starts with Russia Inside, and the overview warns when there are none.\n- Added AmneziaWG 3.x options.\n- Fixed the core failing to start with an AmneziaWG node that has J1–J3 or ITime set."
   },
   "packages": {
     "apk": {
       "file": "packages/luci-app-limcore_all.apk",
-      "size": 326149,
-      "sha256": "581854b233a20ca80861796fb852dd60d22eae999df67bb87a222c494662e0d2"
+      "size": 331335,
+      "sha256": "e3d40a0c5605219b71c16afa4d78e47bf9505a514ed9ef0ee5a40c23a59fea54"
     },
     "ipk": {
       "file": "packages/luci-app-limcore_all.ipk",
-      "size": 326206,
-      "sha256": "9c960ab742efe4443abe440776746b2f7e79856c143a6c1c48fcef0232a8dd26"
+      "size": 331384,
+      "sha256": "aa59bd7885b0c3041d56f219679a3810b6f59e281215b10c9cd454fecf7311e5"
     },
     "ipk_legacy": {
       "file": "packages/luci-app-limcore_all-legacy.ipk",
-      "size": 326278,
-      "sha256": "a92e1282fa9fd430ba516b43e6dc40d9ff734c83f6f79e8cd0f6861a3c0c3f14"
+      "size": 331457,
+      "sha256": "17ca2bb7dfdf8d044e74cf4e2a0b3cb4e027abe2d476334af3e8305226a45c91"
     }
   },
   "i18n": {
     "ru": {
       "apk": {
         "file": "packages/luci-i18n-limcore-ru_all.apk",
-        "size": 33281,
-        "sha256": "40a3c2cd471da7ca87ad556af9102845964234d3c24f7a4673cb40d3346755aa"
+        "size": 34012,
+        "sha256": "60d013b094a2f2aee9a211b1f1be2bbf31107e288bf64652971471a6a4f1aa3c"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-ru_all.ipk",
-        "size": 34349,
-        "sha256": "5157cccf7388dbe00c25184f64f302a48b9332f8b1eacd4977f3f8ebc3c480b5"
+        "size": 35125,
+        "sha256": "354370ae4144d2e981e098395257c5aff22c4682226f1761553188f3f1361dc2"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-ru_all-legacy.ipk",
-        "size": 34349,
-        "sha256": "5157cccf7388dbe00c25184f64f302a48b9332f8b1eacd4977f3f8ebc3c480b5"
+        "size": 35125,
+        "sha256": "354370ae4144d2e981e098395257c5aff22c4682226f1761553188f3f1361dc2"
       }
     },
     "zh_cn": {
       "apk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.apk",
-        "size": 15724,
-        "sha256": "04ae346333785631b2e0b0f7a8eace24f6c585e17d9a01f78521834307c4f0fd"
+        "size": 15722,
+        "sha256": "27343aa0bd7409f52ef701b4b7b23d736dd3e47a2e8d2a7e815fc02a753003ee"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.ipk",
-        "size": 15723,
-        "sha256": "3c0b42e395d691ceed5076f50976add90918d139e805d74d6710646f16d826ec"
+        "size": 15726,
+        "sha256": "51123094e0ff4d61b08820f7f12772a736cd9c4810f2070a1da64c8901c45051"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-zh-cn_all-legacy.ipk",
-        "size": 15723,
-        "sha256": "3c0b42e395d691ceed5076f50976add90918d139e805d74d6710646f16d826ec"
+        "size": 15726,
+        "sha256": "51123094e0ff4d61b08820f7f12772a736cd9c4810f2070a1da64c8901c45051"
       }
     },
     "fa": {
       "apk": {
         "file": "packages/luci-i18n-limcore-fa_all.apk",
-        "size": 17031,
-        "sha256": "71707d39055e2780e70a8805ce904a1fe61ffe557ebc911845cdd458ea40fb9b"
+        "size": 17032,
+        "sha256": "179824c1fb99f887771831eba6e68f2ee6ea2a2c8b7595a25ab9a9bfd7e69b51"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-fa_all.ipk",
-        "size": 17348,
-        "sha256": "7a2a8ccd67c0f1a0062a16e9295d623947be67888693ec056535a08332a8ec79"
+        "size": 17359,
+        "sha256": "4187dced0d69732c4cb8fb3de4114cd60901c07bbe7464f2a8f24b6ac370067d"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-fa_all-legacy.ipk",
-        "size": 17348,
-        "sha256": "7a2a8ccd67c0f1a0062a16e9295d623947be67888693ec056535a08332a8ec79"
+        "size": 17359,
+        "sha256": "4187dced0d69732c4cb8fb3de4114cd60901c07bbe7464f2a8f24b6ac370067d"
       }
     }
   }
