@@ -1,0 +1,391 @@
+{
+  "version": "1.14.1-extended-2.7.2-lc1",
+  "date": "2026-10-10",
+  "tag": "core-1.14.1-extended-2.7.2-lc1",
+  "files": {
+    "aarch64_cortex-a53": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_cortex-a53.apk",
+        "size": 30010526,
+        "sha256": "3c37940a910bd66d97fc43a75368e570d9fd8be5e0cc68bd1e77364d03a39f99"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_cortex-a53.ipk",
+        "size": 29949397,
+        "sha256": "2a02a5aa74ad6e238cbc136b3a996501953b9bdbf2e2591c60e9c42900e62fba"
+      }
+    },
+    "aarch64_cortex-a72": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_cortex-a72.apk",
+        "size": 30010520,
+        "sha256": "281cb4923ac4ba22e6316673a9bb2ad14dd84221e21276f810a8dc1f9159bfdd"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_cortex-a72.ipk",
+        "size": 29949396,
+        "sha256": "dcaab7f379521baee3b713dc791e796dd67aec484aa77a4bb8efad3d7a930e43"
+      }
+    },
+    "aarch64_cortex-a76": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_cortex-a76.apk",
+        "size": 30010522,
+        "sha256": "e92b2cf1cc752508e420f80c0cd6abbe2eb3d2e3deeca5a9e4a61e5df8ca7153"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_cortex-a76.ipk",
+        "size": 29949396,
+        "sha256": "0171048fe82fda0b20ffd3e21d3294eeeadc9549371e85c46d0864fd7fba459b"
+      }
+    },
+    "aarch64_generic": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_generic.apk",
+        "size": 30010522,
+        "sha256": "47df5ae458ddcda724800e91a28a15777c8ea73a49a11b16564e8dc44fca5745"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_aarch64_generic.ipk",
+        "size": 29949395,
+        "sha256": "a7a705ab817bcb5d006dc3c4f152e3c4a5c7bce8ca5f0a626303d1353bfe121b"
+      }
+    },
+    "arm_arm1176jzf-s_vfp": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_arm1176jzf-s_vfp.apk",
+        "size": 30637881,
+        "sha256": "1cc57a4ffe9204ca4a5b82b56a1b954ebb7e027f5a2aa9ae4201bd1f21dfd425"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_arm1176jzf-s_vfp.ipk",
+        "size": 30658913,
+        "sha256": "785efcd8b15f8261734d55936cb74c2de1b2ef05552b6d8a672b24b2b1f4272a"
+      }
+    },
+    "arm_arm926ej-s": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_arm926ej-s.apk",
+        "size": 30646917,
+        "sha256": "06bcb540caf05e5e6800f7b1d86f725759b4d6c27b4e8dff9a60d46833a821d5"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_arm926ej-s.ipk",
+        "size": 30665863,
+        "sha256": "539abd7c6a8ee86a5f2b4b50525e114ecd7ba2a34379589bf9bb5a381be9b8bd"
+      }
+    },
+    "arm_cortex-a15_neon-vfpv4": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a15_neon-vfpv4.apk",
+        "size": 30608045,
+        "sha256": "828e136d8191f62afae6bc33d0f02d88c4a0db1debaa8015b09329d5868fb270"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a15_neon-vfpv4.ipk",
+        "size": 30624738,
+        "sha256": "6975588c2230afac127323acc014cadc64cb6f6acd6088c4968c17afaf397f0c"
+      }
+    },
+    "arm_cortex-a5_vfpv4": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a5_vfpv4.apk",
+        "size": 30608029,
+        "sha256": "db903a32c45c5a9bce48530ea784c1e10c45fc565f3c42484e5f6432dd221abf"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a5_vfpv4.ipk",
+        "size": 30624729,
+        "sha256": "21e8334fa9c41bfef3a204763a8e18211bf7caa003c87c1072b2c25245314f5a"
+      }
+    },
+    "arm_cortex-a7": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a7.apk",
+        "size": 30646913,
+        "sha256": "b0930cae8990d7873282e560424ed0a2b13618d9d50d89742ea70cbef4acd7a3"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a7.ipk",
+        "size": 30665849,
+        "sha256": "33467698389960c2fb84ab7e8092f908146b3944849374e7524e1e1d2644aa9e"
+      }
+    },
+    "arm_cortex-a7_neon-vfpv4": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a7_neon-vfpv4.apk",
+        "size": 30608052,
+        "sha256": "964d9fef3dcc89b8e112217b3e3e9507ca09cde2367a7bbdfb2964d68f6c7b0c"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a7_neon-vfpv4.ipk",
+        "size": 30624734,
+        "sha256": "c26960d4f18ef6776bbde1098c2b8b5ff3dbf4b9622d6390abcb236d20074cd5"
+      }
+    },
+    "arm_cortex-a7_vfpv4": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a7_vfpv4.apk",
+        "size": 30608031,
+        "sha256": "4ea6cdb16f36e536f22ee7ddafcf9cc5206c1a3e4d32f907d581f64facbce95b"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a7_vfpv4.ipk",
+        "size": 30624719,
+        "sha256": "4a7bb99d4ff77ff5234236350f6222ae92696931d6ff86037034a7d465d8f61f"
+      }
+    },
+    "arm_cortex-a8_vfpv3": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a8_vfpv3.apk",
+        "size": 30608030,
+        "sha256": "c9fbfdd221ed040e094a0862734e0fb06e5a7ee5efd413b94bf197ccbdd32742"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a8_vfpv3.ipk",
+        "size": 30624730,
+        "sha256": "33178e1178a3ffe4483ac0bcb62af196cfc2f6ae92e13d6dd53fc2d4c87797de"
+      }
+    },
+    "arm_cortex-a9": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a9.apk",
+        "size": 30646914,
+        "sha256": "8a6395aebb07e22ef9f2af671290d421da77c4703c9e1c995a5c33ebe2ffcdfc"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a9.ipk",
+        "size": 30665865,
+        "sha256": "90706ea558782f7cce42979f06b63c0b8fcd8aa55601f9aff958aca47c5cbea3"
+      }
+    },
+    "arm_cortex-a9_neon": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a9_neon.apk",
+        "size": 30608050,
+        "sha256": "e578cab5aa883f0d2fee8b78b2bd11af6ba8048a6aa543edd340b2f2c8ea085c"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a9_neon.ipk",
+        "size": 30624720,
+        "sha256": "b36929a9fdc98c2c50eb37e8c2d164bc8c4ed3336c25cea039cfdf72937a26de"
+      }
+    },
+    "arm_cortex-a9_vfpv3-d16": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a9_vfpv3-d16.apk",
+        "size": 30608035,
+        "sha256": "2a58968913ffc03bffd35984326be42128c66607b54f39777b6ab240a8e89f1f"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_cortex-a9_vfpv3-d16.ipk",
+        "size": 30624728,
+        "sha256": "5dd233fda5b880536836fe42ac0b3f177be3f1d139c1608115c698f47a3ae341"
+      }
+    },
+    "arm_fa526": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_fa526.apk",
+        "size": 30646898,
+        "sha256": "2c1b9a9801a828952585ab670de3be42dc09f11f9ce199411e1d6a0f5a8af8af"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_fa526.ipk",
+        "size": 30665848,
+        "sha256": "3246899521bdec713073df5fe654826a6f8d188ecca88224cf1f8cc6693198ed"
+      }
+    },
+    "arm_xscale": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_xscale.apk",
+        "size": 30646911,
+        "sha256": "8c595793847f55c793fffaaafa40d512415f336e03842fce29d3e821bd20834f"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_arm_xscale.ipk",
+        "size": 30665861,
+        "sha256": "877abd8407a631939b6da07a85180fd37d0621660f215b03ee889fd9dc1fbaf9"
+      }
+    },
+    "i386_pentium-mmx": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_i386_pentium-mmx.apk",
+        "size": 31041578,
+        "sha256": "0617eadc14a5c3a85b8211ba2adf2297afb2d5b38c10667002e57907bb1a6aa5"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_i386_pentium-mmx.ipk",
+        "size": 31064710,
+        "sha256": "7d96040e6e70d7ab7e9353474d394c1c910e2d6952f8b948bc054ce9f6315639"
+      }
+    },
+    "i386_pentium4": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_i386_pentium4.apk",
+        "size": 31034062,
+        "sha256": "300eb62459817afa77b1ae0f4c7249d6f54c6f26d745cf4d086b3fa825d233eb"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_i386_pentium4.ipk",
+        "size": 31059622,
+        "sha256": "52f53233840b90cad1fb98e15220f8bfd5ce0c510841c1a5be272a66e0ea1beb"
+      }
+    },
+    "loongarch64_generic": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_loongarch64_generic.apk",
+        "size": 31696091,
+        "sha256": "5c4fbc8843af2212a14c56219f5e23b9534d5cb3c8527c871423a35ea8fda980"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_loongarch64_generic.ipk",
+        "size": 31574229,
+        "sha256": "1e0824aaa2a188859e7a1b5cc932653ad7f9a5221b10de03ddfe0067b187a4ec"
+      }
+    },
+    "mips64_mips64r2": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips64_mips64r2.apk",
+        "size": 28290991,
+        "sha256": "7c50a1d5185a679cb4ba7f5409ab6c5825035d1bbf49aef81670fc0a98059cab"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips64_mips64r2.ipk",
+        "size": 28253456,
+        "sha256": "6834d0c4e17edd917f2c783b85ebd4e18fd58383cdebe6b8771172cab970e681"
+      }
+    },
+    "mips64_octeonplus": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips64_octeonplus.apk",
+        "size": 28291025,
+        "sha256": "be06ddc93d15cec5b203096ef8bbd811f6700b62b01174e2bf4a3710a6eb1b17"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips64_octeonplus.ipk",
+        "size": 28253464,
+        "sha256": "9b409d7ceaa3621dcc34b9898314345368b03db3b9501de5f1db563adccd164b"
+      }
+    },
+    "mips64el_mips64r2": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips64el_mips64r2.apk",
+        "size": 27984799,
+        "sha256": "bb30b1acb2c8abd82ef9ad3df607f22daadb5b7840f3f2a7d85e9889b6b4f5d2"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips64el_mips64r2.ipk",
+        "size": 27985198,
+        "sha256": "b68279e0e88404305dc2cfe7fa81d0373a487732deed6060ea0c2bc247f3792d"
+      }
+    },
+    "mips_24kc": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips_24kc.apk",
+        "size": 29115156,
+        "sha256": "a047ab46c152ae2c796564872ca93b56b8af7a197dde0c940c68a3d854a159ef"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips_24kc.ipk",
+        "size": 29124637,
+        "sha256": "f617d35ce3489619b8eb405c29af3c9b9bd893c65cf05adc674d4d9b844d2754"
+      }
+    },
+    "mips_4kec": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips_4kec.apk",
+        "size": 29115158,
+        "sha256": "e8608dd91465b9e0a77e360abc685e3c0a29f37cb324b2471e3ea2a4fa1b073f"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips_4kec.ipk",
+        "size": 29124639,
+        "sha256": "3db45213d38951049c6bae81886be753e158a314386f59cf11e4e8c034e28c63"
+      }
+    },
+    "mips_mips32": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips_mips32.apk",
+        "size": 29115156,
+        "sha256": "3bc891f851769638b3fb94edc0c33f205379594ee773fa1670ea89a70721572b"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mips_mips32.ipk",
+        "size": 29124639,
+        "sha256": "a69e9897208118e71e9fa429e11be468680aac1c61e518dbda67a68916db5562"
+      }
+    },
+    "mipsel_24kc": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_24kc.apk",
+        "size": 28837523,
+        "sha256": "bb524e38225344bce14aae1f9ec0cffd1c03a124073ab260df76a18812dd3036"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_24kc.ipk",
+        "size": 28874193,
+        "sha256": "ee092cfb8c70729fba2ad8ee33ad5f457438bd4e9e568cd69e7ea733011c97bc"
+      }
+    },
+    "mipsel_24kc_24kf": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_24kc_24kf.apk",
+        "size": 28854712,
+        "sha256": "d474e40df032a940beef7ed908b6cd03eaecb47f164e1c39ab73b4b0e9b37888"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_24kc_24kf.ipk",
+        "size": 28881111,
+        "sha256": "970a64bae55fb8775a44b355de3ef2e9f474c7318c7f5c9fb89d7075dbd35394"
+      }
+    },
+    "mipsel_74kc": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_74kc.apk",
+        "size": 28837522,
+        "sha256": "13d6c2dbcd6e91cf8d93f8f5b34c2fb82307ce59f1d5e7bdecb160b9d2d78848"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_74kc.ipk",
+        "size": 28874190,
+        "sha256": "a2f5a4072bfd3acc7cef04a3fc45ecbfb2d3afd03c3b1dd54c4a7a80db1fc655"
+      }
+    },
+    "mipsel_mips32": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_mips32.apk",
+        "size": 28837527,
+        "sha256": "200073677b958d79518c0967547e7c4cff3ee84f183623e4bc4667a1551ee348"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_mipsel_mips32.ipk",
+        "size": 28874189,
+        "sha256": "a186cea813a26374956c482eb8c971386fcaec0194ac35a46e774b082c5dc861"
+      }
+    },
+    "riscv64_generic": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_riscv64_generic.apk",
+        "size": 31194699,
+        "sha256": "54c76b9984ab7fdea0c530761ae95d03f7121136ebc6b0469f49d3aba1abd984"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_riscv64_generic.ipk",
+        "size": 31093847,
+        "sha256": "8de0eafde1792a1525c0ee07786f0ea6f1bc9fa21ccd9262654ec888e0987eb7"
+      }
+    },
+    "x86_64": {
+      "apk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_x86_64.apk",
+        "size": 33177592,
+        "sha256": "ff81b6600c04b18b80d90de71c9a36ee5e6972b5547f525722e410ed88b55a04"
+      },
+      "ipk": {
+        "file": "sing-box-extended_1.14.1-extended-2.7.2-lc1_openwrt_x86_64.ipk",
+        "size": 33160879,
+        "sha256": "9c0bbb1d42889ee3b4b843f046406c959957a0810488675655738c7e51c38a0c"
+      }
+    }
+  }
+}
