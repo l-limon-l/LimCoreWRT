@@ -1,77 +1,77 @@
 {
-  "version": "2.3.7",
+  "version": "2.3.8",
   "date": "2026-10-22",
   "notes": {
-    "ru": "- Исправлено: логи разработчику со страницы «Поддержка» не отправлялись у части провайдеров в России.",
-    "en": "- Fixed: logs from the Support page did not reach the developer on some Russian networks."
+    "ru": "- Анонимная статистика определяет страну по часовому поясу роутера, а не по адресу.",
+    "en": "- Anonymous statistics take the country from the router's time zone rather than its address."
   },
   "packages": {
     "apk": {
       "file": "packages/luci-app-limcore_all.apk",
-      "size": 304588,
-      "sha256": "350e9e16f0aaec0af69d05a0898322b54f674d50eba2a3588d454aeb2c2b270c"
+      "size": 304727,
+      "sha256": "be99630260c74bedee6a605650a2e7b05cfa61bea33882cfe0c03a0033c109df"
     },
     "ipk": {
       "file": "packages/luci-app-limcore_all.ipk",
-      "size": 305603,
-      "sha256": "b55cc11bcfcb190128a3c24b47f83d86c116e3be0212b95b6827e45c022ddb62"
+      "size": 305723,
+      "sha256": "7a6e1d6844d4cfe0a08163e13f4cd2c8242fea66aa909c07f1ec4df275342553"
     },
     "ipk_legacy": {
       "file": "packages/luci-app-limcore_all-legacy.ipk",
-      "size": 305654,
-      "sha256": "a32cac4d7bacc2e73764ea9fd79554a44276ad8cbcad94876fbdfcf9c7d93d51"
+      "size": 305791,
+      "sha256": "b73fd9efee0bd78b301bd4e8f17eeda06113b7634bc6ab7e07d183b117786eb7"
     }
   },
   "i18n": {
     "ru": {
       "apk": {
         "file": "packages/luci-i18n-limcore-ru_all.apk",
-        "size": 34863,
-        "sha256": "db902cc83a7279e6266bc0555860f161e63c1eaddd07550b532bdf7da1011b6c"
+        "size": 34888,
+        "sha256": "e9627e6d70816702a8a354bab4ca7fee114c4b11d595ec47eace4fe1d60d1520"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-ru_all.ipk",
-        "size": 36026,
-        "sha256": "940f213962aec246737810a0059724853def8d96d3006f5e7843f40d2ea23da6"
+        "size": 36063,
+        "sha256": "4c66d7c27a233a9cfd8e0cc5fa3b87860ca1789f50dd8d5e37ac0972b56c38a5"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-ru_all-legacy.ipk",
-        "size": 36023,
-        "sha256": "448969783c0cb5a7547c8a789bf8674d0a230eaf745059e946ff095049b2bcb8"
+        "size": 36063,
+        "sha256": "4c66d7c27a233a9cfd8e0cc5fa3b87860ca1789f50dd8d5e37ac0972b56c38a5"
       }
     },
     "zh_cn": {
       "apk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.apk",
-        "size": 15722,
-        "sha256": "36b264aa56dbac6bb471b913946a403b0862d71593c3772bd225b023a09417fb"
+        "size": 15721,
+        "sha256": "2139fd6e203f3be431885a861b334e6fd35d425028c2fed845528565708cfefa"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.ipk",
-        "size": 15717,
-        "sha256": "e48b940136ed2a0cea529a2765b4b3c125547ca83d0b0c0eeb81505f89a6f47a"
+        "size": 15728,
+        "sha256": "b19610fc4b83e5f1d3cdf01adf95689e09b831ad6aa1f77084247e008eb74372"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-zh-cn_all-legacy.ipk",
-        "size": 15726,
-        "sha256": "059d1a30d703aa6e1a5d7a6ad4e83338de81a4fb776a925bbc73ca4e5483bbdf"
+        "size": 15728,
+        "sha256": "b19610fc4b83e5f1d3cdf01adf95689e09b831ad6aa1f77084247e008eb74372"
       }
     },
     "fa": {
       "apk": {
         "file": "packages/luci-i18n-limcore-fa_all.apk",
-        "size": 17033,
-        "sha256": "a4806ba830973cb646641c9ed0af45e74aea3aac05e1e336f857c67b7ec407d2"
+        "size": 17035,
+        "sha256": "8664a3e09f3fe121ebb8c8ce3ca8da6dfd00b2e5be8f277a8e777e9945c469ef"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-fa_all.ipk",
-        "size": 17347,
-        "sha256": "6bd0badbcb4cc2ee61199b28650a9e79365b7e52c5be79ec34327a607480dba1"
+        "size": 17350,
+        "sha256": "ddac1189f76c2b5b2fd0c2504c7ae7bbcb87b57fd406a8012124a4e1f8157276"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-fa_all-legacy.ipk",
         "size": 17350,
-        "sha256": "7b53c1beb3f44bafeb5e96e151f617a7790c202470f2b20d58e4dc357a9455d8"
+        "sha256": "ddac1189f76c2b5b2fd0c2504c7ae7bbcb87b57fd406a8012124a4e1f8157276"
       }
     }
   }
