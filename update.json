@@ -1,77 +1,77 @@
 {
-  "version": "2.3.6",
+  "version": "2.3.7",
   "date": "2026-10-22",
   "notes": {
-    "ru": "- Ядро sing-box-extended теперь ставится из официальных релизов shtorm-7 и обновлено до 1.14.3-extended-2.7.3: исправлены соединения через группы серверов, xhttp, UDP и лишняя нагрузка на процессор. Обновляется в «Ядро и обновления».",
-    "en": "- The sing-box-extended core now comes from shtorm-7's official releases and is updated to 1.14.3-extended-2.7.3: fixes for connections through server groups, xhttp, UDP and needless CPU load. Updated in \"Core and updates\"."
+    "ru": "- Исправлено: логи разработчику со страницы «Поддержка» не отправлялись у части провайдеров в России.",
+    "en": "- Fixed: logs from the Support page did not reach the developer on some Russian networks."
   },
   "packages": {
     "apk": {
       "file": "packages/luci-app-limcore_all.apk",
-      "size": 304118,
-      "sha256": "69215964cfb37a62f9e01d3e193e326a0195d900699eaf20d614bc29e3cc0ede"
+      "size": 304588,
+      "sha256": "350e9e16f0aaec0af69d05a0898322b54f674d50eba2a3588d454aeb2c2b270c"
     },
     "ipk": {
       "file": "packages/luci-app-limcore_all.ipk",
-      "size": 305154,
-      "sha256": "a79f9716999a85cfaf08df24f794f1f26b42e0482480f19b51c24df4ba662cc3"
+      "size": 305603,
+      "sha256": "b55cc11bcfcb190128a3c24b47f83d86c116e3be0212b95b6827e45c022ddb62"
     },
     "ipk_legacy": {
       "file": "packages/luci-app-limcore_all-legacy.ipk",
-      "size": 305197,
-      "sha256": "5d4bab00e373cb338b12e0992c05a40ac6ca39a3e05c711659dabc21bc623fea"
+      "size": 305654,
+      "sha256": "a32cac4d7bacc2e73764ea9fd79554a44276ad8cbcad94876fbdfcf9c7d93d51"
     }
   },
   "i18n": {
     "ru": {
       "apk": {
         "file": "packages/luci-i18n-limcore-ru_all.apk",
-        "size": 34864,
-        "sha256": "3f1756e20f2df078fade0ccb5a2d216fcf66c5f14f592ed34134aa8ec9a9bd29"
+        "size": 34863,
+        "sha256": "db902cc83a7279e6266bc0555860f161e63c1eaddd07550b532bdf7da1011b6c"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-ru_all.ipk",
-        "size": 36032,
-        "sha256": "026a244c8274a7ffa5105aaf9aa268369caff80b644443bb2fac495d46886e06"
+        "size": 36026,
+        "sha256": "940f213962aec246737810a0059724853def8d96d3006f5e7843f40d2ea23da6"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-ru_all-legacy.ipk",
-        "size": 36032,
-        "sha256": "026a244c8274a7ffa5105aaf9aa268369caff80b644443bb2fac495d46886e06"
+        "size": 36023,
+        "sha256": "448969783c0cb5a7547c8a789bf8674d0a230eaf745059e946ff095049b2bcb8"
       }
     },
     "zh_cn": {
       "apk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.apk",
-        "size": 15724,
-        "sha256": "55844ba618eaa17ad83a18bc6196f10ebbb4dcb01676e24fce88176335986d13"
+        "size": 15722,
+        "sha256": "36b264aa56dbac6bb471b913946a403b0862d71593c3772bd225b023a09417fb"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-zh-cn_all.ipk",
-        "size": 15725,
-        "sha256": "f8ace894a31117f71415f8d956b78a168ca95426895b070b3dd2ebd6bdb24145"
+        "size": 15717,
+        "sha256": "e48b940136ed2a0cea529a2765b4b3c125547ca83d0b0c0eeb81505f89a6f47a"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-zh-cn_all-legacy.ipk",
-        "size": 15725,
-        "sha256": "f8ace894a31117f71415f8d956b78a168ca95426895b070b3dd2ebd6bdb24145"
+        "size": 15726,
+        "sha256": "059d1a30d703aa6e1a5d7a6ad4e83338de81a4fb776a925bbc73ca4e5483bbdf"
       }
     },
     "fa": {
       "apk": {
         "file": "packages/luci-i18n-limcore-fa_all.apk",
-        "size": 17032,
-        "sha256": "877e3ac1c59041a89734b6ede45260c8cece1bc3d204e4a31c1f8e1c16b0b939"
+        "size": 17033,
+        "sha256": "a4806ba830973cb646641c9ed0af45e74aea3aac05e1e336f857c67b7ec407d2"
       },
       "ipk": {
         "file": "packages/luci-i18n-limcore-fa_all.ipk",
-        "size": 17356,
-        "sha256": "97cc7a4d9c099c8af61cfdf15b2c2e9ccc06aa08d35a46f18424b4068bebd819"
+        "size": 17347,
+        "sha256": "6bd0badbcb4cc2ee61199b28650a9e79365b7e52c5be79ec34327a607480dba1"
       },
       "ipk_legacy": {
         "file": "packages/luci-i18n-limcore-fa_all-legacy.ipk",
-        "size": 17356,
-        "sha256": "97cc7a4d9c099c8af61cfdf15b2c2e9ccc06aa08d35a46f18424b4068bebd819"
+        "size": 17350,
+        "sha256": "7b53c1beb3f44bafeb5e96e151f617a7790c202470f2b20d58e4dc357a9455d8"
       }
     }
   }
